@@ -85,7 +85,20 @@ func (s *Server) grantAuthorizationCode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	s.issueTokens(w, r, client, user, code.Scope, code.Nonce, "")
+	resp, err := s.buildAccessAndID(client, user, code.Scope, code.Nonce, code.AuthTime)
+	if err != nil {
+		oauthError(w, http.StatusInternalServerError, "server_error", "could not issue tokens")
+		return
+	}
+	if oidc.HasScope(code.Scope, oidc.ScopeOfflineAccess) {
+		raw, newRT := s.newRefreshToken(client, user, code.Scope, code.AuthTime, "")
+		if err := s.db.CreateRefreshToken(r.Context(), newRT); err != nil {
+			oauthError(w, http.StatusInternalServerError, "server_error", "could not issue refresh token")
+			return
+		}
+		resp.RefreshToken = raw
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) grantRefreshToken(w http.ResponseWriter, r *http.Request) {
@@ -137,55 +150,79 @@ func (s *Server) grantRefreshToken(w http.ResponseWriter, r *http.Request) {
 		scope = requested
 	}
 
-	// Rotate: revoke the presented token, then mint a fresh chain link.
-	_ = s.db.RevokeRefreshToken(r.Context(), rt.ID)
-	s.issueTokens(w, r, client, user, scope, "", rt.ID)
-}
-
-// issueTokens builds and writes the token response (access + optional id +
-// optional rotated refresh).
-func (s *Server) issueTokens(w http.ResponseWriter, r *http.Request, client *model.Client, user *model.User, scope, nonce, rotatedFrom string) {
-	access, err := s.issuer.IssueAccessToken(user.ID, client.ClientID, scope)
+	// Sign access + ID tokens first; signing can fail without consuming the
+	// presented refresh token.
+	resp, err := s.buildAccessAndID(client, user, scope, "", rt.AuthTime)
 	if err != nil {
-		oauthError(w, http.StatusInternalServerError, "server_error", "could not issue access token")
+		oauthError(w, http.StatusInternalServerError, "server_error", "could not issue tokens")
 		return
 	}
 
+	// Build the replacement refresh token (preserving the original auth_time).
+	var rawRefresh string
+	var newRT *model.RefreshToken
+	if oidc.HasScope(scope, oidc.ScopeOfflineAccess) {
+		rawRefresh, newRT = s.newRefreshToken(client, user, scope, rt.AuthTime, rt.ID)
+	}
+
+	// Atomically revoke the presented token and persist the replacement. ok=false
+	// means another request already rotated it: treat as reuse and revoke the chain.
+	ok, err = s.db.RotateRefreshToken(r.Context(), rt.ID, newRT)
+	if err != nil {
+		oauthError(w, http.StatusInternalServerError, "server_error", "could not rotate refresh token")
+		return
+	}
+	if !ok {
+		_ = s.db.RevokeRefreshTokensForUserClient(r.Context(), rt.UserID, rt.ClientID)
+		oauthError(w, http.StatusBadRequest, "invalid_grant", "refresh token reuse detected")
+		return
+	}
+
+	if newRT != nil {
+		resp.RefreshToken = rawRefresh
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// buildAccessAndID signs an access token and, when openid is granted, an ID
+// token carrying the supplied authentication time.
+func (s *Server) buildAccessAndID(client *model.Client, user *model.User, scope, nonce string, authTime time.Time) (tokenResponse, error) {
+	access, err := s.issuer.IssueAccessToken(user.ID, client.ClientID, scope)
+	if err != nil {
+		return tokenResponse{}, err
+	}
 	resp := tokenResponse{
 		AccessToken: access,
 		TokenType:   "Bearer",
 		ExpiresIn:   int(s.issuer.AccessTTL().Seconds()),
 		Scope:       scope,
 	}
-
 	if oidc.HasScope(scope, oidc.ScopeOpenID) {
-		idTok, err := s.issuer.IssueIDToken(user.ID, client.ClientID, profileFromUser(user), nonce, time.Now())
+		idTok, err := s.issuer.IssueIDToken(user.ID, client.ClientID, profileFromUser(user), nonce, authTime)
 		if err != nil {
-			oauthError(w, http.StatusInternalServerError, "server_error", "could not issue id token")
-			return
+			return tokenResponse{}, err
 		}
 		resp.IDToken = idTok
 	}
+	return resp, nil
+}
 
-	if oidc.HasScope(scope, oidc.ScopeOfflineAccess) {
-		rawRefresh := auth.RandomToken(32)
-		now := time.Now().UTC()
-		newRT := &model.RefreshToken{
-			ID:          uuid.NewString(),
-			TokenHash:   auth.HashToken(rawRefresh),
-			ClientID:    client.ClientID,
-			UserID:      user.ID,
-			Scope:       scope,
-			RotatedFrom: rotatedFrom,
-			ExpiresAt:   now.Add(s.cfg.Security.RefreshTokenTTL),
-			CreatedAt:   now,
-		}
-		if err := s.db.CreateRefreshToken(r.Context(), newRT); err == nil {
-			resp.RefreshToken = rawRefresh
-		}
+// newRefreshToken builds (but does not persist) a refresh token record and
+// returns the plaintext value to hand to the client.
+func (s *Server) newRefreshToken(client *model.Client, user *model.User, scope string, authTime time.Time, rotatedFrom string) (string, *model.RefreshToken) {
+	raw := auth.RandomToken(24)
+	now := time.Now().UTC()
+	return raw, &model.RefreshToken{
+		ID:          uuid.NewString(),
+		TokenHash:   auth.HashToken(raw),
+		ClientID:    client.ClientID,
+		UserID:      user.ID,
+		Scope:       scope,
+		RotatedFrom: rotatedFrom,
+		ExpiresAt:   now.Add(s.cfg.Security.RefreshTokenTTL),
+		CreatedAt:   now,
+		AuthTime:    authTime,
 	}
-
-	writeJSON(w, http.StatusOK, resp)
 }
 
 // authenticateClient resolves and authenticates the client from Basic auth or

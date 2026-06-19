@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func testIssuer(t *testing.T) *Issuer {
@@ -89,6 +91,56 @@ func TestIDTokenContainsIdentityClaims(t *testing.T) {
 	}
 	if _, ok := vt.Claims["auth_time"]; !ok {
 		t.Error("id token missing auth_time")
+	}
+}
+
+func TestVerifyRejectsExpiredToken(t *testing.T) {
+	db := testStore(t)
+	km, err := NewKeyManager(context.Background(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Negative TTL mints an already-expired token.
+	expired := NewIssuer(km, "https://id.example.com", -time.Minute, -time.Minute)
+	tok, _ := expired.IssueAccessToken("user-1", "jellyfin", "openid")
+
+	if _, err := expired.Verify(tok); err == nil {
+		t.Error("expired token must not verify")
+	}
+}
+
+func TestVerifyRejectsNoneAlg(t *testing.T) {
+	iss := testIssuer(t)
+	signer, _ := iss.km.Signer(AlgRS256)
+
+	tok := jwt.NewWithClaims(jwt.SigningMethodNone, jwt.MapClaims{
+		"iss": "https://id.example.com",
+		"sub": "attacker",
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	tok.Header["kid"] = signer.KID
+	raw, _ := tok.SignedString(jwt.UnsafeAllowNoneSignatureType)
+
+	if _, err := iss.Verify(raw); err == nil {
+		t.Error("alg=none token must be rejected")
+	}
+}
+
+func TestVerifyRejectsHS256AlgConfusion(t *testing.T) {
+	iss := testIssuer(t)
+	signer, _ := iss.km.Signer(AlgRS256)
+
+	// Forge an HS256 token reusing a legitimate kid (classic alg-confusion).
+	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"iss": "https://id.example.com",
+		"sub": "attacker",
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	tok.Header["kid"] = signer.KID
+	raw, _ := tok.SignedString([]byte("forged-secret"))
+
+	if _, err := iss.Verify(raw); err == nil {
+		t.Error("HS256 token must be rejected (algorithm confusion guard)")
 	}
 }
 

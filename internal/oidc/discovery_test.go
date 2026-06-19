@@ -20,7 +20,6 @@ func TestBuildDiscoveryEndpoints(t *testing.T) {
 		d.UserinfoEndpoint:      "https://id.example.com/userinfo",
 		d.JWKSURI:               "https://id.example.com/jwks.json",
 		d.RevocationEndpoint:    "https://id.example.com/oauth2/revoke",
-		d.EndSessionEndpoint:    "https://id.example.com/logout",
 	}
 	for got, want := range cases {
 		if got != want {

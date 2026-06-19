@@ -62,6 +62,8 @@ type AuthorizationCode struct {
 	ExpiresAt           time.Time
 	Used                bool
 	CreatedAt           time.Time
+	// AuthTime is when the end user actually authenticated (session login time).
+	AuthTime time.Time
 }
 
 // RefreshToken is a stored, hashed refresh token (supports rotation).
@@ -75,6 +77,8 @@ type RefreshToken struct {
 	Revoked     bool
 	ExpiresAt   time.Time
 	CreatedAt   time.Time
+	// AuthTime is the original end-user authentication time, preserved across rotation.
+	AuthTime time.Time
 }
 
 // SigningKey is a JWT signing keypair.

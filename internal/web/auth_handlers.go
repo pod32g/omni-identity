@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -159,9 +160,21 @@ func (s *Server) handleSetupSubmit(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 
-// safeNext returns next only if it is a safe local path (prevents open redirect).
+// safeNext returns next only if it is a safe, local, same-origin path. It
+// guards against open redirects, including the backslash and control-character
+// bypasses that browsers normalize into protocol-relative URLs.
 func safeNext(next string) string {
-	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
+	if next == "" {
+		return ""
+	}
+	for _, r := range next {
+		if r == '\\' || r < 0x20 || r == 0x7f {
+			return ""
+		}
+	}
+	u, err := url.Parse(next)
+	if err != nil || u.IsAbs() || u.Host != "" ||
+		!strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
 		return ""
 	}
 	return next

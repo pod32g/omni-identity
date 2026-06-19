@@ -61,6 +61,40 @@ func TestGetRefreshTokenNotFound(t *testing.T) {
 	}
 }
 
+func TestRotateRefreshTokenAtomic(t *testing.T) {
+	db := tempDB(t)
+	ctx := context.Background()
+	old := newRefreshToken("old", "user-1", "jellyfin")
+	_ = db.CreateRefreshToken(ctx, old)
+
+	newRT := newRefreshToken("new", "user-1", "jellyfin")
+	newRT.RotatedFrom = old.ID
+
+	ok, err := db.RotateRefreshToken(ctx, old.ID, newRT)
+	if err != nil || !ok {
+		t.Fatalf("RotateRefreshToken ok=%v err=%v", ok, err)
+	}
+	gotOld, _ := db.GetRefreshTokenByHash(ctx, "old")
+	if !gotOld.Revoked {
+		t.Error("old token should be revoked after rotation")
+	}
+	if _, err := db.GetRefreshTokenByHash(ctx, "new"); err != nil {
+		t.Errorf("new token should exist: %v", err)
+	}
+
+	// Rotating the already-revoked token again must fail and create nothing.
+	ok2, err := db.RotateRefreshToken(ctx, old.ID, newRefreshToken("new2", "user-1", "jellyfin"))
+	if err != nil {
+		t.Fatalf("second rotate err: %v", err)
+	}
+	if ok2 {
+		t.Error("rotating an already-revoked token must return ok=false")
+	}
+	if _, err := db.GetRefreshTokenByHash(ctx, "new2"); err == nil {
+		t.Error("failed rotation must not create a replacement token")
+	}
+}
+
 func TestRevokeRefreshTokensForUserClient(t *testing.T) {
 	db := tempDB(t)
 	ctx := context.Background()

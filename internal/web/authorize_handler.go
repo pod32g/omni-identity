@@ -77,6 +77,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		CodeChallengeMethod: method,
 		ExpiresAt:           now.Add(authCodeTTL),
 		CreatedAt:           now,
+		AuthTime:            sess.CreatedAt, // when the user actually logged in
 	}
 	if err := s.db.CreateAuthCode(r.Context(), code); err != nil {
 		redirectErr(w, r, redirectURI, "server_error", "could not issue authorization code", state)
