@@ -56,3 +56,19 @@
 </main>
 </body>
 </html>{{end}}
+
+{{define "adminnav"}}
+<div class="topbar">
+  <div class="nav">
+    <strong>Omni Identity</strong>
+    <a href="/admin/users">Users</a>
+    <a href="/admin/clients">Applications</a>
+    <a href="/admin/settings">Settings</a>
+  </div>
+  <form method="post" action="/logout" class="inline">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <span class="muted">{{with .Me}}{{.Username}}{{end}}</span>
+    <button class="secondary" type="submit">Sign out</button>
+  </form>
+</div>
+{{end}}

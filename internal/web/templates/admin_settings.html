@@ -1,0 +1,14 @@
+{{define "title"}}Settings · Omni Identity{{end}}
+{{define "content"}}
+{{template "adminnav" .}}
+<h1>Settings</h1>
+<p class="muted">These values come from the config file and are read-only in V1.</p>
+<table>
+  <tr><th>Issuer</th><td><code>{{.Issuer}}</code></td></tr>
+  <tr><th>Public URL</th><td><code>{{.PublicURL}}</code></td></tr>
+  <tr><th>Access token TTL</th><td>{{.TokenTTL}}</td></tr>
+  <tr><th>Refresh token TTL</th><td>{{.RefreshTTL}}</td></tr>
+  <tr><th>Discovery</th><td><code>{{.Issuer}}/.well-known/openid-configuration</code></td></tr>
+  <tr><th>JWKS</th><td><code>{{.Issuer}}/jwks.json</code></td></tr>
+</table>
+{{end}}

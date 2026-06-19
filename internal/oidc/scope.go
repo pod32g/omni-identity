@@ -5,6 +5,9 @@ import (
 	"strings"
 )
 
+// SupportedScopes are all scopes Omni Identity recognizes.
+var SupportedScopes = []string{ScopeOpenID, ScopeProfile, ScopeEmail, ScopeOfflineAccess}
+
 // SplitScope splits a space-delimited scope string into its components.
 func SplitScope(scope string) []string {
 	return strings.Fields(scope)

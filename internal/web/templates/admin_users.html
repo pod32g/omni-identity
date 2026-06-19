@@ -1,0 +1,39 @@
+{{define "title"}}Users · Omni Identity{{end}}
+{{define "content"}}
+{{template "adminnav" .}}
+<h1>Users</h1>
+{{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+<table>
+  <tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+  {{range .Users}}
+  <tr>
+    <td>{{.Username}}</td>
+    <td>{{.Email}}</td>
+    <td>{{if .IsAdmin}}admin{{else}}user{{end}}</td>
+    <td>{{if .Disabled}}<span class="pill off">disabled</span>{{else}}<span class="pill ok">active</span>{{end}}</td>
+    <td class="row-actions">
+      <form method="post" action="/admin/users/{{.ID}}/disable">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
+        <button class="secondary" type="submit">{{if .Disabled}}Enable{{else}}Disable{{end}}</button>
+      </form>
+      <form method="post" action="/admin/users/{{.ID}}/password" class="inline">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input name="password" type="password" placeholder="new password" minlength="8" required>
+        <button class="secondary" type="submit">Set</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+</table>
+
+<h2>Create user</h2>
+<form method="post" action="/admin/users">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <label>Username <input name="username" required></label>
+  <label>Email <input name="email" type="email" required></label>
+  <label>Password <input name="password" type="password" minlength="8" required></label>
+  <label class="inline"><input type="checkbox" name="is_admin"> Administrator</label>
+  <button type="submit">Create user</button>
+</form>
+{{end}}

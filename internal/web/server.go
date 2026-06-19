@@ -69,6 +69,19 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /setup", s.handleSetupForm)
 	s.mux.HandleFunc("POST /setup", s.handleSetupSubmit)
 
+	s.mux.HandleFunc("GET /admin", s.requireAdmin(s.handleAdminHome))
+	s.mux.HandleFunc("GET /admin/users", s.requireAdmin(s.handleAdminUsers))
+	s.mux.HandleFunc("POST /admin/users", s.requireAdmin(s.handleAdminCreateUser))
+	s.mux.HandleFunc("POST /admin/users/{id}/disable", s.requireAdmin(s.handleAdminToggleUser))
+	s.mux.HandleFunc("POST /admin/users/{id}/password", s.requireAdmin(s.handleAdminUserPassword))
+	s.mux.HandleFunc("GET /admin/clients", s.requireAdmin(s.handleAdminClients))
+	s.mux.HandleFunc("POST /admin/clients", s.requireAdmin(s.handleAdminCreateClient))
+	s.mux.HandleFunc("GET /admin/clients/{id}", s.requireAdmin(s.handleAdminClientDetail))
+	s.mux.HandleFunc("POST /admin/clients/{id}", s.requireAdmin(s.handleAdminUpdateClient))
+	s.mux.HandleFunc("POST /admin/clients/{id}/disable", s.requireAdmin(s.handleAdminToggleClient))
+	s.mux.HandleFunc("POST /admin/clients/{id}/rotate", s.requireAdmin(s.handleAdminRotateClient))
+	s.mux.HandleFunc("GET /admin/settings", s.requireAdmin(s.handleAdminSettings))
+
 	s.mux.HandleFunc("GET /{$}", s.handleRoot)
 }
 

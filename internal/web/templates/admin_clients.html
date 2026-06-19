@@ -1,0 +1,45 @@
+{{define "title"}}Applications · Omni Identity{{end}}
+{{define "content"}}
+{{template "adminnav" .}}
+<h1>Applications</h1>
+{{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+<table>
+  <tr><th>Name</th><th>Client ID</th><th>Type</th><th>Status</th><th>Actions</th></tr>
+  {{range .Clients}}
+  <tr>
+    <td><a href="/admin/clients/{{.ClientID}}">{{.Name}}</a></td>
+    <td><code>{{.ClientID}}</code></td>
+    <td>{{.Type}}</td>
+    <td>{{if .Disabled}}<span class="pill off">disabled</span>{{else}}<span class="pill ok">active</span>{{end}}</td>
+    <td class="row-actions">
+      <a href="/admin/clients/{{.ClientID}}"><button class="secondary" type="button">Edit</button></a>
+      <form method="post" action="/admin/clients/{{.ClientID}}/disable">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
+        <button class="secondary" type="submit">{{if .Disabled}}Enable{{else}}Disable{{end}}</button>
+      </form>
+    </td>
+  </tr>
+  {{end}}
+</table>
+
+<h2>Register application</h2>
+<form method="post" action="/admin/clients">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <label>Name <input name="name" required></label>
+  <label>Client ID <input name="client_id" placeholder="optional — generated if blank"></label>
+  <label>Type
+    <select name="type">
+      <option value="confidential">confidential (server-side, has secret)</option>
+      <option value="public">public (SPA/native, uses PKCE)</option>
+    </select>
+  </label>
+  <label>Redirect URIs (one per line)
+    <textarea name="redirect_uris" rows="3" placeholder="https://app.example.com/callback" required></textarea>
+  </label>
+  <label>Scopes (space separated)
+    <input name="scopes" value="openid email profile" required>
+  </label>
+  <button type="submit">Register application</button>
+</form>
+{{end}}
