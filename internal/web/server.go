@@ -3,6 +3,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/pod32g/omni-identity/internal/auth"
 	"github.com/pod32g/omni-identity/internal/config"
 	"github.com/pod32g/omni-identity/internal/store"
+	"github.com/pod32g/omni-identity/internal/tokens"
 )
 
 // sessionTTL is the browser login session lifetime.
@@ -20,13 +22,19 @@ type Server struct {
 	cfg      *config.Config
 	db       *store.DB
 	sessions *auth.SessionManager
+	keys     *tokens.KeyManager
 	tmpl     *templates
 	mux      *http.ServeMux
 }
 
-// NewServer builds a Server with all routes registered.
+// NewServer builds a Server with all routes registered. It ensures signing keys
+// exist (generating them on first run).
 func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 	tmpl, err := loadTemplates()
+	if err != nil {
+		return nil, err
+	}
+	km, err := tokens.NewKeyManager(context.Background(), db)
 	if err != nil {
 		return nil, err
 	}
@@ -34,6 +42,7 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 		cfg:      cfg,
 		db:       db,
 		sessions: auth.NewSessionManager(db, cfg.Cookies.Secure, sessionTTL),
+		keys:     km,
 		tmpl:     tmpl,
 		mux:      http.NewServeMux(),
 	}
@@ -43,6 +52,9 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
+
+	s.mux.HandleFunc("GET /.well-known/openid-configuration", s.handleDiscovery)
+	s.mux.HandleFunc("GET /jwks.json", s.handleJWKS)
 
 	s.mux.HandleFunc("GET /login", s.handleLoginForm)
 	s.mux.HandleFunc("POST /login", s.handleLoginSubmit)
