@@ -43,15 +43,20 @@ type Signer struct {
 
 // KeyManager owns the loaded signing keys and the JWKS document.
 type KeyManager struct {
-	store   SigningKeyStore
-	signers map[string]*Signer // alg -> active signer
-	jwks    []byte             // pre-rendered JWKS for all public keys
+	store     SigningKeyStore
+	signers   map[string]*Signer        // alg -> active signer
+	verifiers map[string]crypto.PublicKey // kid -> public key (all keys)
+	jwks      []byte                     // pre-rendered JWKS for all public keys
 }
 
 // NewKeyManager ensures an active RS256 and EdDSA key exist (generating them on
 // first run), then loads all keys into memory and renders the JWKS.
 func NewKeyManager(ctx context.Context, s SigningKeyStore) (*KeyManager, error) {
-	km := &KeyManager{store: s, signers: map[string]*Signer{}}
+	km := &KeyManager{
+		store:     s,
+		signers:   map[string]*Signer{},
+		verifiers: map[string]crypto.PublicKey{},
+	}
 
 	for _, alg := range []string{AlgRS256, AlgEdDSA} {
 		if _, err := s.GetActiveSigningKey(ctx, alg); errors.Is(err, store.ErrNotFound) {
@@ -86,12 +91,15 @@ func (km *KeyManager) load(ctx context.Context) error {
 		k := keys[i]
 		jwkList = append(jwkList, json.RawMessage(k.PublicJWK))
 
+		signer, err := parsePrivatePEM(k.PrivatePEM)
+		if err != nil {
+			return fmt.Errorf("parse key %s: %w", k.KID, err)
+		}
+		// Every key (active or rotated) can verify tokens it previously signed.
+		km.verifiers[k.KID] = signer.Public()
+
+		// Newest active key per alg becomes the signer (ListSigningKeys is newest-first).
 		if k.Active {
-			signer, err := parsePrivatePEM(k.PrivatePEM)
-			if err != nil {
-				return fmt.Errorf("parse key %s: %w", k.KID, err)
-			}
-			// Newest active key per alg wins (ListSigningKeys is newest-first).
 			if _, exists := km.signers[k.Alg]; !exists {
 				km.signers[k.Alg] = &Signer{KID: k.KID, Alg: k.Alg, Key: signer}
 			}
@@ -122,6 +130,12 @@ func (km *KeyManager) Signer(alg string) (*Signer, error) {
 
 // DefaultSigner returns the default (RS256) signer.
 func (km *KeyManager) DefaultSigner() *Signer { return km.signers[AlgRS256] }
+
+// PublicKey returns the public key for the given kid, for JWT verification.
+func (km *KeyManager) PublicKey(kid string) (crypto.PublicKey, bool) {
+	k, ok := km.verifiers[kid]
+	return k, ok
+}
 
 // --- key generation & encoding ---
 

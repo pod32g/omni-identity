@@ -23,6 +23,7 @@ type Server struct {
 	db       *store.DB
 	sessions *auth.SessionManager
 	keys     *tokens.KeyManager
+	issuer   *tokens.Issuer
 	tmpl     *templates
 	mux      *http.ServeMux
 }
@@ -43,6 +44,7 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 		db:       db,
 		sessions: auth.NewSessionManager(db, cfg.Cookies.Secure, sessionTTL),
 		keys:     km,
+		issuer:   tokens.NewIssuer(km, cfg.Security.Issuer, cfg.Security.TokenTTL, cfg.Security.TokenTTL),
 		tmpl:     tmpl,
 		mux:      http.NewServeMux(),
 	}
@@ -55,6 +57,11 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /.well-known/openid-configuration", s.handleDiscovery)
 	s.mux.HandleFunc("GET /jwks.json", s.handleJWKS)
+
+	s.mux.HandleFunc("GET /oauth2/authorize", s.handleAuthorize)
+	s.mux.HandleFunc("POST /oauth2/token", s.handleToken)
+	s.mux.HandleFunc("GET /userinfo", s.handleUserinfo)
+	s.mux.HandleFunc("POST /userinfo", s.handleUserinfo)
 
 	s.mux.HandleFunc("GET /login", s.handleLoginForm)
 	s.mux.HandleFunc("POST /login", s.handleLoginSubmit)

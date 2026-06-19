@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/pod32g/omni-identity/internal/config"
 	"github.com/pod32g/omni-identity/internal/store"
@@ -21,6 +22,8 @@ func testServer(t *testing.T) *Server {
 	cfg := &config.Config{}
 	cfg.Server.PublicURL = "http://localhost:8080"
 	cfg.Security.Issuer = "http://localhost:8080"
+	cfg.Security.TokenTTL = 15 * time.Minute
+	cfg.Security.RefreshTokenTTL = 720 * time.Hour
 	srv, err := NewServer(cfg, db)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)
