@@ -1,0 +1,20 @@
+# Binaries
+/omni-identity
+/dist/
+*.exe
+
+# Local database & secrets
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+config.yaml
+config.local.yaml
+
+# Go
+/vendor/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
