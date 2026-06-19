@@ -1,0 +1,18 @@
+{{define "title"}}Sign in · Omni Identity{{end}}
+{{define "cardclass"}}auth-card{{end}}
+{{define "content"}}
+<h1>Omni Identity</h1>
+<p class="muted">Sign in to continue.</p>
+{{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+<form method="post" action="/login">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  {{if .Next}}<input type="hidden" name="next" value="{{.Next}}">{{end}}
+  <label>Username
+    <input name="username" autocomplete="username" autofocus required>
+  </label>
+  <label>Password
+    <input name="password" type="password" autocomplete="current-password" required>
+  </label>
+  <button type="submit">Sign in</button>
+</form>
+{{end}}

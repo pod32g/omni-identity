@@ -41,7 +41,10 @@ func run(configPath string) error {
 	}
 	defer db.Close()
 
-	srv := web.NewServer(cfg, db)
+	srv, err := web.NewServer(cfg, db)
+	if err != nil {
+		return fmt.Errorf("init server: %w", err)
+	}
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpSrv := &http.Server{
 		Addr:              addr,

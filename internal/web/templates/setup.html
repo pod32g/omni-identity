@@ -1,0 +1,20 @@
+{{define "title"}}First-run setup · Omni Identity{{end}}
+{{define "cardclass"}}auth-card{{end}}
+{{define "content"}}
+<h1>Welcome to Omni Identity</h1>
+<p class="muted">Create the first administrator account to get started.</p>
+{{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+<form method="post" action="/setup">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+  <label>Username
+    <input name="username" value="{{.Username}}" autocomplete="username" autofocus required>
+  </label>
+  <label>Email
+    <input name="email" type="email" value="{{.Email}}" autocomplete="email" required>
+  </label>
+  <label>Password
+    <input name="password" type="password" autocomplete="new-password" minlength="8" required>
+  </label>
+  <button type="submit">Create admin &amp; sign in</button>
+</form>
+{{end}}

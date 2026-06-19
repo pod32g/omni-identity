@@ -1,0 +1,58 @@
+{{define "base.html"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{block "title" .}}Omni Identity{{end}}</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center;
+    justify-content: center; padding: 24px;
+    font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #0f1115; color: #e7e9ee;
+  }
+  .card {
+    width: 100%; max-width: 760px; background: #171a21; border: 1px solid #262b36;
+    border-radius: 14px; padding: 28px 32px; box-shadow: 0 10px 40px rgba(0,0,0,.35);
+  }
+  .auth-card { max-width: 380px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 24px 0 10px; }
+  .muted { color: #97a0b0; font-size: 13px; margin-top: 0; }
+  form { display: flex; flex-direction: column; gap: 14px; margin-top: 18px; }
+  label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #b6bdca; }
+  input, select {
+    padding: 10px 12px; border-radius: 8px; border: 1px solid #2c3340;
+    background: #0f1115; color: #e7e9ee; font-size: 14px;
+  }
+  input:focus, select:focus { outline: 2px solid #4d7cff; border-color: #4d7cff; }
+  button {
+    padding: 10px 14px; border: 0; border-radius: 8px; background: #4d7cff;
+    color: #fff; font-weight: 600; font-size: 14px; cursor: pointer;
+  }
+  button:hover { background: #3d6cf0; }
+  button.secondary { background: #2c3340; color: #e7e9ee; }
+  .error { background: #3a1b1f; border: 1px solid #6e2a31; color: #ffb4bb;
+           padding: 10px 12px; border-radius: 8px; font-size: 13px; }
+  a { color: #7aa2ff; }
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid #262b36; }
+  th { color: #97a0b0; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .row-actions { display: flex; gap: 8px; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+  .pill.ok { background: #143524; color: #7ee2a8; }
+  .pill.off { background: #3a1b1f; color: #ffb4bb; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .nav { display: flex; gap: 14px; font-size: 14px; }
+  .inline { flex-direction: row; gap: 8px; align-items: center; }
+  code { background: #0f1115; padding: 2px 6px; border-radius: 6px; border: 1px solid #262b36; }
+</style>
+</head>
+<body>
+<main class="card {{block "cardclass" .}}{{end}}">
+{{block "content" .}}{{end}}
+</main>
+</body>
+</html>{{end}}

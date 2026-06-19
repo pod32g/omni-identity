@@ -21,7 +21,11 @@ func testServer(t *testing.T) *Server {
 	cfg := &config.Config{}
 	cfg.Server.PublicURL = "http://localhost:8080"
 	cfg.Security.Issuer = "http://localhost:8080"
-	return NewServer(cfg, db)
+	srv, err := NewServer(cfg, db)
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	return srv
 }
 
 func TestHealthzReturnsOK(t *testing.T) {
