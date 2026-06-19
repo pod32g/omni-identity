@@ -25,7 +25,9 @@ type Server struct {
 	keys     *tokens.KeyManager
 	issuer   *tokens.Issuer
 	tmpl     *templates
+	metrics  *metrics
 	mux      *http.ServeMux
+	handler  http.Handler
 }
 
 // NewServer builds a Server with all routes registered. It ensures signing keys
@@ -46,20 +48,24 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 		keys:     km,
 		issuer:   tokens.NewIssuer(km, cfg.Security.Issuer, cfg.Security.TokenTTL, cfg.Security.TokenTTL),
 		tmpl:     tmpl,
+		metrics:  newMetrics(),
 		mux:      http.NewServeMux(),
 	}
 	s.routes()
+	s.handler = s.withMiddleware(s.mux)
 	return s, nil
 }
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
+	s.mux.HandleFunc("GET /metrics", s.handleMetrics)
 
 	s.mux.HandleFunc("GET /.well-known/openid-configuration", s.handleDiscovery)
 	s.mux.HandleFunc("GET /jwks.json", s.handleJWKS)
 
 	s.mux.HandleFunc("GET /oauth2/authorize", s.handleAuthorize)
 	s.mux.HandleFunc("POST /oauth2/token", s.handleToken)
+	s.mux.HandleFunc("POST /oauth2/revoke", s.handleRevoke)
 	s.mux.HandleFunc("GET /userinfo", s.handleUserinfo)
 	s.mux.HandleFunc("POST /userinfo", s.handleUserinfo)
 
@@ -85,9 +91,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /{$}", s.handleRoot)
 }
 
-// ServeHTTP dispatches to the route mux.
+// ServeHTTP dispatches through the middleware chain to the route mux.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.mux.ServeHTTP(w, r)
+	s.handler.ServeHTTP(w, r)
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
