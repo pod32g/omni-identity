@@ -1,0 +1,23 @@
+# Omni Identity configuration.
+# Copy to config.yaml and adjust. Any value can be overridden by an environment
+# variable, e.g. OMNI_SERVER_PORT, OMNI_DATABASE_PATH, OMNI_SECURITY_ISSUER,
+# OMNI_COOKIES_SECURE.
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  # Public base URL clients use to reach this server. Required.
+  public_url: https://identity.omni.local
+
+database:
+  path: ./omni-identity.db
+
+security:
+  # Defaults to public_url if omitted.
+  issuer: https://identity.omni.local
+  token_ttl: 15m
+  refresh_token_ttl: 720h
+
+cookies:
+  # Set to false only for local http:// development.
+  secure: true
