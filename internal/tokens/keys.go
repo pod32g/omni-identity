@@ -44,9 +44,9 @@ type Signer struct {
 // KeyManager owns the loaded signing keys and the JWKS document.
 type KeyManager struct {
 	store     SigningKeyStore
-	signers   map[string]*Signer        // alg -> active signer
+	signers   map[string]*Signer          // alg -> active signer
 	verifiers map[string]crypto.PublicKey // kid -> public key (all keys)
-	jwks      []byte                     // pre-rendered JWKS for all public keys
+	jwks      []byte                      // pre-rendered JWKS for all public keys
 }
 
 // NewKeyManager ensures an active RS256 and EdDSA key exist (generating them on
