@@ -1,7 +1,8 @@
 # Omni Identity — V1 Design Spec
 
 Date: 2026-06-19
-Status: Approved (build approved via "lets build this")
+Status: Implemented — all 7 milestones built test-first; passed a multi-agent
+review round (10 findings fixed). See git history for per-milestone commits.
 Motto: *Boring identity for private infrastructure.*
 
 ## 1. Goal
