@@ -28,9 +28,21 @@ type ServerConfig struct {
 	PublicURL string
 }
 
-// DatabaseConfig holds storage settings.
+// DatabaseConfig holds storage settings. Driver selects the backend
+// ("sqlite" default, or "postgres"). Path is the SQLite file; URL is the
+// Postgres connection string.
 type DatabaseConfig struct {
-	Path string
+	Driver string
+	Path   string
+	URL    string
+}
+
+// DSN returns the connection string for the configured driver.
+func (c DatabaseConfig) DSN() string {
+	if c.Driver == "postgres" {
+		return c.URL
+	}
+	return c.Path
 }
 
 // SecurityConfig holds issuer, token lifetime, and account-protection settings.
@@ -61,7 +73,9 @@ type fileConfig struct {
 		PublicURL string `yaml:"public_url"`
 	} `yaml:"server"`
 	Database struct {
-		Path string `yaml:"path"`
+		Driver string `yaml:"driver"`
+		Path   string `yaml:"path"`
+		URL    string `yaml:"url"`
 	} `yaml:"database"`
 	Security struct {
 		Issuer             string `yaml:"issuer"`
@@ -111,7 +125,9 @@ func Load(path string) (*Config, error) {
 	cfg.Server.Host = orDefault(fc.Server.Host, defaultHost)
 	cfg.Server.Port = orDefaultInt(fc.Server.Port, defaultPort)
 	cfg.Server.PublicURL = fc.Server.PublicURL
+	cfg.Database.Driver = orDefault(fc.Database.Driver, "sqlite")
 	cfg.Database.Path = orDefault(fc.Database.Path, defaultDBPath)
+	cfg.Database.URL = fc.Database.URL
 	cfg.Security.Issuer = orDefault(fc.Security.Issuer, fc.Server.PublicURL)
 
 	cfg.Security.TokenTTL, err = parseDurationOr(fc.Security.TokenTTL, defaultTokenTTL)
@@ -154,6 +170,18 @@ func (c *Config) validate() error {
 	if c.Security.Issuer == "" {
 		return fmt.Errorf("security.issuer is required")
 	}
+	switch c.Database.Driver {
+	case "sqlite":
+		if c.Database.Path == "" {
+			return fmt.Errorf("database.path is required for the sqlite driver")
+		}
+	case "postgres":
+		if c.Database.URL == "" {
+			return fmt.Errorf("database.url is required for the postgres driver")
+		}
+	default:
+		return fmt.Errorf("database.driver %q is not supported (want sqlite or postgres)", c.Database.Driver)
+	}
 	return nil
 }
 
@@ -169,8 +197,14 @@ func applyEnvOverrides(fc *fileConfig) {
 	if v := os.Getenv("OMNI_SERVER_PUBLIC_URL"); v != "" {
 		fc.Server.PublicURL = v
 	}
+	if v := os.Getenv("OMNI_DATABASE_DRIVER"); v != "" {
+		fc.Database.Driver = v
+	}
 	if v := os.Getenv("OMNI_DATABASE_PATH"); v != "" {
 		fc.Database.Path = v
+	}
+	if v := os.Getenv("OMNI_DATABASE_URL"); v != "" {
+		fc.Database.URL = v
 	}
 	if v := os.Getenv("OMNI_SECURITY_ISSUER"); v != "" {
 		fc.Security.Issuer = v

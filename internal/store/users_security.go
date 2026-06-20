@@ -5,32 +5,24 @@ import (
 	"time"
 )
 
-// RecordFailedLogin increments the failed-login counter and, when it reaches
-// threshold, locks the account until lockUntil. Returns the new count.
+// RecordFailedLogin atomically increments the failed-login counter and, when it
+// reaches threshold, locks the account until lockUntil. It returns the new
+// count. The increment and conditional lock are a single UPDATE so the path is
+// race-free on a real connection pool (Postgres), not just under SQLite's
+// single writer.
 func (d *DB) RecordFailedLogin(ctx context.Context, id string, threshold int, lockUntil time.Time) (int, error) {
-	tx, err := d.sql.BeginTx(ctx, nil)
-	if err != nil {
+	if _, err := d.sql.ExecContext(ctx, `
+		UPDATE users
+		SET failed_login_count = failed_login_count + 1,
+		    locked_until = CASE WHEN failed_login_count + 1 >= ? THEN ? ELSE locked_until END,
+		    updated_at = ?
+		WHERE id = ?`,
+		threshold, lockUntil.UTC(), time.Now().UTC(), id); err != nil {
 		return 0, err
 	}
-	defer tx.Rollback()
-
 	var count int
-	if err := tx.QueryRowContext(ctx,
+	if err := d.sql.QueryRowContext(ctx,
 		`SELECT failed_login_count FROM users WHERE id = ?`, id).Scan(&count); err != nil {
-		return 0, err
-	}
-	count++
-
-	var locked any
-	if count >= threshold {
-		locked = lockUntil.UTC()
-	}
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE users SET failed_login_count = ?, locked_until = ?, updated_at = ? WHERE id = ?`,
-		count, locked, time.Now().UTC(), id); err != nil {
-		return 0, err
-	}
-	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
 	return count, nil

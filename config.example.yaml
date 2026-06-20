@@ -10,13 +10,25 @@ server:
   public_url: https://identity.omni.local
 
 database:
+  # driver: sqlite (default, single-binary) or postgres (HA / multi-instance).
+  driver: sqlite
+  # SQLite database file (used when driver = sqlite).
   path: ./omni-identity.db
+  # Postgres connection URL (used when driver = postgres), e.g.
+  #   postgres://user:pass@db-host:5432/omni?sslmode=require
+  # Or set OMNI_DATABASE_DRIVER=postgres and OMNI_DATABASE_URL=...
+  url: ""
 
 security:
   # Defaults to public_url if omitted.
   issuer: https://identity.omni.local
   token_ttl: 15m
   refresh_token_ttl: 720h
+  # Account protection.
+  max_failed_logins: 5
+  lockout_duration: 15m
+  password_min_length: 12
+  # session_idle_timeout: 30m   # 0/unset disables idle expiry
 
 cookies:
   # Set to false only for local http:// development.

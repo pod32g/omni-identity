@@ -61,7 +61,9 @@ server:
   public_url: https://identity.omni.local   # required; used as the issuer base
 
 database:
-  path: ./omni-identity.db
+  driver: sqlite                              # sqlite (default) or postgres
+  path: ./omni-identity.db                    # used when driver = sqlite
+  url: ""                                      # postgres DSN when driver = postgres
 
 security:
   issuer: https://identity.omni.local        # defaults to public_url
@@ -74,6 +76,25 @@ cookies:
 
 Any value can be overridden by environment variables, e.g. `OMNI_SERVER_PORT`,
 `OMNI_DATABASE_PATH`, `OMNI_SECURITY_ISSUER`, `OMNI_COOKIES_SECURE`.
+
+### Database backend
+
+SQLite is the zero-config default and keeps the single-binary story. For
+high-availability / multiple stateless instances behind a load balancer, use
+**Postgres** (pure-Go pgx driver — no extra CGO):
+
+```yaml
+database:
+  driver: postgres
+  url: postgres://user:pass@db-host:5432/omni?sslmode=require
+```
+
+or `OMNI_DATABASE_DRIVER=postgres` + `OMNI_DATABASE_URL=...`. Migrations run
+automatically on startup for whichever backend is configured. Run the Postgres
+store integration test with `make test-postgres` (requires Docker), or set
+`OMNI_TEST_POSTGRES_URL` and run `go test ./internal/store/ -run Postgres`.
+SQLite-specific maintenance (`backup`, `integrity`) is not available on Postgres
+— use native tooling (`pg_dump`, etc.).
 
 > The `issuer` must be the public base URL clients use to reach the server; all
 > discovery endpoint URLs are derived from it.

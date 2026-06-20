@@ -23,9 +23,11 @@ func (d *DB) GetOrCreateAppSecret(ctx context.Context, gen func() (string, error
 	if err != nil {
 		return "", err
 	}
-	if _, err := d.sql.ExecContext(ctx,
-		`INSERT OR IGNORE INTO app_secrets (id, key_b64, created_at) VALUES (1, ?, ?)`,
-		key, time.Now().UTC()); err != nil {
+	insert := `INSERT OR IGNORE INTO app_secrets (id, key_b64, created_at) VALUES (1, ?, ?)`
+	if d.dialect == dialectPostgres {
+		insert = `INSERT INTO app_secrets (id, key_b64, created_at) VALUES (1, ?, ?) ON CONFLICT (id) DO NOTHING`
+	}
+	if _, err := d.sql.ExecContext(ctx, insert, key, time.Now().UTC()); err != nil {
 		return "", err
 	}
 	// Re-read in case a concurrent caller won the insert race.

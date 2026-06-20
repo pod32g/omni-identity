@@ -37,7 +37,7 @@ func (d *DB) RotateRefreshToken(ctx context.Context, oldID string, newRT *model.
 	defer tx.Rollback()
 
 	res, err := tx.ExecContext(ctx,
-		`UPDATE refresh_tokens SET revoked = 1 WHERE id = ? AND revoked = 0`, oldID)
+		`UPDATE refresh_tokens SET revoked = TRUE WHERE id = ? AND revoked = FALSE`, oldID)
 	if err != nil {
 		return false, err
 	}
@@ -75,7 +75,7 @@ func (d *DB) GetRefreshTokenByHash(ctx context.Context, hash string) (*model.Ref
 // RevokeRefreshToken marks a single refresh token revoked.
 func (d *DB) RevokeRefreshToken(ctx context.Context, id string) error {
 	_, err := d.sql.ExecContext(ctx,
-		`UPDATE refresh_tokens SET revoked = 1 WHERE id = ?`, id)
+		`UPDATE refresh_tokens SET revoked = TRUE WHERE id = ?`, id)
 	return err
 }
 
@@ -83,7 +83,7 @@ func (d *DB) RevokeRefreshToken(ctx context.Context, id string) error {
 // user+client pair (used for reuse detection and logout-all).
 func (d *DB) RevokeRefreshTokensForUserClient(ctx context.Context, userID, clientID string) error {
 	_, err := d.sql.ExecContext(ctx,
-		`UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ? AND client_id = ?`,
+		`UPDATE refresh_tokens SET revoked = TRUE WHERE user_id = ? AND client_id = ?`,
 		userID, clientID)
 	return err
 }

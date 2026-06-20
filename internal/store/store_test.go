@@ -62,7 +62,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 	defer db2.Close()
 
-	v, err := currentVersion(db2.sql)
+	v, err := currentVersion(db2.sql.DB)
 	if err != nil {
 		t.Fatalf("currentVersion: %v", err)
 	}

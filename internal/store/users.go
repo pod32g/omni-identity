@@ -77,7 +77,7 @@ func (d *DB) SetUserDisabled(ctx context.Context, id string, disabled bool) erro
 func (d *DB) CountAdmins(ctx context.Context) (int, error) {
 	var n int
 	err := d.sql.QueryRowContext(ctx,
-		`SELECT count(*) FROM users WHERE is_admin = 1 AND disabled = 0`).Scan(&n)
+		`SELECT count(*) FROM users WHERE is_admin = TRUE AND disabled = FALSE`).Scan(&n)
 	return n, err
 }
 

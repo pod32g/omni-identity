@@ -103,7 +103,7 @@ func runServe(args []string) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	db, err := store.Open(cfg.Database.Path)
+	db, err := store.OpenWith(cfg.Database.Driver, cfg.Database.DSN())
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}

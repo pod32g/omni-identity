@@ -43,7 +43,7 @@ func (d *DB) ConsumeAuthCode(ctx context.Context, codeHash string) (*model.Autho
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE authorization_codes SET used = 1 WHERE code_hash = ?`, codeHash); err != nil {
+		`UPDATE authorization_codes SET used = TRUE WHERE code_hash = ?`, codeHash); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(); err != nil {

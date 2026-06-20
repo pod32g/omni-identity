@@ -44,7 +44,7 @@ func (d *DB) ListSigningKeys(ctx context.Context) ([]model.SigningKey, error) {
 func (d *DB) GetActiveSigningKey(ctx context.Context, alg string) (*model.SigningKey, error) {
 	row := d.sql.QueryRowContext(ctx, `
 		SELECT `+signingKeyColumns+` FROM signing_keys
-		WHERE alg = ? AND active = 1
+		WHERE alg = ? AND active = TRUE
 		ORDER BY created_at DESC LIMIT 1`, alg)
 	return scanSigningKey(row)
 }

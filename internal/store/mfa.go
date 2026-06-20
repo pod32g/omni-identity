@@ -24,7 +24,7 @@ func (d *DB) ReplaceRecoveryCodes(ctx context.Context, userID string, codes []mo
 	for _, c := range codes {
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO mfa_recovery_codes (id, user_id, code_hash, used, created_at)
-			VALUES (?, ?, ?, 0, ?)`,
+			VALUES (?, ?, ?, FALSE, ?)`,
 			c.ID, userID, c.CodeHash, c.CreatedAt.UTC()); err != nil {
 			return err
 		}
@@ -36,8 +36,8 @@ func (d *DB) ReplaceRecoveryCodes(ctx context.Context, userID string, codes []mo
 // returns true if a code was consumed.
 func (d *DB) ConsumeRecoveryCode(ctx context.Context, userID, codeHash string) (bool, error) {
 	res, err := d.sql.ExecContext(ctx, `
-		UPDATE mfa_recovery_codes SET used = 1
-		WHERE user_id = ? AND code_hash = ? AND used = 0`,
+		UPDATE mfa_recovery_codes SET used = TRUE
+		WHERE user_id = ? AND code_hash = ? AND used = FALSE`,
 		userID, codeHash)
 	if err != nil {
 		return false, err
@@ -50,7 +50,7 @@ func (d *DB) ConsumeRecoveryCode(ctx context.Context, userID, codeHash string) (
 func (d *DB) CountRecoveryCodes(ctx context.Context, userID string) (int, error) {
 	var n int
 	err := d.sql.QueryRowContext(ctx,
-		`SELECT count(*) FROM mfa_recovery_codes WHERE user_id = ? AND used = 0`, userID).Scan(&n)
+		`SELECT count(*) FROM mfa_recovery_codes WHERE user_id = ? AND used = FALSE`, userID).Scan(&n)
 	return n, err
 }
 
