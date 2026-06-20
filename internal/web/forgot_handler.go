@@ -64,8 +64,10 @@ func (s *Server) handleForgotSubmit(w http.ResponseWriter, r *http.Request) {
 func (s *Server) dispatchReset(identifier, ip, ua string) {
 	ctx := context.Background()
 	user := s.lookupUser(ctx, identifier)
-	if user == nil || user.Disabled {
-		return // silent: no enumeration
+	if user == nil || user.Disabled || !user.IsLocal() {
+		// Silent: no enumeration. Directory-managed (e.g. LDAP) accounts have no
+		// local password to reset, so we issue no token or email for them either.
+		return
 	}
 	link, err := s.issuePasswordToken(ctx, user.ID, model.PasswordTokenReset, resetTokenTTL)
 	if err != nil {

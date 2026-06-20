@@ -93,6 +93,12 @@ func (s *Server) handleAccountPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user := currentUser(r)
+	// Directory-managed accounts have no local password to change.
+	if !user.IsLocal() {
+		s.renderAccount(w, r, http.StatusForbidden,
+			"Your password is managed by your directory and can't be changed here.", "")
+		return
+	}
 	current := r.PostFormValue("current_password")
 	next := r.PostFormValue("new_password")
 

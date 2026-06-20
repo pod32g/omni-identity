@@ -79,3 +79,60 @@ func TestLoginLocalUserUnaffectedByConnector(t *testing.T) {
 		t.Fatal("expected a session cookie for local login")
 	}
 }
+
+// --- local-password flows are disabled for directory-managed users ---
+
+func TestForgotSkipsDirectoryUser(t *testing.T) {
+	srv := testServer(t)
+	ms := newMockSender()
+	srv.mailer = ms
+	ctx := context.Background()
+	if _, err := srv.db.UpsertExternalUser(ctx, "ldap", "uid=jane,dc=x", "jane", "jane@x", "Jane", false); err != nil {
+		t.Fatal(err)
+	}
+
+	// A reset request for the LDAP user must not dispatch any email/token.
+	srv.dispatchReset("jane@x", "1.2.3.4", "test")
+	select {
+	case e := <-ms.sent:
+		t.Fatalf("directory user should get no reset email, got %+v", e)
+	default:
+	}
+
+	// Sanity: a local user still does.
+	createUser(t, srv, "bob", "Sup3r$ecretPW!", false)
+	srv.dispatchReset("bob", "1.2.3.4", "test")
+	select {
+	case <-ms.sent: // good
+	default:
+		t.Fatal("local user should receive a reset email")
+	}
+}
+
+func TestAccountPasswordBlockedForDirectoryUser(t *testing.T) {
+	srv := testServer(t)
+	u, err := srv.db.UpsertExternalUser(context.Background(), "ldap", "uid=jane,dc=x", "jane", "jane@x", "Jane", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sid := startSession(t, srv, u.ID)
+	rr := adminPost(srv, "/account/password", url.Values{
+		"current_password": {"x"}, "new_password": {"N3w$ecretPW!!"},
+	}, sid)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("want 403 for directory user, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAdminResetLinkBlockedForDirectoryUser(t *testing.T) {
+	srv := testServer(t)
+	sid := adminSession(t, srv)
+	u, err := srv.db.UpsertExternalUser(context.Background(), "ldap", "uid=jane,dc=x", "jane", "jane@x", "Jane", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := adminPost(srv, "/admin/users/"+u.ID+"/reset-link", url.Values{}, sid)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 for directory user, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+}

@@ -91,6 +91,12 @@ func (s *Server) handleSetPasswordSubmit(w http.ResponseWriter, r *http.Request)
 		s.renderError(w, http.StatusBadRequest, "This account is no longer available.")
 		return
 	}
+	// Defensive: tokens are only ever issued for local users, but never let one
+	// set a local password on a directory-managed account.
+	if !user.IsLocal() {
+		s.renderError(w, http.StatusBadRequest, "This account is managed by an external directory.")
+		return
+	}
 	if password != confirm {
 		s.renderSetPassword(w, r, http.StatusBadRequest, raw, "The two passwords don't match.")
 		return
@@ -132,6 +138,10 @@ func (s *Server) handleAdminUserResetLink(w http.ResponseWriter, r *http.Request
 	user, err := s.db.GetUserByID(r.Context(), id)
 	if err != nil {
 		s.renderUsers(w, r, http.StatusNotFound, "User not found.")
+		return
+	}
+	if !user.IsLocal() {
+		s.renderUsers(w, r, http.StatusBadRequest, "This user is managed by an external directory; passwords can't be reset here.")
 		return
 	}
 	link, err := s.issuePasswordToken(r.Context(), user.ID, model.PasswordTokenReset, resetTokenTTL)
