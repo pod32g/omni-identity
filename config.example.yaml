@@ -33,3 +33,15 @@ security:
 cookies:
   # Set to false only for local http:// development.
   secure: true
+
+smtp:
+  # Optional. When host + from are set, self-service "Forgot password?" is
+  # enabled on the login page. Credentials live here (config/env), never in the
+  # web-editable settings. Also OMNI_SMTP_HOST / _PORT / _USERNAME / _PASSWORD /
+  # _FROM / _STARTTLS.
+  host: ""
+  port: 587
+  username: ""
+  password: ""
+  from: ""
+  starttls: true

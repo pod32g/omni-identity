@@ -9,6 +9,12 @@
 </div>
 <div class="page-body">
   {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+  {{if .SetupLink}}
+  <div class="callout">
+    <strong>{{.SetupLinkLabel}}</strong>
+    <code>{{.SetupLink}}</code>
+  </div>
+  {{end}}
 
   <div class="panel">
     <table class="omni">
@@ -45,9 +51,13 @@
               <button class="btn sm" type="submit">Reset 2FA</button>
             </form>
             {{end}}
+            <form method="post" action="/admin/users/{{.ID}}/reset-link">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button class="btn sm" type="submit">Reset link</button>
+            </form>
             <form method="post" action="/admin/users/{{.ID}}/password" class="inline">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-              <input name="password" type="password" placeholder="new password" minlength="8" required style="width:150px">
+              <input name="password" type="password" placeholder="set password" minlength="8" required style="width:140px">
               <button class="btn sm" type="submit">Set</button>
             </form>
           </td>
@@ -64,7 +74,10 @@
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
         <label class="field">Username <input name="username" required></label>
         <label class="field">Email <input name="email" type="email" required></label>
-        <label class="field">Password <input name="password" type="password" minlength="8" required></label>
+        <label class="field">Password <span class="muted">(leave blank if sending a setup link)</span>
+          <input name="password" type="password" minlength="8">
+        </label>
+        <label class="field inline"><input type="checkbox" name="invite"> Let the user choose their own password (generate a one-time setup link)</label>
         <label class="field inline"><input type="checkbox" name="is_admin"> Administrator</label>
         <button class="btn primary" type="submit" style="align-self:flex-start">Create user</button>
       </form>

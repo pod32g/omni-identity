@@ -1,0 +1,27 @@
+{{define "title"}}Reset password · Omni Identity{{end}}
+{{define "content"}}
+<div class="auth-wrap">
+  <div class="auth-card">
+    {{template "omni-brand" .}}
+    <div class="panel">
+      <h1>Reset your password</h1>
+      {{if .Sent}}
+        <div class="alert success" style="margin-top:14px">If an account matches what you entered, we've sent a reset link to its email address.</div>
+        <p class="muted" style="margin-top:16px"><a href="/login">Back to sign in</a></p>
+      {{else}}
+        <p class="muted">Enter your username or email and we'll send a reset link.</p>
+        {{if .Error}}<div class="alert error" style="margin-top:14px">{{.Error}}</div>{{end}}
+        <form class="stack" method="post" action="/forgot">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <label class="field">Username or email
+            <input name="identifier" autocomplete="username" autofocus required>
+          </label>
+          <button class="btn primary block" type="submit">Send reset link</button>
+        </form>
+        <p class="muted" style="margin-top:16px"><a href="/login">Back to sign in</a></p>
+      {{end}}
+    </div>
+    {{template "omni-footer" .}}
+  </div>
+</div>
+{{end}}

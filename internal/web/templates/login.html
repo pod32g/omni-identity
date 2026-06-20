@@ -19,6 +19,7 @@
         <h1>Sign in</h1>
         <p class="muted">Sign in to continue.</p>
       {{end}}
+      {{if .Notice}}<div class="alert success" style="margin-top:14px">{{.Notice}}</div>{{end}}
       {{if .Error}}<div class="alert error" style="margin-top:14px">{{.Error}}</div>{{end}}
       <form class="stack" method="post" action="/login">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
@@ -32,6 +33,7 @@
         </label>
         <button class="btn primary block" type="submit">Sign in</button>
       </form>
+      {{if .ForgotEnabled}}<p class="muted" style="margin-top:14px"><a href="/forgot">Forgot password?</a></p>{{end}}
     </div>
     {{template "omni-footer" .}}
   </div>

@@ -61,11 +61,13 @@ func (s *Server) handleAdminHome(w http.ResponseWriter, r *http.Request) {
 // --- users ---
 
 type adminUsersPage struct {
-	CSRFToken string
-	Me        *model.User
-	Active    string
-	Users     []model.User
-	Error     string
+	CSRFToken      string
+	Me             *model.User
+	Active         string
+	Users          []model.User
+	Error          string
+	SetupLink      string // one-time activation/reset link, shown once
+	SetupLinkLabel string
 }
 
 func (s *Server) renderUsers(w http.ResponseWriter, r *http.Request, status int, errMsg string) {
@@ -76,6 +78,19 @@ func (s *Server) renderUsers(w http.ResponseWriter, r *http.Request, status int,
 		Active:    "users",
 		Users:     users,
 		Error:     errMsg,
+	})
+}
+
+// renderUsersWithLink renders the users page with a one-time link banner.
+func (s *Server) renderUsersWithLink(w http.ResponseWriter, r *http.Request, link, label string) {
+	users, _ := s.db.ListUsers(r.Context())
+	s.tmpl.render(w, http.StatusOK, "admin_users", adminUsersPage{
+		CSRFToken:      auth.CSRFToken(w, r, s.cookieSecure()),
+		Me:             currentUser(r),
+		Active:         "users",
+		Users:          users,
+		SetupLink:      link,
+		SetupLinkLabel: label,
 	})
 }
 
@@ -96,15 +111,27 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.renderUsers(w, r, http.StatusBadRequest, "Username and email are required.")
 		return
 	}
-	if msg := auth.ValidatePassword(password, username, email, s.passwordMinLength()); msg != "" {
-		s.renderUsers(w, r, http.StatusBadRequest, msg)
-		return
+
+	// Invite mode: create the account with no usable password and hand the admin
+	// a one-time setup link for the user to choose their own password.
+	invite := r.PostFormValue("invite") == "on" || r.PostFormValue("invite") == "true"
+
+	var hash string
+	if invite {
+		hash = "" // empty hash never verifies → password login disabled until set
+	} else {
+		if msg := auth.ValidatePassword(password, username, email, s.passwordPolicy()); msg != "" {
+			s.renderUsers(w, r, http.StatusBadRequest, msg)
+			return
+		}
+		h, err := auth.HashPassword(password)
+		if err != nil {
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		hash = h
 	}
-	hash, err := auth.HashPassword(password)
-	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
+
 	now := time.Now().UTC()
 	u := &model.User{
 		ID: uuid.NewString(), Username: username, Email: email,
@@ -114,6 +141,18 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.renderUsers(w, r, http.StatusBadRequest, "Could not create user (username or email may be taken).")
 		return
 	}
+
+	if invite {
+		link, err := s.issuePasswordToken(r.Context(), u.ID, model.PasswordTokenActivation, activationTokenTTL)
+		if err != nil {
+			s.renderUsers(w, r, http.StatusInternalServerError, "User created, but the setup link could not be generated.")
+			return
+		}
+		s.audit(r, evtUserInvited, auditEntry{actorUserID: actorID(r), username: username, success: true})
+		s.renderUsersWithLink(w, r, link, "Setup link for "+username+" (valid 72 hours, single use):")
+		return
+	}
+
 	s.audit(r, evtUserCreated, auditEntry{actorUserID: actorID(r), username: username, success: true, detail: "admin=" + boolStr(isAdmin)})
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
@@ -154,7 +193,7 @@ func (s *Server) handleAdminUserPassword(w http.ResponseWriter, r *http.Request)
 	}
 	id := r.PathValue("id")
 	password := r.PostFormValue("password")
-	if msg := auth.ValidatePassword(password, "", "", s.passwordMinLength()); msg != "" {
+	if msg := auth.ValidatePassword(password, "", "", s.passwordPolicy()); msg != "" {
 		s.renderUsers(w, r, http.StatusBadRequest, msg)
 		return
 	}

@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pod32g/omni-identity/internal/auth"
 	"github.com/pod32g/omni-identity/internal/config"
 	"github.com/pod32g/omni-identity/internal/model"
 )
@@ -20,9 +21,24 @@ type SettingsView struct {
 	MaxFailedLogins    int
 	LockoutDuration    time.Duration
 	PasswordMinLength  int
+	RequireUpper       bool
+	RequireLower       bool
+	RequireNumber      bool
+	RequireSymbol      bool
 	SessionIdleTimeout time.Duration
 	SessionLifetime    time.Duration
 	CookieSecure       bool
+}
+
+// PasswordPolicy renders the live complexity policy.
+func (v SettingsView) PasswordPolicy() auth.PasswordPolicy {
+	return auth.PasswordPolicy{
+		MinLength:     v.PasswordMinLength,
+		RequireUpper:  v.RequireUpper,
+		RequireLower:  v.RequireLower,
+		RequireNumber: v.RequireNumber,
+		RequireSymbol: v.RequireSymbol,
+	}
 }
 
 // settingsStore is the persistence surface the service needs.
@@ -53,6 +69,7 @@ func newSettingsService(db settingsStore, cfg *config.Config, defaultSessionLife
 		MaxFailedLogins:    cfg.Security.MaxFailedLogins,
 		LockoutDuration:    cfg.Security.LockoutDuration,
 		PasswordMinLength:  cfg.Security.PasswordMinLength,
+		RequireNumber:      true,
 		SessionIdleTimeout: cfg.Security.SessionIdleTimeout,
 		SessionLifetime:    defaultSessionLifetime,
 		CookieSecure:       cfg.Cookies.Secure,
@@ -120,6 +137,10 @@ func viewFromModel(m *model.Settings, def SettingsView) SettingsView {
 		MaxFailedLogins:    m.MaxFailedLogins,
 		LockoutDuration:    parseDurOr(m.LockoutDuration, def.LockoutDuration),
 		PasswordMinLength:  m.PasswordMinLength,
+		RequireUpper:       m.RequireUpper,
+		RequireLower:       m.RequireLower,
+		RequireNumber:      m.RequireNumber,
+		RequireSymbol:      m.RequireSymbol,
 		SessionIdleTimeout: parseDurOr(m.SessionIdleTimeout, def.SessionIdleTimeout),
 		SessionLifetime:    parseDurOr(m.SessionLifetime, def.SessionLifetime),
 		CookieSecure:       m.CookieSecure,
@@ -136,6 +157,10 @@ func (v SettingsView) toModel() *model.Settings {
 		MaxFailedLogins:    v.MaxFailedLogins,
 		LockoutDuration:    v.LockoutDuration.String(),
 		PasswordMinLength:  v.PasswordMinLength,
+		RequireUpper:       v.RequireUpper,
+		RequireLower:       v.RequireLower,
+		RequireNumber:      v.RequireNumber,
+		RequireSymbol:      v.RequireSymbol,
 		SessionIdleTimeout: v.SessionIdleTimeout.String(),
 		SessionLifetime:    v.SessionLifetime.String(),
 		CookieSecure:       v.CookieSecure,

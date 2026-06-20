@@ -224,6 +224,27 @@ func TestPostgresBackendIntegration(t *testing.T) {
 		t.Errorf("settings round-trip: %+v", st2)
 	}
 
+	// Password complexity columns default + one-time token round-trip.
+	if st3, _ := db.GetSettings(ctx); !st3.RequireNumber {
+		t.Error("require_number should default true")
+	}
+	ptok := &model.PasswordToken{
+		ID: uuid.NewString(), UserID: u.ID, TokenHash: "pth",
+		Purpose: model.PasswordTokenReset, ExpiresAt: now.Add(time.Hour), CreatedAt: now,
+	}
+	if err := db.CreatePasswordToken(ctx, ptok); err != nil {
+		t.Fatalf("CreatePasswordToken: %v", err)
+	}
+	if got, err := db.GetValidPasswordToken(ctx, "pth"); err != nil || got.Purpose != model.PasswordTokenReset {
+		t.Fatalf("GetValidPasswordToken: %+v err=%v", got, err)
+	}
+	if _, ok, err := db.ConsumePasswordToken(ctx, "pth"); err != nil || !ok {
+		t.Fatalf("ConsumePasswordToken: ok=%v err=%v", ok, err)
+	}
+	if _, ok, _ := db.ConsumePasswordToken(ctx, "pth"); ok {
+		t.Error("password token must be single-use")
+	}
+
 	// SQLite-only maintenance helpers must refuse on Postgres.
 	if err := db.BackupTo(ctx, "/tmp/x"); err == nil {
 		t.Error("BackupTo should be rejected on postgres")

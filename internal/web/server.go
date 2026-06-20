@@ -11,6 +11,7 @@ import (
 	"github.com/pod32g/omni-identity/internal/auth"
 	"github.com/pod32g/omni-identity/internal/config"
 	"github.com/pod32g/omni-identity/internal/crypto"
+	"github.com/pod32g/omni-identity/internal/email"
 	"github.com/pod32g/omni-identity/internal/store"
 	"github.com/pod32g/omni-identity/internal/tokens"
 )
@@ -20,20 +21,22 @@ const sessionTTL = 12 * time.Hour
 
 // Server holds shared dependencies and the route mux.
 type Server struct {
-	cfg       *config.Config
-	db        *store.DB
-	sessions  *auth.SessionManager
-	keys      *tokens.KeyManager
-	issuer    *tokens.Issuer
-	tmpl      *templates
-	branding  *brandingService
-	settings  *settingsService
-	loginRate *rateLimiter
-	mfaRate   *rateLimiter
-	enc       *crypto.Encryptor
-	metrics   *metrics
-	mux       *http.ServeMux
-	handler   http.Handler
+	cfg        *config.Config
+	db         *store.DB
+	sessions   *auth.SessionManager
+	keys       *tokens.KeyManager
+	issuer     *tokens.Issuer
+	tmpl       *templates
+	branding   *brandingService
+	settings   *settingsService
+	loginRate  *rateLimiter
+	mfaRate    *rateLimiter
+	forgotRate *rateLimiter
+	mailer     email.Sender
+	enc        *crypto.Encryptor
+	metrics    *metrics
+	mux        *http.ServeMux
+	handler    http.Handler
 }
 
 // NewServer builds a Server with all routes registered. It ensures signing keys
@@ -69,19 +72,24 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 	sessions.SetConfigProvider(settings)
 
 	s := &Server{
-		cfg:       cfg,
-		db:        db,
-		sessions:  sessions,
-		keys:      km,
-		issuer:    issuer,
-		tmpl:      tmpl,
-		branding:  newBrandingService(db.GetBranding),
-		settings:  settings,
-		loginRate: newRateLimiter(loginMaxAttempts, loginWindow),
-		mfaRate:   newRateLimiter(loginMaxAttempts, loginWindow),
-		enc:       enc,
-		metrics:   newMetrics(),
-		mux:       http.NewServeMux(),
+		cfg:        cfg,
+		db:         db,
+		sessions:   sessions,
+		keys:       km,
+		issuer:     issuer,
+		tmpl:       tmpl,
+		branding:   newBrandingService(db.GetBranding),
+		settings:   settings,
+		loginRate:  newRateLimiter(loginMaxAttempts, loginWindow),
+		mfaRate:    newRateLimiter(loginMaxAttempts, loginWindow),
+		forgotRate: newRateLimiter(loginMaxAttempts, loginWindow),
+		mailer: &email.SMTPSender{
+			Host: cfg.SMTP.Host, Port: cfg.SMTP.Port, Username: cfg.SMTP.Username,
+			Password: cfg.SMTP.Password, From: cfg.SMTP.From, StartTLS: cfg.SMTP.StartTLS,
+		},
+		enc:     enc,
+		metrics: newMetrics(),
+		mux:     http.NewServeMux(),
 	}
 	// Render branding on every page; read live so admin edits take effect.
 	tmpl.brand = s.branding.Current
@@ -93,8 +101,8 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 // cookieSecure reports the live cookie Secure flag from editable settings.
 func (s *Server) cookieSecure() bool { return s.settings.Current().CookieSecure }
 
-// passwordMinLength is the live minimum password length from editable settings.
-func (s *Server) passwordMinLength() int { return s.settings.Current().PasswordMinLength }
+// passwordPolicy is the live password-complexity policy from editable settings.
+func (s *Server) passwordPolicy() auth.PasswordPolicy { return s.settings.Current().PasswordPolicy() }
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
@@ -120,6 +128,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /logout", s.handleLogout)
 	s.mux.HandleFunc("GET /setup", s.handleSetupForm)
 	s.mux.HandleFunc("POST /setup", s.handleSetupSubmit)
+	s.mux.HandleFunc("GET /set-password", s.handleSetPasswordForm)
+	s.mux.HandleFunc("POST /set-password", s.handleSetPasswordSubmit)
+	s.mux.HandleFunc("GET /forgot", s.handleForgotForm)
+	s.mux.HandleFunc("POST /forgot", s.handleForgotSubmit)
 	s.mux.HandleFunc("GET /branding/logo", s.handleBrandingLogo)
 
 	s.mux.HandleFunc("GET /account", s.requireUser(s.handleAccount))
@@ -142,6 +154,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /admin/clients/{id}/rotate", s.requireAdmin(s.handleAdminRotateClient))
 	s.mux.HandleFunc("POST /admin/users/{id}/unlock", s.requireAdmin(s.handleAdminUnlockUser))
 	s.mux.HandleFunc("POST /admin/users/{id}/mfa/reset", s.requireAdmin(s.handleAdminResetMFA))
+	s.mux.HandleFunc("POST /admin/users/{id}/reset-link", s.requireAdmin(s.handleAdminUserResetLink))
 	s.mux.HandleFunc("GET /admin/settings", s.requireAdmin(s.handleAdminSettings))
 	s.mux.HandleFunc("POST /admin/settings", s.requireAdmin(s.handleAdminUpdateBranding))
 	s.mux.HandleFunc("POST /admin/settings/logo", s.requireAdmin(s.handleAdminUploadLogo))

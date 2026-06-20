@@ -63,6 +63,24 @@ type AuditEvent struct {
 	Detail      string
 }
 
+// Password token purposes.
+const (
+	PasswordTokenActivation = "activation"
+	PasswordTokenReset      = "reset"
+)
+
+// PasswordToken is a hashed, single-use, expiring token for new-account
+// activation or password reset.
+type PasswordToken struct {
+	ID        string
+	UserID    string
+	TokenHash string
+	Purpose   string
+	Used      bool
+	ExpiresAt time.Time
+	CreatedAt time.Time
+}
+
 // RecoveryCode is a hashed, single-use MFA recovery code.
 type RecoveryCode struct {
 	ID        string
@@ -131,6 +149,10 @@ type Settings struct {
 	MaxFailedLogins    int
 	LockoutDuration    string
 	PasswordMinLength  int
+	RequireUpper       bool
+	RequireLower       bool
+	RequireNumber      bool
+	RequireSymbol      bool
 	SessionIdleTimeout string
 	SessionLifetime    string
 	CookieSecure       bool

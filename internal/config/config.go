@@ -19,7 +19,23 @@ type Config struct {
 	Database DatabaseConfig
 	Security SecurityConfig
 	Cookies  CookieConfig
+	SMTP     SMTPConfig
 }
+
+// SMTPConfig holds outbound email settings. Self-service password reset is
+// enabled only when Host and From are set. Credentials live here (config/env),
+// never in the web-editable settings.
+type SMTPConfig struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	From     string
+	StartTLS bool
+}
+
+// Enabled reports whether outbound email is configured.
+func (c SMTPConfig) Enabled() bool { return c.Host != "" && c.From != "" }
 
 // ServerConfig holds HTTP listener settings.
 type ServerConfig struct {
@@ -90,6 +106,14 @@ type fileConfig struct {
 		// Secure is a pointer so we can tell "unset" from "false".
 		Secure *bool `yaml:"secure"`
 	} `yaml:"cookies"`
+	SMTP struct {
+		Host     string `yaml:"host"`
+		Port     int    `yaml:"port"`
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+		From     string `yaml:"from"`
+		StartTLS *bool  `yaml:"starttls"`
+	} `yaml:"smtp"`
 }
 
 const (
@@ -152,6 +176,16 @@ func Load(path string) (*Config, error) {
 	cfg.Cookies.Secure = true
 	if fc.Cookies.Secure != nil {
 		cfg.Cookies.Secure = *fc.Cookies.Secure
+	}
+
+	cfg.SMTP.Host = fc.SMTP.Host
+	cfg.SMTP.Port = orDefaultInt(fc.SMTP.Port, 587)
+	cfg.SMTP.Username = fc.SMTP.Username
+	cfg.SMTP.Password = fc.SMTP.Password
+	cfg.SMTP.From = fc.SMTP.From
+	cfg.SMTP.StartTLS = true
+	if fc.SMTP.StartTLS != nil {
+		cfg.SMTP.StartTLS = *fc.SMTP.StartTLS
 	}
 
 	if err := cfg.validate(); err != nil {
@@ -234,6 +268,27 @@ func applyEnvOverrides(fc *fileConfig) {
 	if v := os.Getenv("OMNI_COOKIES_SECURE"); v != "" {
 		b := v == "true" || v == "1"
 		fc.Cookies.Secure = &b
+	}
+	if v := os.Getenv("OMNI_SMTP_HOST"); v != "" {
+		fc.SMTP.Host = v
+	}
+	if v := os.Getenv("OMNI_SMTP_PORT"); v != "" {
+		if p, err := strconv.Atoi(v); err == nil {
+			fc.SMTP.Port = p
+		}
+	}
+	if v := os.Getenv("OMNI_SMTP_USERNAME"); v != "" {
+		fc.SMTP.Username = v
+	}
+	if v := os.Getenv("OMNI_SMTP_PASSWORD"); v != "" {
+		fc.SMTP.Password = v
+	}
+	if v := os.Getenv("OMNI_SMTP_FROM"); v != "" {
+		fc.SMTP.From = v
+	}
+	if v := os.Getenv("OMNI_SMTP_STARTTLS"); v != "" {
+		b := v == "true" || v == "1"
+		fc.SMTP.StartTLS = &b
 	}
 }
 

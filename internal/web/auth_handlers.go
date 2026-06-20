@@ -14,11 +14,19 @@ import (
 )
 
 type loginPage struct {
-	CSRFToken string
-	Error     string
-	Next      string   // same-origin path for plain admin login
-	Req       string   // parked OIDC auth-request id, when arriving from /oauth2/authorize
-	App       *appView // requesting application, nil for admin login
+	CSRFToken     string
+	Error         string
+	Notice        string   // success flash (e.g. after setting a password)
+	Next          string   // same-origin path for plain admin login
+	Req           string   // parked OIDC auth-request id, when arriving from /oauth2/authorize
+	App           *appView // requesting application, nil for admin login
+	ForgotEnabled bool     // show the self-service "Forgot password?" link
+}
+
+// loginNotices maps known notice codes to user-facing messages (no free text,
+// so nothing attacker-controlled is rendered).
+var loginNotices = map[string]string{
+	"password-set": "Your password has been set. Please sign in.",
 }
 
 // appView is the requesting application's display info shown on the hosted
@@ -79,11 +87,13 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, status int, errMsg, reqID, next string, app *appView) {
 	s.tmpl.render(w, status, "login", loginPage{
-		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
-		Error:     errMsg,
-		Next:      next,
-		Req:       reqID,
-		App:       app,
+		CSRFToken:     auth.CSRFToken(w, r, s.cookieSecure()),
+		Error:         errMsg,
+		Notice:        loginNotices[r.URL.Query().Get("notice")],
+		Next:          next,
+		Req:           reqID,
+		App:           app,
+		ForgotEnabled: s.forgotEnabled(),
 	})
 }
 
@@ -293,7 +303,7 @@ func (s *Server) handleSetupSubmit(w http.ResponseWriter, r *http.Request) {
 		reRender("Username and email are required.")
 		return
 	}
-	if msg := auth.ValidatePassword(password, username, email, s.passwordMinLength()); msg != "" {
+	if msg := auth.ValidatePassword(password, username, email, s.passwordPolicy()); msg != "" {
 		reRender(msg)
 		return
 	}

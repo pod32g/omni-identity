@@ -8,8 +8,8 @@ import (
 )
 
 const settingsColumns = `issuer, public_url, token_ttl, refresh_token_ttl, max_failed_logins, ` +
-	`lockout_duration, password_min_length, session_idle_timeout, session_lifetime, ` +
-	`cookie_secure, seeded, updated_at`
+	`lockout_duration, password_min_length, require_upper, require_lower, require_number, ` +
+	`require_symbol, session_idle_timeout, session_lifetime, cookie_secure, seeded, updated_at`
 
 // GetSettings returns the single settings row (id = 1), seeded by migration.
 func (d *DB) GetSettings(ctx context.Context) (*model.Settings, error) {
@@ -18,6 +18,7 @@ func (d *DB) GetSettings(ctx context.Context) (*model.Settings, error) {
 	var s model.Settings
 	err := row.Scan(&s.Issuer, &s.PublicURL, &s.TokenTTL, &s.RefreshTokenTTL,
 		&s.MaxFailedLogins, &s.LockoutDuration, &s.PasswordMinLength,
+		&s.RequireUpper, &s.RequireLower, &s.RequireNumber, &s.RequireSymbol,
 		&s.SessionIdleTimeout, &s.SessionLifetime, &s.CookieSecure, &s.Seeded,
 		&s.UpdatedAt)
 	if err != nil {
@@ -31,11 +32,13 @@ func (d *DB) UpdateSettings(ctx context.Context, s *model.Settings) error {
 	_, err := d.sql.ExecContext(ctx, `
 		UPDATE settings SET issuer = ?, public_url = ?, token_ttl = ?,
 			refresh_token_ttl = ?, max_failed_logins = ?, lockout_duration = ?,
-			password_min_length = ?, session_idle_timeout = ?, session_lifetime = ?,
-			cookie_secure = ?, seeded = TRUE, updated_at = ?
+			password_min_length = ?, require_upper = ?, require_lower = ?,
+			require_number = ?, require_symbol = ?, session_idle_timeout = ?,
+			session_lifetime = ?, cookie_secure = ?, seeded = TRUE, updated_at = ?
 		WHERE id = 1`,
 		s.Issuer, s.PublicURL, s.TokenTTL, s.RefreshTokenTTL, s.MaxFailedLogins,
-		s.LockoutDuration, s.PasswordMinLength, s.SessionIdleTimeout,
+		s.LockoutDuration, s.PasswordMinLength, s.RequireUpper, s.RequireLower,
+		s.RequireNumber, s.RequireSymbol, s.SessionIdleTimeout,
 		s.SessionLifetime, s.CookieSecure, time.Now().UTC())
 	return err
 }

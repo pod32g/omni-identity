@@ -96,6 +96,20 @@ store integration test with `make test-postgres` (requires Docker), or set
 SQLite-specific maintenance (`backup`, `integrity`) is not available on Postgres
 — use native tooling (`pg_dump`, etc.).
 
+### Passwords, activation & reset
+
+- **Password rules** are admin-editable in **Admin → Settings**: minimum length
+  plus require-uppercase / lowercase / number / symbol toggles, applied live
+  everywhere a password is set.
+- **New user picks their own password:** create a user with "Let the user choose
+  their own password" to get a one-time, expiring **setup link** to hand over —
+  no initial password needed.
+- **Admin reset:** the per-user **Reset link** button issues a one-time reset
+  link. Setting a password via any link revokes the account's existing sessions.
+- **Self-service "Forgot password?":** enabled automatically when SMTP is
+  configured (see `smtp` config). The login page shows a reset link; submissions
+  are rate-limited and never reveal whether an account exists.
+
 ### Editable settings
 
 The `security`, `cookies`, and identity (`issuer`/`public_url`) values above are

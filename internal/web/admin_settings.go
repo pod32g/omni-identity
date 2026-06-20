@@ -32,6 +32,10 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 	next.Issuer = strings.TrimSpace(form.Get("issuer"))
 	next.PublicURL = strings.TrimSpace(form.Get("public_url"))
 	next.CookieSecure = form.Get("cookie_secure") == "on" || form.Get("cookie_secure") == "true"
+	next.RequireUpper = form.Get("require_upper") == "on"
+	next.RequireLower = form.Get("require_lower") == "on"
+	next.RequireNumber = form.Get("require_number") == "on"
+	next.RequireSymbol = form.Get("require_symbol") == "on"
 
 	// Durations.
 	var perr error

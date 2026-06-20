@@ -101,7 +101,7 @@ func (s *Server) handleAccountPassword(w http.ResponseWriter, r *http.Request) {
 		s.renderAccount(w, r, http.StatusUnauthorized, "Your current password is incorrect.", "")
 		return
 	}
-	if msg := auth.ValidatePassword(next, user.Username, user.Email, s.passwordMinLength()); msg != "" {
+	if msg := auth.ValidatePassword(next, user.Username, user.Email, s.passwordPolicy()); msg != "" {
 		s.renderAccount(w, r, http.StatusBadRequest, msg, "")
 		return
 	}

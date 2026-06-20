@@ -38,6 +38,13 @@ func (d *DB) GetUserByUsername(ctx context.Context, username string) (*model.Use
 	return scanUser(row)
 }
 
+// GetUserByEmail fetches a user by email.
+func (d *DB) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
+	row := d.sql.QueryRowContext(ctx,
+		`SELECT `+userColumns+` FROM users WHERE email = ?`, email)
+	return scanUser(row)
+}
+
 // UpdateUser updates the mutable profile fields (email, is_admin, disabled).
 func (d *DB) UpdateUser(ctx context.Context, u *model.User) error {
 	res, err := d.sql.ExecContext(ctx, `

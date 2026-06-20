@@ -73,6 +73,12 @@
         <label class="field">Password minimum length <span class="muted">(≥ 8)</span>
           <input name="password_min_length" type="number" min="8" value="{{.Settings.PasswordMinLength}}" required>
         </label>
+        <div class="field">Password must contain
+          <label class="inline" style="margin-top:6px"><input type="checkbox" name="require_upper" {{if .Settings.RequireUpper}}checked{{end}}> an uppercase letter</label>
+          <label class="inline"><input type="checkbox" name="require_lower" {{if .Settings.RequireLower}}checked{{end}}> a lowercase letter</label>
+          <label class="inline"><input type="checkbox" name="require_number" {{if .Settings.RequireNumber}}checked{{end}}> a number</label>
+          <label class="inline"><input type="checkbox" name="require_symbol" {{if .Settings.RequireSymbol}}checked{{end}}> a symbol</label>
+        </div>
       </div>
     </div>
 
