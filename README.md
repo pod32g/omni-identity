@@ -10,6 +10,9 @@ first, one binary, SQLite.
 ## Features (V1)
 
 - Local users with Argon2id password hashing
+- **LDAP / Active Directory** authentication backend (optional): sign in with
+  directory credentials, just-in-time provisioning, group→admin mapping, with
+  Omni's TOTP MFA still layered on top
 - OIDC: Authorization Code flow + **PKCE (S256)**, refresh tokens (with rotation
   & reuse detection), ID tokens, access tokens
 - **Hosted, branded login page** — unauthenticated authorization requests are
@@ -124,6 +127,43 @@ sessions; every settings change is written to the audit log.
 
 > The `issuer` must be the public base URL clients use to reach the server; all
 > discovery endpoint URLs are derived from it.
+
+### Directory / LDAP
+
+Omni can authenticate users against an external **LDAP / Active Directory**
+server, acting as an LDAP **client** (the standard pattern for an OIDC provider —
+the same role Keycloak federation, Dex, and Authelia play). It is **off by
+default**; enable it in the `ldap` config block (or `OMNI_LDAP_*` env vars).
+
+How it works:
+
+- **Search-then-bind.** Omni binds with a service account, searches `base_dn`
+  with `user_filter` for the submitted username, then re-binds as that entry's DN
+  with the submitted password to verify it. Filters are escaped (no LDAP
+  injection) and bounded by size/time limits.
+- **Schema presets.** `preset: activedirectory` or `openldap` fills in the
+  standard filters and attributes (`sAMAccountName` / `inetOrgPerson`+`uid`,
+  group object classes). Any field can be overridden explicitly.
+- **Just-in-time provisioning.** On first successful login a local mirror account
+  is created (`auth_source = ldap`, no local password) so sessions, OIDC codes,
+  refresh tokens, and the audit log all key off it; the profile and admin flag are
+  refreshed on every login.
+- **Admin via group.** Members of `admin_group_dn` become Omni admins, re-checked
+  each login.
+- **MFA still applies.** A directory user who enrolls Omni TOTP is challenged for
+  the second factor after the LDAP bind.
+- **Local password flows are disabled** for directory accounts (forgot-password,
+  set/reset link, change-password) — their password lives in the directory.
+- The bind password is a **secret**: it is read from config/env only and is never
+  shown in or settable from the web UI. **Admin → Settings** shows a read-only
+  directory status panel; the users list marks each account's source.
+
+Pluggable by design: LDAP is the first `PasswordConnector`, so additional
+external sources can be added behind the same login flow.
+
+Pure-Go (`go-ldap/ldap/v3`), so the single-binary, no-extra-CGO story holds. To
+run the gated LDAP integration test, set `OMNI_TEST_LDAP_URL` (plus the
+`OMNI_TEST_LDAP_*` bind/base/user vars) and run `go test ./internal/ldap/`.
 
 ## Run
 

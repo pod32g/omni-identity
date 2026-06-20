@@ -55,13 +55,13 @@ func TestLoginIntegration(t *testing.T) {
 		t.Skip("set OMNI_TEST_LDAP_URL to run the LDAP integration test")
 	}
 	c, err := New(Config{
-		URL:          url,
-		BindDN:       os.Getenv("OMNI_TEST_LDAP_BIND_DN"),
-		BindPassword: os.Getenv("OMNI_TEST_LDAP_BIND_PASSWORD"),
-		BaseDN:       os.Getenv("OMNI_TEST_LDAP_BASE_DN"),
-		UserFilter:   "(uid=%s)",
-		AttrUsername: "uid",
-		AttrEmail:    "mail",
+		URL:             url,
+		BindDN:          os.Getenv("OMNI_TEST_LDAP_BIND_DN"),
+		BindPassword:    os.Getenv("OMNI_TEST_LDAP_BIND_PASSWORD"),
+		BaseDN:          os.Getenv("OMNI_TEST_LDAP_BASE_DN"),
+		UserFilter:      "(uid=%s)",
+		AttrUsername:    "uid",
+		AttrEmail:       "mail",
 		AttrDisplayName: "cn",
 	})
 	if err != nil {

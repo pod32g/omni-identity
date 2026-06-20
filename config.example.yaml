@@ -45,3 +45,32 @@ smtp:
   password: ""
   from: ""
   starttls: true
+
+ldap:
+  # Optional LDAP / Active Directory authentication backend. When enabled, users
+  # sign in on the hosted login page with their directory credentials; Omni binds
+  # to verify them (search-then-bind) and just-in-time provisions a local mirror
+  # account. Omni's TOTP MFA still applies to directory users who enroll it.
+  # The bind password is a secret: it lives here (config/env) only, never in the
+  # web-editable settings. All keys override via OMNI_LDAP_* env vars.
+  enabled: false
+  # Schema preset filling in standard filters/attributes: openldap | activedirectory.
+  preset: openldap
+  url: ldaps://dc1.example.com:636        # ldap:// or ldaps://
+  start_tls: false                        # upgrade a ldap:// connection to TLS
+  # Service account used to search for the user entry. Empty => anonymous search.
+  bind_dn: "cn=svc-omni,ou=svc,dc=example,dc=com"
+  bind_password: ""                       # SECRET
+  base_dn: "ou=people,dc=example,dc=com"
+  # Members of this group become Omni admins (re-evaluated on each login). Empty
+  # => no LDAP-granted admins.
+  admin_group_dn: "cn=omni-admins,ou=groups,dc=example,dc=com"
+  # Filters/attributes below default from the preset; set them only to override:
+  user_filter: ""                         # must contain %s (the username)
+  attr_username: ""
+  attr_email: ""
+  attr_display_name: ""
+  group_filter: ""                        # %s = the user DN
+  ca_cert_file: ""                        # PEM bundle for a private CA
+  insecure_skip_verify: false             # labs only — never in production
+  timeout: 10s

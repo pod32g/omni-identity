@@ -267,8 +267,8 @@ func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status i
 			AdminGroupDN: s.cfg.LDAP.AdminGroupDN,
 		},
 		Branding: b,
-		HasLogo:   len(b.LogoBytes) > 0,
-		Error:     errMsg,
-		Saved:     saved,
+		HasLogo:  len(b.LogoBytes) > 0,
+		Error:    errMsg,
+		Saved:    saved,
 	})
 }
