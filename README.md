@@ -96,6 +96,18 @@ store integration test with `make test-postgres` (requires Docker), or set
 SQLite-specific maintenance (`backup`, `integrity`) is not available on Postgres
 — use native tooling (`pg_dump`, etc.).
 
+### Editable settings
+
+The `security`, `cookies`, and identity (`issuer`/`public_url`) values above are
+**seeded from config on first start**, then become editable from
+**Admin → Settings** and apply **live** (no restart): token/refresh TTLs, lockout
+threshold + duration, password minimum length, session lifetime + idle timeout,
+the cookie `Secure` flag, and the issuer/public URL. A "Reset to config defaults"
+action re-seeds from the current config. Infrastructure that binds at startup —
+listen host/port and the database driver/url — stays config/env and is shown
+read-only. Changing the issuer/public URL invalidates existing tokens and
+sessions; every settings change is written to the audit log.
+
 > The `issuer` must be the public base URL clients use to reach the server; all
 > discovery endpoint URLs are derived from it.
 

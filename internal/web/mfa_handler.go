@@ -38,7 +38,7 @@ func (s *Server) startMFAChallenge(w http.ResponseWriter, r *http.Request, user 
 		Value:    ch.ID,
 		Path:     "/login",
 		HttpOnly: true,
-		Secure:   s.cfg.Cookies.Secure,
+		Secure:   s.cookieSecure(),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(mfaChallengeTTL.Seconds()),
 	})
@@ -65,7 +65,7 @@ func (s *Server) clearMFACookie(w http.ResponseWriter) {
 		Value:    "",
 		Path:     "/login",
 		HttpOnly: true,
-		Secure:   s.cfg.Cookies.Secure,
+		Secure:   s.cookieSecure(),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
@@ -77,7 +77,7 @@ func (s *Server) handleMFAForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.tmpl.render(w, http.StatusOK, "mfa", mfaPage{
-		CSRFToken: auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
+		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
 	})
 }
 
@@ -157,7 +157,7 @@ func (s *Server) verifySecondFactor(r *http.Request, user *model.User, code stri
 
 func (s *Server) renderMFA(w http.ResponseWriter, r *http.Request, status int, errMsg string) {
 	s.tmpl.render(w, status, "mfa", mfaPage{
-		CSRFToken: auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
+		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
 		Error:     errMsg,
 	})
 }

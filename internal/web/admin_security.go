@@ -39,7 +39,7 @@ func (s *Server) handleAdminAudit(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	s.tmpl.render(w, http.StatusOK, "admin_audit", adminAuditPage{
-		CSRFToken: auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
+		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
 		Me:        currentUser(r),
 		Active:    "audit",
 		Events:    views,

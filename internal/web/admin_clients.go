@@ -50,7 +50,7 @@ type adminClientDetailPage struct {
 func (s *Server) renderClients(w http.ResponseWriter, r *http.Request, status int, errMsg string) {
 	clients, _ := s.db.ListClients(r.Context())
 	s.tmpl.render(w, status, "admin_clients", adminClientsPage{
-		CSRFToken: auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
+		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
 		Me:        currentUser(r),
 		Active:    "clients",
 		Clients:   clients,
@@ -60,7 +60,7 @@ func (s *Server) renderClients(w http.ResponseWriter, r *http.Request, status in
 
 func (s *Server) renderClientDetail(w http.ResponseWriter, r *http.Request, status int, c *model.Client, newSecret, errMsg string) {
 	s.tmpl.render(w, status, "admin_client_detail", adminClientDetailPage{
-		CSRFToken:          auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
+		CSRFToken:          auth.CSRFToken(w, r, s.cookieSecure()),
 		Me:                 currentUser(r),
 		Active:             "clients",
 		Client:             c,

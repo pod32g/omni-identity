@@ -24,6 +24,15 @@ type SessionStore interface {
 	TouchSession(ctx context.Context, id string, at time.Time) error
 }
 
+// SessionConfig supplies the cookie Secure flag, session lifetime, and idle
+// timeout at use-time, allowing them to be changed live (e.g. from
+// admin-editable settings).
+type SessionConfig interface {
+	Secure() bool
+	Lifetime() time.Duration
+	IdleTimeout() time.Duration
+}
+
 // SessionManager issues, reads, and destroys browser sessions backed by a store
 // and an opaque session cookie.
 type SessionManager struct {
@@ -31,6 +40,7 @@ type SessionManager struct {
 	secure      bool
 	ttl         time.Duration
 	idleTimeout time.Duration // 0 disables idle expiry
+	cfg         SessionConfig // when non-nil, overrides the static fields live
 }
 
 // NewSessionManager builds a SessionManager. secure controls the cookie Secure
@@ -39,8 +49,33 @@ func NewSessionManager(s SessionStore, secure bool, ttl time.Duration) *SessionM
 	return &SessionManager{store: s, secure: secure, ttl: ttl}
 }
 
+// SetConfigProvider makes the manager read its cookie Secure flag, lifetime, and
+// idle timeout from cfg at use-time instead of the static fields.
+func (m *SessionManager) SetConfigProvider(cfg SessionConfig) { m.cfg = cfg }
+
 // SetIdleTimeout configures idle-session expiry (0 disables it).
 func (m *SessionManager) SetIdleTimeout(d time.Duration) { m.idleTimeout = d }
+
+func (m *SessionManager) secureCookie() bool {
+	if m.cfg != nil {
+		return m.cfg.Secure()
+	}
+	return m.secure
+}
+
+func (m *SessionManager) lifetime() time.Duration {
+	if m.cfg != nil {
+		return m.cfg.Lifetime()
+	}
+	return m.ttl
+}
+
+func (m *SessionManager) idle() time.Duration {
+	if m.cfg != nil {
+		return m.cfg.IdleTimeout()
+	}
+	return m.idleTimeout
+}
 
 // Issue creates a session for userID with the given auth methods (amr),
 // persists it, and sets the session cookie. Any session referenced by the
@@ -58,7 +93,7 @@ func (m *SessionManager) Issue(w http.ResponseWriter, r *http.Request, userID, a
 		CSRFSecret: RandomToken(32),
 		UserAgent:  r.UserAgent(),
 		CreatedAt:  now,
-		ExpiresAt:  now.Add(m.ttl),
+		ExpiresAt:  now.Add(m.lifetime()),
 		LastSeenAt: now,
 		AMR:        amr,
 	}
@@ -70,10 +105,10 @@ func (m *SessionManager) Issue(w http.ResponseWriter, r *http.Request, userID, a
 		Value:    sess.ID,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   m.secure,
+		Secure:   m.secureCookie(),
 		SameSite: http.SameSiteLaxMode,
 		Expires:  sess.ExpiresAt,
-		MaxAge:   int(m.ttl.Seconds()),
+		MaxAge:   int(m.lifetime().Seconds()),
 	})
 	return sess, nil
 }
@@ -95,12 +130,12 @@ func (m *SessionManager) Current(r *http.Request) (*model.Session, error) {
 		return nil, err
 	}
 	now := time.Now().UTC()
-	if m.idleTimeout > 0 {
+	if m.idle() > 0 {
 		last := sess.LastSeenAt
 		if last.IsZero() {
 			last = sess.CreatedAt
 		}
-		if now.Sub(last) > m.idleTimeout {
+		if now.Sub(last) > m.idle() {
 			_ = m.store.DeleteSession(r.Context(), sess.ID)
 			return nil, ErrNoSession
 		}
@@ -122,7 +157,7 @@ func (m *SessionManager) Destroy(w http.ResponseWriter, r *http.Request) error {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   m.secure,
+		Secure:   m.secureCookie(),
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})

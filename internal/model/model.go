@@ -120,6 +120,24 @@ func (c *Client) Label() string {
 	}
 }
 
+// Settings holds the admin-editable runtime configuration (single global row).
+// Durations are stored as strings (Go duration syntax) and parsed by the web
+// layer, matching how the YAML config handles them.
+type Settings struct {
+	Issuer             string
+	PublicURL          string
+	TokenTTL           string
+	RefreshTokenTTL    string
+	MaxFailedLogins    int
+	LockoutDuration    string
+	PasswordMinLength  int
+	SessionIdleTimeout string
+	SessionLifetime    string
+	CookieSecure       bool
+	Seeded             bool
+	UpdatedAt          time.Time
+}
+
 // Branding holds the configurable look of the hosted pages (single global row).
 type Branding struct {
 	ProductName     string

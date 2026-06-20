@@ -71,7 +71,7 @@ type adminUsersPage struct {
 func (s *Server) renderUsers(w http.ResponseWriter, r *http.Request, status int, errMsg string) {
 	users, _ := s.db.ListUsers(r.Context())
 	s.tmpl.render(w, status, "admin_users", adminUsersPage{
-		CSRFToken: auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
+		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
 		Me:        currentUser(r),
 		Active:    "users",
 		Users:     users,
@@ -96,7 +96,7 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.renderUsers(w, r, http.StatusBadRequest, "Username and email are required.")
 		return
 	}
-	if msg := auth.ValidatePassword(password, username, email, s.cfg.Security.PasswordMinLength); msg != "" {
+	if msg := auth.ValidatePassword(password, username, email, s.passwordMinLength()); msg != "" {
 		s.renderUsers(w, r, http.StatusBadRequest, msg)
 		return
 	}
@@ -154,7 +154,7 @@ func (s *Server) handleAdminUserPassword(w http.ResponseWriter, r *http.Request)
 	}
 	id := r.PathValue("id")
 	password := r.PostFormValue("password")
-	if msg := auth.ValidatePassword(password, "", "", s.cfg.Security.PasswordMinLength); msg != "" {
+	if msg := auth.ValidatePassword(password, "", "", s.passwordMinLength()); msg != "" {
 		s.renderUsers(w, r, http.StatusBadRequest, msg)
 		return
 	}
@@ -176,17 +176,17 @@ func (s *Server) handleAdminUserPassword(w http.ResponseWriter, r *http.Request)
 // --- settings ---
 
 type adminSettingsPage struct {
-	CSRFToken  string
-	Me         *model.User
-	Active     string
-	Issuer     string
-	PublicURL  string
-	TokenTTL   string
-	RefreshTTL string
-	Branding   *model.Branding
-	HasLogo    bool
-	Error      string
-	Saved      string
+	CSRFToken string
+	Me        *model.User
+	Active    string
+	Settings  SettingsView // editable, applied live
+	Host      string       // read-only infra (boot-bound)
+	Port      int
+	DBDriver  string
+	Branding  *model.Branding
+	HasLogo   bool
+	Error     string
+	Saved     string
 }
 
 func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
@@ -199,16 +199,16 @@ func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status i
 		b = &model.Branding{ProductName: "Omni Identity"}
 	}
 	s.tmpl.render(w, status, "admin_settings", adminSettingsPage{
-		CSRFToken:  auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
-		Me:         currentUser(r),
-		Active:     "settings",
-		Issuer:     s.cfg.Security.Issuer,
-		PublicURL:  s.cfg.Server.PublicURL,
-		TokenTTL:   s.cfg.Security.TokenTTL.String(),
-		RefreshTTL: s.cfg.Security.RefreshTokenTTL.String(),
-		Branding:   b,
-		HasLogo:    len(b.LogoBytes) > 0,
-		Error:      errMsg,
-		Saved:      saved,
+		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
+		Me:        currentUser(r),
+		Active:    "settings",
+		Settings:  s.settings.Current(),
+		Host:      s.cfg.Server.Host,
+		Port:      s.cfg.Server.Port,
+		DBDriver:  s.cfg.Database.Driver,
+		Branding:  b,
+		HasLogo:   len(b.LogoBytes) > 0,
+		Error:     errMsg,
+		Saved:     saved,
 	})
 }

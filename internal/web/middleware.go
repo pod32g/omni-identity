@@ -123,7 +123,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; frame-ancestors 'none'")
 		// HSTS only when serving over HTTPS (secure cookies imply TLS).
-		if s.cfg.Cookies.Secure {
+		if s.cookieSecure() {
 			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
 		next.ServeHTTP(w, r)

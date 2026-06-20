@@ -413,7 +413,13 @@ func TestAuditRecordsLoginEvents(t *testing.T) {
 
 func TestSessionIdleTimeoutExpires(t *testing.T) {
 	srv := testServer(t)
-	srv.sessions.SetIdleTimeout(time.Minute)
+	// Idle timeout is now driven by live settings, not a static setter.
+	sv := srv.settings.Current()
+	sv.SessionIdleTimeout = time.Minute
+	if err := srv.db.UpdateSettings(context.Background(), sv.toModel()); err != nil {
+		t.Fatal(err)
+	}
+	srv.settings.Reload(context.Background())
 	user := createUser(t, srv, "alice", "correct-horse-1", false)
 
 	// A session last seen well beyond the idle window.

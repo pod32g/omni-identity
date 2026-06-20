@@ -4,12 +4,80 @@
 <div class="page-hd">
   <div class="titles">
     <h1>Settings</h1>
-    <p class="desc">Branding applies to the hosted login, consent, logout, and error pages.</p>
+    <p class="desc">Changes apply live — no restart. Infrastructure settings (host, port, database) are set via config/env.</p>
+  </div>
+  <div class="actions">
+    <form method="post" action="/admin/settings/reset" onsubmit="return confirm('Reset all settings to the config defaults?')">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button class="btn" type="submit">Reset to config defaults</button>
+    </form>
   </div>
 </div>
 <div class="page-body">
   {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
   {{if .Saved}}<div class="alert success">{{.Saved}}</div>{{end}}
+
+  <form class="stack" method="post" action="/admin/settings/system" style="margin-top:0">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+
+    <div class="panel">
+      <div class="panel-hd">Identity</div>
+      <div class="panel-bd">
+        <div class="alert error" style="margin-bottom:14px">Changing the issuer or public URL breaks previously issued access/ID tokens and requires client apps to re-read discovery. (Browser sessions and refresh tokens are unaffected.)</div>
+        <label class="field">Issuer <span class="muted">(OIDC issuer; base of all discovery URLs)</span>
+          <input name="issuer" value="{{.Settings.Issuer}}" required>
+        </label>
+        <label class="field">Public URL
+          <input name="public_url" value="{{.Settings.PublicURL}}" required>
+        </label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-hd">Tokens</div>
+      <div class="panel-bd">
+        <label class="field">Access token TTL <span class="muted">(e.g. 15m — 1m to 24h)</span>
+          <input name="token_ttl" value="{{.Settings.TokenTTL}}" required>
+        </label>
+        <label class="field">Refresh token TTL <span class="muted">(e.g. 720h — must be ≥ access TTL)</span>
+          <input name="refresh_token_ttl" value="{{.Settings.RefreshTokenTTL}}" required>
+        </label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-hd">Sessions &amp; cookies</div>
+      <div class="panel-bd">
+        <label class="field">Session lifetime <span class="muted">(absolute, e.g. 12h)</span>
+          <input name="session_lifetime" value="{{.Settings.SessionLifetime}}" required>
+        </label>
+        <label class="field">Session idle timeout <span class="muted">(e.g. 30m, or 0 to disable)</span>
+          <input name="session_idle_timeout" value="{{.Settings.SessionIdleTimeout}}">
+        </label>
+        <label class="field inline">
+          <input type="checkbox" name="cookie_secure" {{if .Settings.CookieSecure}}checked{{end}}>
+          Secure cookies <span class="muted">(required over HTTPS; disabling weakens security)</span>
+        </label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-hd">Account protection</div>
+      <div class="panel-bd">
+        <label class="field">Max failed logins before lockout <span class="muted">(≥ 1)</span>
+          <input name="max_failed_logins" type="number" min="1" value="{{.Settings.MaxFailedLogins}}" required>
+        </label>
+        <label class="field">Lockout duration <span class="muted">(e.g. 15m)</span>
+          <input name="lockout_duration" value="{{.Settings.LockoutDuration}}" required>
+        </label>
+        <label class="field">Password minimum length <span class="muted">(≥ 8)</span>
+          <input name="password_min_length" type="number" min="8" value="{{.Settings.PasswordMinLength}}" required>
+        </label>
+      </div>
+    </div>
+
+    <div><button class="btn primary" type="submit">Save settings</button></div>
+  </form>
 
   <div class="panel">
     <div class="panel-hd">Branding</div>
@@ -55,27 +123,27 @@
   </div>
 
   <div class="panel">
-    <div class="panel-hd">Provider</div>
+    <div class="panel-hd">Infrastructure <span class="muted">(read-only — set via config/env, requires restart)</span></div>
     <div class="panel-bd">
       <table class="omni">
         <tbody>
-          <tr><td class="t-tertiary" style="width:200px">Issuer</td><td><code>{{.Issuer}}</code></td></tr>
-          <tr><td class="t-tertiary">Public URL</td><td><code>{{.PublicURL}}</code></td></tr>
-          <tr><td class="t-tertiary">Access token TTL</td><td>{{.TokenTTL}}</td></tr>
-          <tr><td class="t-tertiary">Refresh token TTL</td><td>{{.RefreshTTL}}</td></tr>
+          <tr><td class="t-tertiary" style="width:200px">Listen host</td><td><code>{{.Host}}</code></td></tr>
+          <tr><td class="t-tertiary">Listen port</td><td><code>{{.Port}}</code></td></tr>
+          <tr><td class="t-tertiary">Database driver</td><td><code>{{.DBDriver}}</code></td></tr>
         </tbody>
       </table>
     </div>
   </div>
+
   <div class="panel">
     <div class="panel-hd">Endpoints</div>
     <div class="panel-bd">
       <table class="omni">
         <tbody>
-          <tr><td class="t-tertiary" style="width:200px">Discovery</td><td><code>{{.Issuer}}/.well-known/openid-configuration</code></td></tr>
-          <tr><td class="t-tertiary">JWKS</td><td><code>{{.Issuer}}/jwks.json</code></td></tr>
-          <tr><td class="t-tertiary">Authorization</td><td><code>{{.Issuer}}/oauth2/authorize</code></td></tr>
-          <tr><td class="t-tertiary">Token</td><td><code>{{.Issuer}}/oauth2/token</code></td></tr>
+          <tr><td class="t-tertiary" style="width:200px">Discovery</td><td><code>{{.Settings.Issuer}}/.well-known/openid-configuration</code></td></tr>
+          <tr><td class="t-tertiary">JWKS</td><td><code>{{.Settings.Issuer}}/jwks.json</code></td></tr>
+          <tr><td class="t-tertiary">Authorization</td><td><code>{{.Settings.Issuer}}/oauth2/authorize</code></td></tr>
+          <tr><td class="t-tertiary">Token</td><td><code>{{.Settings.Issuer}}/oauth2/token</code></td></tr>
         </tbody>
       </table>
     </div>

@@ -68,7 +68,7 @@ func (s *Server) renderAccount(w http.ResponseWriter, r *http.Request, status in
 		})
 	}
 	s.tmpl.render(w, status, "account", accountPage{
-		CSRFToken:  auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
+		CSRFToken:  auth.CSRFToken(w, r, s.cookieSecure()),
 		Me:         user,
 		Active:     "account",
 		MFAEnabled: user.MFAEnabled,
@@ -101,7 +101,7 @@ func (s *Server) handleAccountPassword(w http.ResponseWriter, r *http.Request) {
 		s.renderAccount(w, r, http.StatusUnauthorized, "Your current password is incorrect.", "")
 		return
 	}
-	if msg := auth.ValidatePassword(next, user.Username, user.Email, s.cfg.Security.PasswordMinLength); msg != "" {
+	if msg := auth.ValidatePassword(next, user.Username, user.Email, s.passwordMinLength()); msg != "" {
 		s.renderAccount(w, r, http.StatusBadRequest, msg, "")
 		return
 	}

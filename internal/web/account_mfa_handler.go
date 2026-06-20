@@ -59,7 +59,7 @@ func (s *Server) handleMFASetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.tmpl.render(w, http.StatusOK, "mfa_setup", mfaSetupPage{
-		CSRFToken: auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
+		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
 		Me:        user,
 		Active:    "account",
 		Secret:    secret,
@@ -82,7 +82,7 @@ func (s *Server) handleMFAEnable(w http.ResponseWriter, r *http.Request) {
 	code := r.PostFormValue("code")
 	if !auth.VerifyTOTP(secret, code, time.Now().UTC()) {
 		s.tmpl.render(w, http.StatusUnauthorized, "mfa_setup", mfaSetupPage{
-			CSRFToken: auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
+			CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
 			Me:        user, Active: "account",
 			Secret:  secret,
 			OTPAuth: auth.TOTPProvisioningURI(secret, s.mfaIssuer(), user.Email),
@@ -101,7 +101,7 @@ func (s *Server) handleMFAEnable(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, evtMFAEnrolled, auditEntry{actorUserID: user.ID, username: user.Username, success: true})
 	s.tmpl.render(w, http.StatusOK, "mfa_enabled", mfaEnabledPage{
-		CSRFToken:     auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
+		CSRFToken:     auth.CSRFToken(w, r, s.cookieSecure()),
 		Me:            user,
 		Active:        "account",
 		RecoveryCodes: plain,

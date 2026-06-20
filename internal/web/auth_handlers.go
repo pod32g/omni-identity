@@ -79,7 +79,7 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, status int, errMsg, reqID, next string, app *appView) {
 	s.tmpl.render(w, status, "login", loginPage{
-		CSRFToken: auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
+		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
 		Error:     errMsg,
 		Next:      next,
 		Req:       reqID,
@@ -152,9 +152,10 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	ok, _ := auth.VerifyPassword(password, user.PasswordHash)
 	if !ok || user.Disabled {
 		if !user.Disabled {
+			sv := s.settings.Current()
 			count, _ := s.db.RecordFailedLogin(r.Context(), user.ID,
-				s.cfg.Security.MaxFailedLogins, now.Add(s.cfg.Security.LockoutDuration))
-			if count >= s.cfg.Security.MaxFailedLogins {
+				sv.MaxFailedLogins, now.Add(sv.LockoutDuration))
+			if count >= sv.MaxFailedLogins {
 				s.audit(r, evtLoginLocked, auditEntry{actorUserID: user.ID, username: username, detail: "locked after failed attempts"})
 			} else {
 				s.audit(r, evtLoginFailed, auditEntry{actorUserID: user.ID, username: username, detail: "bad password"})
@@ -258,7 +259,7 @@ func (s *Server) handleSetupForm(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	token := auth.CSRFToken(w, r, s.cfg.Cookies.Secure)
+	token := auth.CSRFToken(w, r, s.cookieSecure())
 	s.tmpl.render(w, http.StatusOK, "setup", setupPage{CSRFToken: token})
 }
 
@@ -282,7 +283,7 @@ func (s *Server) handleSetupSubmit(w http.ResponseWriter, r *http.Request) {
 	password := r.PostFormValue("password")
 
 	reRender := func(msg string) {
-		token := auth.CSRFToken(w, r, s.cfg.Cookies.Secure)
+		token := auth.CSRFToken(w, r, s.cookieSecure())
 		s.tmpl.render(w, http.StatusBadRequest, "setup", setupPage{
 			CSRFToken: token, Error: msg, Username: username, Email: email,
 		})
@@ -292,7 +293,7 @@ func (s *Server) handleSetupSubmit(w http.ResponseWriter, r *http.Request) {
 		reRender("Username and email are required.")
 		return
 	}
-	if msg := auth.ValidatePassword(password, username, email, s.cfg.Security.PasswordMinLength); msg != "" {
+	if msg := auth.ValidatePassword(password, username, email, s.passwordMinLength()); msg != "" {
 		reRender(msg)
 		return
 	}

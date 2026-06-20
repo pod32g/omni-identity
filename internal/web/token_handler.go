@@ -223,7 +223,7 @@ func (s *Server) newRefreshToken(client *model.Client, user *model.User, scope s
 		UserID:      user.ID,
 		Scope:       scope,
 		RotatedFrom: rotatedFrom,
-		ExpiresAt:   now.Add(s.cfg.Security.RefreshTokenTTL),
+		ExpiresAt:   now.Add(s.settings.Current().RefreshTokenTTL),
 		CreatedAt:   now,
 		AuthTime:    authTime,
 	}

@@ -27,6 +27,7 @@ type Server struct {
 	issuer    *tokens.Issuer
 	tmpl      *templates
 	branding  *brandingService
+	settings  *settingsService
 	loginRate *rateLimiter
 	mfaRate   *rateLimiter
 	enc       *crypto.Encryptor
@@ -59,15 +60,23 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 
 	sessions := auth.NewSessionManager(db, cfg.Cookies.Secure, sessionTTL)
 	sessions.SetIdleTimeout(cfg.Security.SessionIdleTimeout)
+	issuer := tokens.NewIssuer(km, cfg.Security.Issuer, cfg.Security.TokenTTL, cfg.Security.TokenTTL)
+
+	// Live, admin-editable settings; seeded from config on first run.
+	settings := newSettingsService(db, cfg, sessionTTL)
+	// Issuer and session manager read issuer/TTLs/cookie-Secure live.
+	issuer.SetConfigProvider(settings)
+	sessions.SetConfigProvider(settings)
 
 	s := &Server{
 		cfg:       cfg,
 		db:        db,
 		sessions:  sessions,
 		keys:      km,
-		issuer:    tokens.NewIssuer(km, cfg.Security.Issuer, cfg.Security.TokenTTL, cfg.Security.TokenTTL),
+		issuer:    issuer,
 		tmpl:      tmpl,
 		branding:  newBrandingService(db.GetBranding),
+		settings:  settings,
 		loginRate: newRateLimiter(loginMaxAttempts, loginWindow),
 		mfaRate:   newRateLimiter(loginMaxAttempts, loginWindow),
 		enc:       enc,
@@ -80,6 +89,12 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 	s.handler = s.withMiddleware(s.mux)
 	return s, nil
 }
+
+// cookieSecure reports the live cookie Secure flag from editable settings.
+func (s *Server) cookieSecure() bool { return s.settings.Current().CookieSecure }
+
+// passwordMinLength is the live minimum password length from editable settings.
+func (s *Server) passwordMinLength() int { return s.settings.Current().PasswordMinLength }
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealth)
@@ -130,6 +145,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /admin/settings", s.requireAdmin(s.handleAdminSettings))
 	s.mux.HandleFunc("POST /admin/settings", s.requireAdmin(s.handleAdminUpdateBranding))
 	s.mux.HandleFunc("POST /admin/settings/logo", s.requireAdmin(s.handleAdminUploadLogo))
+	s.mux.HandleFunc("POST /admin/settings/system", s.requireAdmin(s.handleAdminUpdateSettings))
+	s.mux.HandleFunc("POST /admin/settings/reset", s.requireAdmin(s.handleAdminResetSettings))
 	s.mux.HandleFunc("GET /admin/audit", s.requireAdmin(s.handleAdminAudit))
 
 	s.mux.HandleFunc("GET /{$}", s.handleRoot)

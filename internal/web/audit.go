@@ -34,6 +34,7 @@ const (
 	evtClientUpdated   = "admin.client.updated"
 	evtClientSecret    = "admin.client.secret_rotated"
 	evtBrandingUpdate  = "admin.branding.updated"
+	evtSettingsUpdated = "admin.settings.updated"
 	evtSessionsRevoked = "session.revoked_all"
 )
 

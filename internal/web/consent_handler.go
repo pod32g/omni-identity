@@ -66,7 +66,7 @@ func (s *Server) handleConsentForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.tmpl.render(w, http.StatusOK, "consent", consentPage{
-		CSRFToken: auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
+		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
 		Req:       reqID,
 		App:       appViewFor(p.client, p.redirectURI),
 		Scopes:    describeScopes(p.scope),

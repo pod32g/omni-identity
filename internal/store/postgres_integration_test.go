@@ -210,6 +210,20 @@ func TestPostgresBackendIntegration(t *testing.T) {
 		t.Errorf("revoked %d sessions, want 1", n)
 	}
 
+	// Settings: BOOLEAN cookie_secure/seeded round-trip + default seed.
+	st, err := db.GetSettings(ctx)
+	if err != nil || st.TokenTTL != "15m" {
+		t.Fatalf("GetSettings default: %+v err=%v", st, err)
+	}
+	st.CookieSecure = false
+	st.PasswordMinLength = 16
+	if err := db.UpdateSettings(ctx, st); err != nil {
+		t.Fatalf("UpdateSettings: %v", err)
+	}
+	if st2, _ := db.GetSettings(ctx); st2.CookieSecure || !st2.Seeded || st2.PasswordMinLength != 16 {
+		t.Errorf("settings round-trip: %+v", st2)
+	}
+
 	// SQLite-only maintenance helpers must refuse on Postgres.
 	if err := db.BackupTo(ctx, "/tmp/x"); err == nil {
 		t.Error("BackupTo should be rejected on postgres")

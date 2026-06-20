@@ -15,31 +15,64 @@ type Profile struct {
 	Name              string
 }
 
+// IssuerConfig supplies the issuer string and token lifetimes at use-time,
+// allowing them to be changed live (e.g. from admin-editable settings).
+type IssuerConfig interface {
+	Issuer() string
+	AccessTTL() time.Duration
+	IDTTL() time.Duration
+}
+
 // Issuer mints and verifies signed JWTs using a KeyManager's active signer.
 type Issuer struct {
 	km        *KeyManager
 	issuer    string
 	accessTTL time.Duration
 	idTTL     time.Duration
+	cfg       IssuerConfig // when non-nil, overrides the static fields live
 }
 
-// NewIssuer builds an Issuer.
+// NewIssuer builds an Issuer with static issuer/TTLs.
 func NewIssuer(km *KeyManager, issuer string, accessTTL, idTTL time.Duration) *Issuer {
 	return &Issuer{km: km, issuer: issuer, accessTTL: accessTTL, idTTL: idTTL}
 }
 
+// SetConfigProvider makes the Issuer read its issuer and TTLs from cfg at
+// use-time instead of the static fields.
+func (i *Issuer) SetConfigProvider(cfg IssuerConfig) { i.cfg = cfg }
+
+func (i *Issuer) issuerName() string {
+	if i.cfg != nil {
+		return i.cfg.Issuer()
+	}
+	return i.issuer
+}
+
 // AccessTTL reports the access-token lifetime (for expires_in responses).
-func (i *Issuer) AccessTTL() time.Duration { return i.accessTTL }
+func (i *Issuer) AccessTTL() time.Duration {
+	if i.cfg != nil {
+		return i.cfg.AccessTTL()
+	}
+	return i.accessTTL
+}
+
+// IDTTL reports the ID-token lifetime.
+func (i *Issuer) IDTTL() time.Duration {
+	if i.cfg != nil {
+		return i.cfg.IDTTL()
+	}
+	return i.idTTL
+}
 
 // IssueAccessToken mints a signed access-token JWT.
 func (i *Issuer) IssueAccessToken(subject, audience, scope string) (string, error) {
 	now := time.Now()
 	claims := jwt.MapClaims{
-		"iss":       i.issuer,
+		"iss":       i.issuerName(),
 		"sub":       subject,
 		"aud":       audience,
 		"iat":       now.Unix(),
-		"exp":       now.Add(i.accessTTL).Unix(),
+		"exp":       now.Add(i.AccessTTL()).Unix(),
 		"scope":     scope,
 		"token_use": "access",
 	}
@@ -50,11 +83,11 @@ func (i *Issuer) IssueAccessToken(subject, audience, scope string) (string, erro
 func (i *Issuer) IssueIDToken(subject, audience string, p Profile, nonce string, authTime time.Time) (string, error) {
 	now := time.Now()
 	claims := jwt.MapClaims{
-		"iss":                i.issuer,
+		"iss":                i.issuerName(),
 		"sub":                subject,
 		"aud":                audience,
 		"iat":                now.Unix(),
-		"exp":                now.Add(i.idTTL).Unix(),
+		"exp":                now.Add(i.IDTTL()).Unix(),
 		"auth_time":          authTime.Unix(),
 		"email":              p.Email,
 		"email_verified":     p.EmailVerified,
@@ -109,7 +142,7 @@ func (i *Issuer) Verify(tokenStr string) (*VerifiedToken, error) {
 		return pub, nil
 	},
 		jwt.WithValidMethods([]string{AlgRS256, AlgEdDSA}),
-		jwt.WithIssuer(i.issuer),
+		jwt.WithIssuer(i.issuerName()),
 		jwt.WithExpirationRequired(),
 	)
 	if err != nil {
@@ -145,7 +178,7 @@ func (i *Issuer) ParseIDTokenHint(tokenStr string) (*VerifiedToken, error) {
 	if err != nil {
 		return nil, err
 	}
-	if iss, _ := claims["iss"].(string); iss != i.issuer {
+	if iss, _ := claims["iss"].(string); iss != i.issuerName() {
 		return nil, fmt.Errorf("issuer mismatch")
 	}
 	vt := &VerifiedToken{Claims: claims}
