@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -142,43 +143,63 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		s.renderLogin(w, r, http.StatusUnauthorized, "Invalid username or password.", reqID, next, app)
 	}
 
-	user, err := s.db.GetUserByUsername(r.Context(), username)
-	if err != nil {
-		auth.DummyVerify(password) // equalize timing for unknown users
+	// Resolve the credential against the local password store first; fall back to
+	// external connectors (e.g. LDAP) for unknown or directory-sourced users.
+	user, lookupErr := s.db.GetUserByUsername(r.Context(), username)
+	switch {
+	case lookupErr == nil && user.IsLocal():
+		// Local account: the existing hardened path (lockout + Argon2id verify +
+		// failure bookkeeping).
+		if user.IsLocked(now) {
+			s.audit(r, evtLoginLocked, auditEntry{actorUserID: user.ID, username: username, detail: "attempt while locked"})
+			s.renderLogin(w, r, http.StatusTooManyRequests,
+				"Your account is temporarily locked due to too many failed sign-in attempts. Please try again later.",
+				reqID, next, app)
+			return
+		}
+		ok, _ := auth.VerifyPassword(password, user.PasswordHash)
+		if !ok || user.Disabled {
+			if !user.Disabled {
+				sv := s.settings.Current()
+				count, _ := s.db.RecordFailedLogin(r.Context(), user.ID,
+					sv.MaxFailedLogins, now.Add(sv.LockoutDuration))
+				if count >= sv.MaxFailedLogins {
+					s.audit(r, evtLoginLocked, auditEntry{actorUserID: user.ID, username: username, detail: "locked after failed attempts"})
+				} else {
+					s.audit(r, evtLoginFailed, auditEntry{actorUserID: user.ID, username: username, detail: "bad password"})
+				}
+			} else {
+				s.audit(r, evtLoginFailed, auditEntry{actorUserID: user.ID, username: username, detail: "disabled account"})
+			}
+			invalid()
+			return
+		}
+		_ = s.db.ResetFailedLogins(r.Context(), user.ID)
+
+	case len(s.connectors) > 0:
+		// Directory-sourced (or unknown-local) account: verify via connectors and
+		// just-in-time provision the local mirror.
+		authed, ok := s.authViaConnectors(r, username, password)
+		if !ok {
+			s.audit(r, evtLoginFailed, auditEntry{username: username, detail: "external: invalid"})
+			invalid()
+			return
+		}
+		if authed.Disabled {
+			s.audit(r, evtLoginFailed, auditEntry{actorUserID: authed.ID, username: username, detail: "disabled account"})
+			invalid()
+			return
+		}
+		user = authed
+
+	default:
+		// Unknown user and no external connectors: constant-time reject.
+		auth.DummyVerify(password)
 		s.audit(r, evtLoginFailed, auditEntry{username: username, detail: "unknown user"})
 		invalid()
 		return
 	}
 
-	// Account lockout: refuse before checking the password.
-	if user.IsLocked(now) {
-		s.audit(r, evtLoginLocked, auditEntry{actorUserID: user.ID, username: username, detail: "attempt while locked"})
-		s.renderLogin(w, r, http.StatusTooManyRequests,
-			"Your account is temporarily locked due to too many failed sign-in attempts. Please try again later.",
-			reqID, next, app)
-		return
-	}
-
-	ok, _ := auth.VerifyPassword(password, user.PasswordHash)
-	if !ok || user.Disabled {
-		if !user.Disabled {
-			sv := s.settings.Current()
-			count, _ := s.db.RecordFailedLogin(r.Context(), user.ID,
-				sv.MaxFailedLogins, now.Add(sv.LockoutDuration))
-			if count >= sv.MaxFailedLogins {
-				s.audit(r, evtLoginLocked, auditEntry{actorUserID: user.ID, username: username, detail: "locked after failed attempts"})
-			} else {
-				s.audit(r, evtLoginFailed, auditEntry{actorUserID: user.ID, username: username, detail: "bad password"})
-			}
-		} else {
-			s.audit(r, evtLoginFailed, auditEntry{actorUserID: user.ID, username: username, detail: "disabled account"})
-		}
-		invalid()
-		return
-	}
-
-	// Password correct: clear failure state.
-	_ = s.db.ResetFailedLogins(r.Context(), user.ID)
 	s.loginRate.Reset(rlKey)
 
 	// Second factor required? Park a challenge and divert to the MFA step.
@@ -204,6 +225,32 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		dest = redirectAfterLogin(user)
 	}
 	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
+// authViaConnectors verifies the credential against each external connector in
+// order and returns the just-in-time-provisioned local user on the first
+// success. ok=false means no connector accepted the credentials; transport or
+// provisioning errors are logged (operator-visible) and never surfaced to the
+// browser, so they read as a generic invalid login.
+func (s *Server) authViaConnectors(r *http.Request, username, password string) (*model.User, bool) {
+	for _, c := range s.connectors {
+		id, ok, err := c.Login(r.Context(), username, password)
+		if err != nil {
+			slog.Error("connector login error", "connector", c.ID(), "username", username, "error", err.Error())
+			continue
+		}
+		if !ok {
+			continue
+		}
+		u, perr := s.db.UpsertExternalUser(r.Context(), id.Connector, id.ExternalID,
+			id.Username, id.Email, id.DisplayName, id.IsAdmin)
+		if perr != nil {
+			slog.Error("connector provision failed", "connector", c.ID(), "username", username, "error", perr.Error())
+			return nil, false
+		}
+		return u, true
+	}
+	return nil, false
 }
 
 // redirectAfterLogin sends admins to the console and everyone else to their

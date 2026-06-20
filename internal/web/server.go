@@ -5,13 +5,16 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/pod32g/omni-identity/internal/auth"
+	"github.com/pod32g/omni-identity/internal/authn"
 	"github.com/pod32g/omni-identity/internal/config"
 	"github.com/pod32g/omni-identity/internal/crypto"
 	"github.com/pod32g/omni-identity/internal/email"
+	"github.com/pod32g/omni-identity/internal/ldap"
 	"github.com/pod32g/omni-identity/internal/store"
 	"github.com/pod32g/omni-identity/internal/tokens"
 )
@@ -34,6 +37,7 @@ type Server struct {
 	forgotRate *rateLimiter
 	mailer     email.Sender
 	enc        *crypto.Encryptor
+	connectors []authn.PasswordConnector // external auth sources (e.g. LDAP); empty by default
 	metrics    *metrics
 	mux        *http.ServeMux
 	handler    http.Handler
@@ -59,6 +63,26 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 	enc, err := crypto.NewEncryptorFromB64(keyB64)
 	if err != nil {
 		return nil, err
+	}
+
+	// External authentication connectors (off unless configured). LDAP is the
+	// first; the login flow consults them after the local password store.
+	var connectors []authn.PasswordConnector
+	if cfg.LDAP.Enabled {
+		client, err := ldap.New(ldap.Config{
+			URL: cfg.LDAP.URL, StartTLS: cfg.LDAP.StartTLS,
+			BindDN: cfg.LDAP.BindDN, BindPassword: cfg.LDAP.BindPassword,
+			BaseDN: cfg.LDAP.BaseDN, UserFilter: cfg.LDAP.UserFilter,
+			AttrUsername: cfg.LDAP.AttrUsername, AttrEmail: cfg.LDAP.AttrEmail,
+			AttrDisplayName: cfg.LDAP.AttrDisplayName,
+			AdminGroupDN:    cfg.LDAP.AdminGroupDN, GroupFilter: cfg.LDAP.GroupFilter,
+			CACertFile: cfg.LDAP.CACertFile, InsecureSkipVerify: cfg.LDAP.InsecureSkipVerify,
+			Timeout: cfg.LDAP.Timeout,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("init ldap connector: %w", err)
+		}
+		connectors = append(connectors, client)
 	}
 
 	sessions := auth.NewSessionManager(db, cfg.Cookies.Secure, sessionTTL)
@@ -87,9 +111,10 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 			Host: cfg.SMTP.Host, Port: cfg.SMTP.Port, Username: cfg.SMTP.Username,
 			Password: cfg.SMTP.Password, From: cfg.SMTP.From, StartTLS: cfg.SMTP.StartTLS,
 		},
-		enc:     enc,
-		metrics: newMetrics(),
-		mux:     http.NewServeMux(),
+		enc:        enc,
+		connectors: connectors,
+		metrics:    newMetrics(),
+		mux:        http.NewServeMux(),
 	}
 	// Render branding on every page; read live so admin edits take effect.
 	tmpl.brand = s.branding.Current
