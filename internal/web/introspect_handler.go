@@ -31,8 +31,9 @@ func (s *Server) handleIntrospect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Try as a JWT access token first.
-	if vt, err := s.issuer.Verify(token); err == nil && vt.IsAccessToken() {
+	// Try as a JWT access token first. Per RFC 7662, a client may only learn
+	// about its own tokens: the token's audience must be the calling client.
+	if vt, err := s.issuer.Verify(token); err == nil && vt.IsAccessToken() && vt.Audience == client.ClientID {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"active":     true,
 			"token_type": "access_token",
@@ -45,8 +46,8 @@ func (s *Server) handleIntrospect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Then as a stored refresh token.
-	if rt, err := s.db.GetRefreshTokenByHash(r.Context(), auth.HashToken(token)); err == nil {
+	// Then as a stored refresh token — again only when it belongs to the caller.
+	if rt, err := s.db.GetRefreshTokenByHash(r.Context(), auth.HashToken(token)); err == nil && rt.ClientID == client.ClientID {
 		active := !rt.Revoked && time.Now().Before(rt.ExpiresAt)
 		resp := map[string]any{"active": active}
 		if active {
@@ -60,6 +61,8 @@ func (s *Server) handleIntrospect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Unknown token, or one owned by another client: report inactive without
+	// disclosing its existence.
 	writeJSON(w, http.StatusOK, map[string]any{"active": false})
 }
 

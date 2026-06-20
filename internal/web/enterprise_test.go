@@ -225,6 +225,43 @@ func TestClientCredentialsAndIntrospection(t *testing.T) {
 	}
 }
 
+func TestIntrospectionRejectsOtherClientsToken(t *testing.T) {
+	srv := testServer(t)
+	// Two confidential clients; A obtains a token, B tries to introspect it.
+	createClient(t, srv, "clienta", "secret-a", false,
+		[]string{"https://a.example.com/cb"}, []string{"openid", "email"})
+	createClient(t, srv, "clientb", "secret-b", false,
+		[]string{"https://b.example.com/cb"}, []string{"openid", "email"})
+
+	ccRR := do(srv, tokenPost(url.Values{
+		"grant_type": {"client_credentials"}, "client_id": {"clienta"}, "client_secret": {"secret-a"},
+	}))
+	var tok tokenResponse
+	_ = json.Unmarshal(ccRR.Body.Bytes(), &tok)
+	if tok.AccessToken == "" {
+		t.Fatal("no access token for client A")
+	}
+
+	introspect := func(clientID, secret string) map[string]any {
+		req := httptest.NewRequest(http.MethodPost, "/oauth2/introspect",
+			strings.NewReader(url.Values{
+				"token": {tok.AccessToken}, "client_id": {clientID}, "client_secret": {secret},
+			}.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		var out map[string]any
+		_ = json.Unmarshal(do(srv, req).Body.Bytes(), &out)
+		return out
+	}
+
+	// The owning client sees it active; another confidential client must not.
+	if introspect("clienta", "secret-a")["active"] != true {
+		t.Error("owner introspection should be active")
+	}
+	if introspect("clientb", "secret-b")["active"] != false {
+		t.Error("cross-client introspection must report inactive (no metadata leak)")
+	}
+}
+
 func TestClientCredentialsRejectsPublicClient(t *testing.T) {
 	srv := testServer(t)
 	createClient(t, srv, "spa", "", true,

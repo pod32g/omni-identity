@@ -148,7 +148,10 @@ func newRecoveryCodeSet(n int) ([]string, []model.RecoveryCode) {
 	plain := make([]string, 0, n)
 	records := make([]model.RecoveryCode, 0, n)
 	for i := 0; i < n; i++ {
-		code := auth.RandomToken(5) // ~8 chars base32-ish
+		// 8 bytes = 64 bits of entropy in a case-insensitive hex alphabet, shown
+		// grouped for readability ("xxxx-xxxx-xxxx-xxxx").
+		raw := auth.RandomHex(8)
+		code := raw[0:4] + "-" + raw[4:8] + "-" + raw[8:12] + "-" + raw[12:16]
 		plain = append(plain, code)
 		records = append(records, model.RecoveryCode{
 			ID:        uuid.NewString(),
