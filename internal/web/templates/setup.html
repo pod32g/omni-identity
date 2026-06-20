@@ -2,10 +2,7 @@
 {{define "content"}}
 <div class="auth-wrap">
   <div class="auth-card">
-    <div class="auth-brand">
-      <span class="brand-mark">{{template "ic-shield" .}}</span>
-      <span class="brand-name">Omni Identity</span>
-    </div>
+    {{template "omni-brand" .}}
     <div class="panel">
       <h1>Welcome</h1>
       <p class="muted">Create the first administrator account to get started.</p>
@@ -24,6 +21,7 @@
         <button class="btn primary block" type="submit">Create admin &amp; sign in</button>
       </form>
     </div>
+    {{template "omni-footer" .}}
   </div>
 </div>
 {{end}}
