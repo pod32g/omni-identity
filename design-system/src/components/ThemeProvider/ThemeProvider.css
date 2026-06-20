@@ -1,0 +1,6 @@
+.omni-theme {
+  background: var(--omni-bg);
+  color: var(--omni-text);
+  font: var(--omni-font-body);
+  padding: 20px;
+}

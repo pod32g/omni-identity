@@ -21,6 +21,8 @@ export { Callout } from "./components/Callout/Callout";
 export type { CalloutProps } from "./components/Callout/Callout";
 
 // Layout
+export { ThemeProvider } from "./components/ThemeProvider/ThemeProvider";
+export type { ThemeProviderProps } from "./components/ThemeProvider/ThemeProvider";
 export { Card } from "./components/Card/Card";
 export type { CardProps } from "./components/Card/Card";
 export { PageShell } from "./components/PageShell/PageShell";

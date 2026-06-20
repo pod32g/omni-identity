@@ -1,10 +1,10 @@
 import type { Preview } from "@storybook/react";
 import React from "react";
 import "../src/tokens.css";
+import { ThemeProvider } from "../src/components/ThemeProvider/ThemeProvider";
 
 const preview: Preview = {
   parameters: {
-    layout: "centered",
     backgrounds: {
       default: "omni",
       values: [{ name: "omni", value: "#0f1115" }],
@@ -12,16 +12,12 @@ const preview: Preview = {
     controls: { matchers: { color: /(background|color)$/i, date: /Date$/i } },
   },
   decorators: [
+    // Mirror cfg.provider so the Storybook reference and the design-sync
+    // previews wrap components in the same dark theme surface.
     (Story) => (
-      <div
-        style={{
-          color: "var(--omni-text)",
-          font: "var(--omni-font-body)",
-          padding: 24,
-        }}
-      >
+      <ThemeProvider>
         <Story />
-      </div>
+      </ThemeProvider>
     ),
   ],
 };

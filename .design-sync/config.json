@@ -1,0 +1,22 @@
+{
+  "shape": "storybook",
+  "pkg": "@omni-identity/ui",
+  "globalName": "OmniIdentityUI",
+  "storybookConfigDir": "design-system/.storybook",
+  "storybookStatic": ".design-sync/sb-reference",
+  "cssEntry": "dist/index.css",
+  "buildCmd": "npm --prefix design-system run build",
+  "readmeHeader": ".design-sync/conventions.md",
+  "provider": { "component": "ThemeProvider" },
+  "titleMap": {
+    "LoginForm": null,
+    "SetupForm": null,
+    "ThemeProvider": null
+  },
+  "overrides": {
+    "Alert": { "cardMode": "column" },
+    "AdminNav": { "cardMode": "column" },
+    "Field": { "cardMode": "column" },
+    "Input": { "cardMode": "column" }
+  }
+}
