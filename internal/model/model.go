@@ -19,6 +19,12 @@ type User struct {
 	PasswordHash string
 	IsAdmin      bool
 	Disabled     bool
+	// Authentication source: "local" (default) or a connector id such as "ldap".
+	// External users have no local password and are provisioned just-in-time on
+	// first login; ExternalID is the stable id within that source (e.g. the LDAP
+	// entry DN).
+	AuthSource string
+	ExternalID string
 	// Account lockout bookkeeping.
 	FailedLoginCount int
 	LockedUntil      time.Time // zero = not locked
@@ -28,6 +34,11 @@ type User struct {
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }
+
+// IsLocal reports whether the account authenticates against the local password
+// store (as opposed to an external directory such as LDAP). Local-password flows
+// (reset, set-password, change-password) only apply to local accounts.
+func (u *User) IsLocal() bool { return u.AuthSource == "" || u.AuthSource == "local" }
 
 // IsLocked reports whether the account is currently locked out.
 func (u *User) IsLocked(now time.Time) bool {

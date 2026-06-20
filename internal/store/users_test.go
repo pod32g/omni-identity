@@ -22,6 +22,46 @@ func newUser(username string) *model.User {
 	}
 }
 
+func TestUpsertExternalUserInsertThenUpdate(t *testing.T) {
+	db := tempDB(t)
+	ctx := context.Background()
+
+	u, err := db.UpsertExternalUser(ctx, "ldap", "uid=jane,dc=x", "jane", "jane@x", "Jane", false)
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if u.AuthSource != "ldap" || u.PasswordHash != "" || u.ID == "" || u.ExternalID != "uid=jane,dc=x" {
+		t.Fatalf("bad insert: %+v", u)
+	}
+	if u.IsLocal() {
+		t.Fatal("ldap user must not report IsLocal")
+	}
+
+	u2, err := db.UpsertExternalUser(ctx, "ldap", "uid=jane,dc=x", "jane", "j2@x", "Jane D", true)
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if u2.ID != u.ID || !u2.IsAdmin || u2.Email != "j2@x" {
+		t.Fatalf("bad update: %+v", u2)
+	}
+
+	got, err := db.GetUserByExternalID(ctx, "ldap", "uid=jane,dc=x")
+	if err != nil || got.ID != u.ID {
+		t.Fatalf("GetUserByExternalID: %v / %+v", err, got)
+	}
+}
+
+func TestUpsertExternalUserRefusesLocalCollision(t *testing.T) {
+	db := tempDB(t)
+	ctx := context.Background()
+	if err := db.CreateUser(ctx, newUser("bob")); err != nil {
+		t.Fatalf("seed local: %v", err)
+	}
+	if _, err := db.UpsertExternalUser(ctx, "ldap", "uid=bob,dc=x", "bob", "b@y", "Bob", false); err == nil {
+		t.Fatal("must refuse to shadow a local account with the same username")
+	}
+}
+
 func TestCreateAndGetUserByUsername(t *testing.T) {
 	db := tempDB(t)
 	ctx := context.Background()
