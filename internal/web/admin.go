@@ -164,10 +164,22 @@ type adminSettingsPage struct {
 	PublicURL  string
 	TokenTTL   string
 	RefreshTTL string
+	Branding   *model.Branding
+	HasLogo    bool
+	Error      string
+	Saved      string
 }
 
 func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
-	s.tmpl.render(w, http.StatusOK, "admin_settings", adminSettingsPage{
+	s.renderSettings(w, r, http.StatusOK, "", "")
+}
+
+func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status int, errMsg, saved string) {
+	b, _ := s.db.GetBranding(r.Context())
+	if b == nil {
+		b = &model.Branding{ProductName: "Omni Identity"}
+	}
+	s.tmpl.render(w, status, "admin_settings", adminSettingsPage{
 		CSRFToken:  auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
 		Me:         currentUser(r),
 		Active:     "settings",
@@ -175,5 +187,9 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 		PublicURL:  s.cfg.Server.PublicURL,
 		TokenTTL:   s.cfg.Security.TokenTTL.String(),
 		RefreshTTL: s.cfg.Security.RefreshTokenTTL.String(),
+		Branding:   b,
+		HasLogo:    len(b.LogoBytes) > 0,
+		Error:      errMsg,
+		Saved:      saved,
 	})
 }

@@ -1,0 +1,37 @@
+{{define "title"}}Authorize · Omni Identity{{end}}
+{{define "content"}}
+<div class="auth-wrap">
+  <div class="auth-card">
+    {{template "omni-brand" .}}
+    <div class="panel">
+      <h1>Continue to {{.App.Name}}</h1>
+      <p class="muted">{{.App.Name}} wants to access your Omni Identity account.</p>
+      <div class="app-card">
+        {{if .App.LogoURL}}<img class="app-logo" src="{{.App.LogoURL}}" alt="{{.App.Name}} logo">
+        {{else}}<span class="app-logo placeholder">{{template "ic-grid" .}}</span>{{end}}
+        <div class="app-meta">
+          <div class="app-name">{{.App.Name}}</div>
+          {{if .App.Domain}}<div class="app-domain">{{.App.Domain}}</div>{{end}}
+        </div>
+      </div>
+
+      <p class="muted" style="margin-top:16px">Signed in as <strong>{{.User.Username}}</strong>{{if .User.Email}} ({{.User.Email}}){{end}}.</p>
+
+      <h2 style="margin-top:18px">This will share</h2>
+      <ul class="scope-list">
+        {{range .Scopes}}<li><span class="scope-dot"></span><span>{{.Description}} <span class="scope-name">{{.Name}}</span></span></li>{{end}}
+      </ul>
+
+      <form method="post" action="/consent">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="req" value="{{.Req}}">
+        <div class="btn-row">
+          <button class="btn" type="submit" name="action" value="cancel">Cancel</button>
+          <button class="btn primary" type="submit" name="action" value="allow">Continue</button>
+        </div>
+      </form>
+    </div>
+    {{template "omni-footer" .}}
+  </div>
+</div>
+{{end}}

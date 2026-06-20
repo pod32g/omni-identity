@@ -4,10 +4,56 @@
 <div class="page-hd">
   <div class="titles">
     <h1>Settings</h1>
-    <p class="desc">Read-only in V1 — these come from the config file.</p>
+    <p class="desc">Branding applies to the hosted login, consent, logout, and error pages.</p>
   </div>
 </div>
 <div class="page-body">
+  {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+  {{if .Saved}}<div class="alert success">{{.Saved}}</div>{{end}}
+
+  <div class="panel">
+    <div class="panel-hd">Branding</div>
+    <div class="panel-bd">
+      <form class="stack" method="post" action="/admin/settings">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <label class="field">Product name
+          <input name="product_name" value="{{.Branding.ProductName}}" required>
+        </label>
+        <label class="field">Accent color <span class="muted">(hex or oklch(), optional)</span>
+          <input name="accent_color" value="{{.Branding.AccentColor}}" placeholder="#5b9bd5">
+        </label>
+        <label class="field">Footer text <span class="muted">(optional)</span>
+          <input name="footer_text" value="{{.Branding.FooterText}}" placeholder="© Omni Corp">
+        </label>
+        <label class="field">Background style <span class="muted">(CSS background value, optional)</span>
+          <input name="background_style" value="{{.Branding.BackgroundStyle}}" placeholder="radial-gradient(...)">
+        </label>
+        <div><button class="btn primary" type="submit">Save branding</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">Logo</div>
+    <div class="panel-bd">
+      <div class="inline" style="gap:16px; margin-bottom:14px">
+        {{if .HasLogo}}<img class="brand-logo" src="/branding/logo" alt="Current logo" style="height:40px">
+        <span class="muted">Current logo</span>
+        {{else}}<span class="muted">No logo uploaded — the shield mark and product name are shown instead.</span>{{end}}
+      </div>
+      <form class="stack" method="post" action="/admin/settings/logo" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <label class="field">Upload logo <span class="muted">(PNG, JPEG, WebP, or SVG · max 512 KB)</span>
+          <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+        </label>
+        <div class="inline">
+          <button class="btn primary" type="submit">Upload</button>
+          {{if .HasLogo}}<button class="btn danger" type="submit" name="action" value="remove">Remove logo</button>{{end}}
+        </div>
+      </form>
+    </div>
+  </div>
+
   <div class="panel">
     <div class="panel-hd">Provider</div>
     <div class="panel-bd">

@@ -1,0 +1,17 @@
+{{define "title"}}Signed out · Omni Identity{{end}}
+{{define "content"}}
+<div class="auth-wrap">
+  <div class="auth-card">
+    {{template "omni-brand" .}}
+    <div class="panel">
+      <h1>You've signed out</h1>
+      <p class="muted" style="margin-top:8px">You have signed out of Omni Identity.</p>
+      <div class="btn-row">
+        {{if .ContinueURL}}<a class="btn primary" href="{{.ContinueURL}}">Return to the application</a>{{end}}
+        <a class="btn{{if not .ContinueURL}} primary{{end}}" href="/login">Sign in again</a>
+      </div>
+    </div>
+    {{template "omni-footer" .}}
+  </div>
+</div>
+{{end}}

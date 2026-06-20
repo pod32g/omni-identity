@@ -42,12 +42,60 @@ type Client struct {
 	AllowedScopes    []string
 	Type             string
 	Disabled         bool
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// Display metadata surfaced on the hosted login/consent pages.
+	DisplayName            string
+	LogoURL                string
+	HomepageURL            string
+	PostLogoutRedirectURIs []string
+	// SkipConsent marks a first-party/trusted client whose authorizations do not
+	// require an interactive consent screen.
+	SkipConsent bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // IsPublic reports whether the client is a public (no-secret) client.
 func (c *Client) IsPublic() bool { return c.Type == ClientTypePublic }
+
+// Label returns the friendliest available name for the client: its display
+// name when set, otherwise its registered name, otherwise the client id.
+func (c *Client) Label() string {
+	switch {
+	case c.DisplayName != "":
+		return c.DisplayName
+	case c.Name != "":
+		return c.Name
+	default:
+		return c.ClientID
+	}
+}
+
+// Branding holds the configurable look of the hosted pages (single global row).
+type Branding struct {
+	ProductName     string
+	LogoBytes       []byte
+	LogoContentType string
+	AccentColor     string
+	FooterText      string
+	BackgroundStyle string
+	UpdatedAt       time.Time
+}
+
+// AuthRequest is a pending OIDC authorization request parked across the hosted
+// login and consent pages, keyed by an opaque id handed to the browser.
+type AuthRequest struct {
+	ID                  string
+	ClientID            string
+	RedirectURI         string
+	ResponseType        string
+	Scope               string
+	State               string
+	Nonce               string
+	CodeChallenge       string
+	CodeChallengeMethod string
+	CreatedAt           time.Time
+	ExpiresAt           time.Time
+}
 
 // AuthorizationCode is a single-use code issued by the authorize endpoint.
 type AuthorizationCode struct {

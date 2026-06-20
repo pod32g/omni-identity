@@ -118,8 +118,10 @@ func securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
+		// img-src allows https so the hosted login can show a registered client's
+		// externally hosted logo; the uploaded Omni logo is served from 'self'.
 		h.Set("Content-Security-Policy",
-			"default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'")
+			"default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
 }

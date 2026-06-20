@@ -36,6 +36,7 @@ func createClient(t *testing.T, srv *Server, id, secret string, public bool, red
 		RedirectURIs:     redirects,
 		AllowedScopes:    scopes,
 		Type:             typ,
+		SkipConsent:      true, // first-party test clients skip the consent screen
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
@@ -277,8 +278,8 @@ func TestAuthorizeWithoutSessionRedirectsToLogin(t *testing.T) {
 	if rr.Code != http.StatusSeeOther {
 		t.Fatalf("code = %d, want 303", rr.Code)
 	}
-	if !strings.HasPrefix(rr.Header().Get("Location"), "/login?next=") {
-		t.Errorf("location = %q, want /login?next=...", rr.Header().Get("Location"))
+	if !strings.HasPrefix(rr.Header().Get("Location"), "/login?req=") {
+		t.Errorf("location = %q, want /login?req=...", rr.Header().Get("Location"))
 	}
 }
 

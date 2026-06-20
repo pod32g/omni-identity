@@ -2,18 +2,29 @@
 {{define "content"}}
 <div class="auth-wrap">
   <div class="auth-card">
-    <div class="auth-brand">
-      <span class="brand-mark">{{template "ic-shield" .}}</span>
-      <span class="brand-name">Omni Identity</span>
-    </div>
+    {{template "omni-brand" .}}
     <div class="panel">
-      <h1>Sign in</h1>
-      <p class="muted">Sign in to continue.</p>
+      {{if .App}}
+        <h1>Sign in to continue to {{.App.Name}}</h1>
+        <p class="muted">Use your Omni Identity account.</p>
+        <div class="app-card">
+          {{if .App.LogoURL}}<img class="app-logo" src="{{.App.LogoURL}}" alt="{{.App.Name}} logo">
+          {{else}}<span class="app-logo placeholder">{{template "ic-grid" .}}</span>{{end}}
+          <div class="app-meta">
+            <div class="app-name">{{.App.Name}}</div>
+            {{if .App.Domain}}<div class="app-domain">{{.App.Domain}}</div>{{end}}
+          </div>
+        </div>
+      {{else}}
+        <h1>Sign in</h1>
+        <p class="muted">Sign in to continue.</p>
+      {{end}}
       {{if .Error}}<div class="alert error" style="margin-top:14px">{{.Error}}</div>{{end}}
       <form class="stack" method="post" action="/login">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        {{if .Req}}<input type="hidden" name="req" value="{{.Req}}">{{end}}
         {{if .Next}}<input type="hidden" name="next" value="{{.Next}}">{{end}}
-        <label class="field">Username
+        <label class="field">Email or username
           <input name="username" autocomplete="username" autofocus required>
         </label>
         <label class="field">Password
@@ -22,6 +33,7 @@
         <button class="btn primary block" type="submit">Sign in</button>
       </form>
     </div>
+    {{template "omni-footer" .}}
   </div>
 </div>
 {{end}}

@@ -58,6 +58,16 @@
         <label class="field">Scopes (space separated)
           <input name="scopes" value="openid email profile" required>
         </label>
+        <label class="field">Display name <span class="muted">(optional — shown on the login page)</span>
+          <input name="display_name" placeholder="My Application">
+        </label>
+        <label class="field">Logo URL <span class="muted">(optional)</span>
+          <input name="logo_url" placeholder="https://app.example.com/logo.png">
+        </label>
+        <label class="field inline">
+          <input type="checkbox" name="skip_consent" checked>
+          Trusted first-party app — skip the consent screen
+        </label>
         <button class="btn primary" type="submit" style="align-self:flex-start">Register application</button>
       </form>
     </div>

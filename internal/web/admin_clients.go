@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -9,6 +10,21 @@ import (
 	"github.com/pod32g/omni-identity/internal/model"
 	"github.com/pod32g/omni-identity/internal/oidc"
 )
+
+// httpsOrLocalURLs reports whether every entry is an absolute http(s) URL with a
+// host and no wildcard — the shape required for exact redirect matching.
+func httpsOrLocalURLs(uris []string) bool {
+	for _, raw := range uris {
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" || strings.Contains(raw, "*") {
+			return false
+		}
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return false
+		}
+	}
+	return true
+}
 
 type adminClientsPage struct {
 	CSRFToken string
@@ -19,15 +35,16 @@ type adminClientsPage struct {
 }
 
 type adminClientDetailPage struct {
-	CSRFToken        string
-	Me               *model.User
-	Active           string
-	Client           *model.Client
-	RedirectURIsText string
-	ScopesText       string
-	SupportedScopes  []string
-	NewSecret        string // shown once, after create/rotate
-	Error            string
+	CSRFToken          string
+	Me                 *model.User
+	Active             string
+	Client             *model.Client
+	RedirectURIsText   string
+	ScopesText         string
+	PostLogoutURIsText string
+	SupportedScopes    []string
+	NewSecret          string // shown once, after create/rotate
+	Error              string
 }
 
 func (s *Server) renderClients(w http.ResponseWriter, r *http.Request, status int, errMsg string) {
@@ -43,15 +60,16 @@ func (s *Server) renderClients(w http.ResponseWriter, r *http.Request, status in
 
 func (s *Server) renderClientDetail(w http.ResponseWriter, r *http.Request, status int, c *model.Client, newSecret, errMsg string) {
 	s.tmpl.render(w, status, "admin_client_detail", adminClientDetailPage{
-		CSRFToken:        auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
-		Me:               currentUser(r),
-		Active:           "clients",
-		Client:           c,
-		RedirectURIsText: strings.Join(c.RedirectURIs, "\n"),
-		ScopesText:       strings.Join(c.AllowedScopes, " "),
-		SupportedScopes:  oidc.SupportedScopes,
-		NewSecret:        newSecret,
-		Error:            errMsg,
+		CSRFToken:          auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
+		Me:                 currentUser(r),
+		Active:             "clients",
+		Client:             c,
+		RedirectURIsText:   strings.Join(c.RedirectURIs, "\n"),
+		ScopesText:         strings.Join(c.AllowedScopes, " "),
+		PostLogoutURIsText: strings.Join(c.PostLogoutRedirectURIs, "\n"),
+		SupportedScopes:    oidc.SupportedScopes,
+		NewSecret:          newSecret,
+		Error:              errMsg,
 	})
 }
 
@@ -69,20 +87,30 @@ func (s *Server) handleAdminClientDetail(w http.ResponseWriter, r *http.Request)
 }
 
 type clientForm struct {
-	clientID     string
-	name         string
-	clientType   string
-	redirectURIs []string
-	scopes       []string
+	clientID       string
+	name           string
+	clientType     string
+	redirectURIs   []string
+	scopes         []string
+	displayName    string
+	logoURL        string
+	homepageURL    string
+	postLogoutURIs []string
+	skipConsent    bool
 }
 
 func parseClientForm(r *http.Request) (clientForm, string) {
 	f := clientForm{
-		clientID:     strings.TrimSpace(r.PostFormValue("client_id")),
-		name:         strings.TrimSpace(r.PostFormValue("name")),
-		clientType:   r.PostFormValue("type"),
-		redirectURIs: strings.Fields(r.PostFormValue("redirect_uris")),
-		scopes:       strings.Fields(r.PostFormValue("scopes")),
+		clientID:       strings.TrimSpace(r.PostFormValue("client_id")),
+		name:           strings.TrimSpace(r.PostFormValue("name")),
+		clientType:     r.PostFormValue("type"),
+		redirectURIs:   strings.Fields(r.PostFormValue("redirect_uris")),
+		scopes:         strings.Fields(r.PostFormValue("scopes")),
+		displayName:    strings.TrimSpace(r.PostFormValue("display_name")),
+		logoURL:        strings.TrimSpace(r.PostFormValue("logo_url")),
+		homepageURL:    strings.TrimSpace(r.PostFormValue("homepage_url")),
+		postLogoutURIs: strings.Fields(r.PostFormValue("post_logout_redirect_uris")),
+		skipConsent:    r.PostFormValue("skip_consent") == "on" || r.PostFormValue("skip_consent") == "true",
 	}
 	if f.name == "" {
 		return f, "Name is required."
@@ -98,6 +126,12 @@ func parseClientForm(r *http.Request) (clientForm, string) {
 	}
 	if !oidc.ScopesSubset(f.scopes, oidc.SupportedScopes) {
 		return f, "Unknown scope requested."
+	}
+	if !httpsOrLocalURLs(f.redirectURIs) {
+		return f, "Redirect URIs must be absolute http(s) URLs."
+	}
+	if !httpsOrLocalURLs(f.postLogoutURIs) {
+		return f, "Post-logout redirect URIs must be absolute http(s) URLs."
 	}
 	return f, ""
 }
@@ -129,14 +163,19 @@ func (s *Server) handleAdminCreateClient(w http.ResponseWriter, r *http.Request)
 
 	now := time.Now().UTC()
 	c := &model.Client{
-		ClientID:         clientID,
-		ClientSecretHash: secretHash,
-		Name:             form.name,
-		RedirectURIs:     form.redirectURIs,
-		AllowedScopes:    form.scopes,
-		Type:             form.clientType,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+		ClientID:               clientID,
+		ClientSecretHash:       secretHash,
+		Name:                   form.name,
+		RedirectURIs:           form.redirectURIs,
+		AllowedScopes:          form.scopes,
+		Type:                   form.clientType,
+		DisplayName:            form.displayName,
+		LogoURL:                form.logoURL,
+		HomepageURL:            form.homepageURL,
+		PostLogoutRedirectURIs: form.postLogoutURIs,
+		SkipConsent:            form.skipConsent,
+		CreatedAt:              now,
+		UpdatedAt:              now,
 	}
 	if err := s.db.CreateClient(r.Context(), c); err != nil {
 		s.renderClients(w, r, http.StatusBadRequest, "Could not create client.")
@@ -164,6 +203,11 @@ func (s *Server) handleAdminUpdateClient(w http.ResponseWriter, r *http.Request)
 	existing.Type = form.clientType
 	existing.RedirectURIs = form.redirectURIs
 	existing.AllowedScopes = form.scopes
+	existing.DisplayName = form.displayName
+	existing.LogoURL = form.logoURL
+	existing.HomepageURL = form.homepageURL
+	existing.PostLogoutRedirectURIs = form.postLogoutURIs
+	existing.SkipConsent = form.skipConsent
 	if err := s.db.UpdateClient(r.Context(), existing); err != nil {
 		s.renderClientDetail(w, r, http.StatusBadRequest, existing, "", "Could not update client.")
 		return

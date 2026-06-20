@@ -38,6 +38,23 @@
           <input name="scopes" value="{{.ScopesText}}" required>
         </label>
         <p class="t-caption">Supported: {{range .SupportedScopes}}<code>{{.}}</code> {{end}}</p>
+
+        <label class="field">Display name <span class="muted">(shown on the login page)</span>
+          <input name="display_name" value="{{.Client.DisplayName}}" placeholder="{{.Client.Name}}">
+        </label>
+        <label class="field">Logo URL <span class="muted">(shown on the login page)</span>
+          <input name="logo_url" value="{{.Client.LogoURL}}" placeholder="https://app.example.com/logo.png">
+        </label>
+        <label class="field">Homepage URL
+          <input name="homepage_url" value="{{.Client.HomepageURL}}" placeholder="https://app.example.com">
+        </label>
+        <label class="field">Post-logout redirect URIs (one per line)
+          <textarea name="post_logout_redirect_uris" rows="2">{{.PostLogoutURIsText}}</textarea>
+        </label>
+        <label class="field inline">
+          <input type="checkbox" name="skip_consent" {{if .Client.SkipConsent}}checked{{end}}>
+          Trusted first-party app — skip the consent screen
+        </label>
         <button class="btn primary" type="submit" style="align-self:flex-start">Save changes</button>
       </form>
     </div>

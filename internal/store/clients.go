@@ -10,16 +10,19 @@ import (
 	"github.com/pod32g/omni-identity/internal/model"
 )
 
-const clientColumns = `client_id, client_secret_hash, name, redirect_uris, allowed_scopes, type, disabled, created_at, updated_at`
+const clientColumns = `client_id, client_secret_hash, name, redirect_uris, allowed_scopes, type, disabled, ` +
+	`display_name, logo_url, homepage_url, post_logout_redirect_uris, skip_consent, created_at, updated_at`
 
 // CreateClient inserts a new client.
 func (d *DB) CreateClient(ctx context.Context, c *model.Client) error {
 	redirects, scopes := encodeStrings(c.RedirectURIs), encodeStrings(c.AllowedScopes)
+	postLogout := encodeStrings(c.PostLogoutRedirectURIs)
 	_, err := d.sql.ExecContext(ctx, `
 		INSERT INTO clients (`+clientColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		c.ClientID, c.ClientSecretHash, c.Name, redirects, scopes,
-		c.Type, c.Disabled, c.CreatedAt.UTC(), c.UpdatedAt.UTC(),
+		c.Type, c.Disabled, c.DisplayName, c.LogoURL, c.HomepageURL,
+		postLogout, c.SkipConsent, c.CreatedAt.UTC(), c.UpdatedAt.UTC(),
 	)
 	return err
 }
@@ -51,14 +54,19 @@ func (d *DB) ListClients(ctx context.Context) ([]model.Client, error) {
 	return clients, rows.Err()
 }
 
-// UpdateClient updates name, redirect URIs, allowed scopes, type, and disabled.
+// UpdateClient updates the editable client fields (everything but the id,
+// secret, and created_at).
 func (d *DB) UpdateClient(ctx context.Context, c *model.Client) error {
 	res, err := d.sql.ExecContext(ctx, `
 		UPDATE clients SET name = ?, redirect_uris = ?, allowed_scopes = ?,
-			type = ?, disabled = ?, updated_at = ?
+			type = ?, disabled = ?, display_name = ?, logo_url = ?,
+			homepage_url = ?, post_logout_redirect_uris = ?, skip_consent = ?,
+			updated_at = ?
 		WHERE client_id = ?`,
 		c.Name, encodeStrings(c.RedirectURIs), encodeStrings(c.AllowedScopes),
-		c.Type, c.Disabled, time.Now().UTC(), c.ClientID,
+		c.Type, c.Disabled, c.DisplayName, c.LogoURL, c.HomepageURL,
+		encodeStrings(c.PostLogoutRedirectURIs), c.SkipConsent,
+		time.Now().UTC(), c.ClientID,
 	)
 	if err != nil {
 		return err
@@ -90,12 +98,13 @@ func (d *DB) SetClientDisabled(ctx context.Context, clientID string, disabled bo
 
 func scanClient(s scanner) (*model.Client, error) {
 	var (
-		c                 model.Client
-		redirects, scopes string
+		c                             model.Client
+		redirects, scopes, postLogout string
 	)
 	err := s.Scan(
 		&c.ClientID, &c.ClientSecretHash, &c.Name, &redirects, &scopes,
-		&c.Type, &c.Disabled, &c.CreatedAt, &c.UpdatedAt,
+		&c.Type, &c.Disabled, &c.DisplayName, &c.LogoURL, &c.HomepageURL,
+		&postLogout, &c.SkipConsent, &c.CreatedAt, &c.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -105,6 +114,7 @@ func scanClient(s scanner) (*model.Client, error) {
 	}
 	c.RedirectURIs = decodeStrings(redirects)
 	c.AllowedScopes = decodeStrings(scopes)
+	c.PostLogoutRedirectURIs = decodeStrings(postLogout)
 	return &c, nil
 }
 

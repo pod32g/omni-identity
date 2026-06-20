@@ -38,7 +38,13 @@ func NewSessionManager(s SessionStore, secure bool, ttl time.Duration) *SessionM
 }
 
 // Issue creates a session for userID, persists it, and sets the session cookie.
+// Any session referenced by the inbound cookie is deleted first, so the session
+// id rotates on every login and a fixated id cannot be reused post-auth.
 func (m *SessionManager) Issue(w http.ResponseWriter, r *http.Request, userID string) (*model.Session, error) {
+	if c, err := r.Cookie(sessionCookieName); err == nil && c.Value != "" {
+		// Best-effort: drop the prior session row before minting a fresh id.
+		_ = m.store.DeleteSession(r.Context(), c.Value)
+	}
 	now := time.Now().UTC()
 	sess := &model.Session{
 		ID:         uuid.NewString(),

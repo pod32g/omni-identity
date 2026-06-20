@@ -145,8 +145,12 @@ func TestPostLogoutDestroysSession(t *testing.T) {
 	logoutReq := postForm("/logout", url.Values{"csrf_token": {"tok2"}}, "tok2")
 	logoutReq.AddCookie(&http.Cookie{Name: "omni_session", Value: sid})
 	rr := do(srv, logoutReq)
-	if rr.Code != http.StatusSeeOther {
-		t.Fatalf("code = %d, want 303", rr.Code)
+	// POST logout now shows the branded signed-out page.
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "signed out") {
+		t.Errorf("logout page missing signed-out message: %s", rr.Body.String())
 	}
 
 	// Session must no longer resolve.

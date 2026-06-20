@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -15,7 +16,28 @@ import (
 type loginPage struct {
 	CSRFToken string
 	Error     string
-	Next      string
+	Next      string   // same-origin path for plain admin login
+	Req       string   // parked OIDC auth-request id, when arriving from /oauth2/authorize
+	App       *appView // requesting application, nil for admin login
+}
+
+// appView is the requesting application's display info shown on the hosted
+// login and consent pages.
+type appView struct {
+	Name     string
+	LogoURL  string
+	Domain   string
+	Homepage string
+}
+
+// appViewFor builds the display info for a client + redirect target.
+func appViewFor(c *model.Client, redirectURI string) *appView {
+	return &appView{
+		Name:     c.Label(),
+		LogoURL:  c.LogoURL,
+		Domain:   appDomain(redirectURI),
+		Homepage: c.HomepageURL,
+	}
 }
 
 type setupPage struct {
@@ -36,10 +58,32 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusSeeOther)
 		return
 	}
-	token := auth.CSRFToken(w, r, s.cfg.Cookies.Secure)
-	s.tmpl.render(w, http.StatusOK, "login", loginPage{
-		CSRFToken: token,
-		Next:      safeNext(r.URL.Query().Get("next")),
+
+	reqID := r.URL.Query().Get("req")
+	var app *appView
+	if reqID != "" {
+		p, _, ok := s.loadAuthRequest(w, r, reqID)
+		if !ok {
+			return // loadAuthRequest rendered the error page
+		}
+		// Already signed in? Skip the login page and continue automatically.
+		if sess, err := s.sessions.Current(r); err == nil {
+			s.continueAfterAuth(w, r, p, reqID, sess.UserID, sess.CreatedAt)
+			return
+		}
+		app = appViewFor(p.client, p.redirectURI)
+	}
+
+	s.renderLogin(w, r, http.StatusOK, "", reqID, safeNext(r.URL.Query().Get("next")), app)
+}
+
+func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, status int, errMsg, reqID, next string, app *appView) {
+	s.tmpl.render(w, status, "login", loginPage{
+		CSRFToken: auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
+		Error:     errMsg,
+		Next:      next,
+		Req:       reqID,
+		App:       app,
 	})
 }
 
@@ -53,30 +97,84 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := auth.Authenticate(r.Context(), s.db,
-		r.PostFormValue("username"), r.PostFormValue("password"))
-	if err != nil {
-		token := auth.CSRFToken(w, r, s.cfg.Cookies.Secure)
-		s.tmpl.render(w, http.StatusUnauthorized, "login", loginPage{
-			CSRFToken: token,
-			Error:     "Invalid username or password.",
-			Next:      safeNext(r.PostFormValue("next")),
-		})
+	reqID := r.PostFormValue("req")
+	next := safeNext(r.PostFormValue("next"))
+	username := r.PostFormValue("username")
+
+	// Re-resolve the requesting app for re-rendering on failure.
+	var app *appView
+	var p authzParams
+	var haveReq bool
+	if reqID != "" {
+		var ok bool
+		p, _, ok = s.loadAuthRequest(w, r, reqID)
+		if !ok {
+			return
+		}
+		app = appViewFor(p.client, p.redirectURI)
+		haveReq = true
+	}
+
+	// Rate-limit by client IP + submitted username to blunt credential stuffing.
+	rlKey := clientIP(r) + "|" + username
+	if !s.loginRate.Allowed(rlKey) {
+		s.renderLogin(w, r, http.StatusTooManyRequests,
+			"Too many sign-in attempts. Please wait a few minutes and try again.",
+			reqID, next, app)
 		return
 	}
 
+	user, err := auth.Authenticate(r.Context(), s.db, username, r.PostFormValue("password"))
+	if err != nil {
+		s.loginRate.Fail(rlKey)
+		s.renderLogin(w, r, http.StatusUnauthorized,
+			"Invalid username or password.", reqID, next, app)
+		return
+	}
+	s.loginRate.Reset(rlKey)
+
+	// Rotates the session id (fixation guard) on success.
 	if _, err := s.sessions.Issue(w, r, user.ID); err != nil {
 		http.Error(w, "could not create session", http.StatusInternalServerError)
 		return
 	}
 
-	dest := safeNext(r.PostFormValue("next"))
+	if haveReq {
+		s.continueAfterAuth(w, r, p, reqID, user.ID, time.Now().UTC())
+		return
+	}
+
+	dest := next
 	if dest == "" {
 		dest = "/admin"
 	}
 	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
+// continueAfterAuth resumes a parked authorization request once the user is
+// authenticated: trusted clients get a code immediately; others are sent to the
+// consent screen.
+func (s *Server) continueAfterAuth(w http.ResponseWriter, r *http.Request, p authzParams, reqID, userID string, authTime time.Time) {
+	if p.client.SkipConsent {
+		_ = s.db.DeleteAuthRequest(r.Context(), reqID)
+		s.issueCode(w, r, p, userID, authTime)
+		return
+	}
+	http.Redirect(w, r, "/consent?req="+url.QueryEscape(reqID), http.StatusSeeOther)
+}
+
+// clientIP returns the remote IP for rate-limit keying, preferring the host
+// portion of RemoteAddr.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+// handleLogout is the CSRF-protected POST used by the admin nav button. It
+// clears the session and shows the branded signed-out page.
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if !auth.ValidateCSRFToken(r, r.PostFormValue("csrf_token")) {
 		http.Error(w, "invalid CSRF token", http.StatusForbidden)
@@ -86,7 +184,15 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "logout failed", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	s.renderSignedOut(w, r, "")
+}
+
+// renderSignedOut shows the hosted "you've signed out" page. continueURL, when
+// non-empty, is offered as a link back to the application.
+func (s *Server) renderSignedOut(w http.ResponseWriter, r *http.Request, continueURL string) {
+	s.tmpl.render(w, http.StatusOK, "logout", map[string]any{
+		"ContinueURL": continueURL,
+	})
 }
 
 func (s *Server) handleSetupForm(w http.ResponseWriter, r *http.Request) {

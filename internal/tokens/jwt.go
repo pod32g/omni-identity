@@ -125,6 +125,35 @@ func (i *Issuer) Verify(tokenStr string) (*VerifiedToken, error) {
 	return vt, nil
 }
 
+// ParseIDTokenHint validates an id_token_hint for RP-initiated logout. It
+// checks the signature (by kid), allowed algorithms, and issuer, but tolerates
+// an expired token, since the hint is commonly presented after the session has
+// already lapsed. Returns the subject and audience for revocation/redirect.
+func (i *Issuer) ParseIDTokenHint(tokenStr string) (*VerifiedToken, error) {
+	claims := jwt.MapClaims{}
+	_, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (any, error) {
+		kid, _ := t.Header["kid"].(string)
+		pub, ok := i.km.PublicKey(kid)
+		if !ok {
+			return nil, fmt.Errorf("unknown key id %q", kid)
+		}
+		return pub, nil
+	},
+		jwt.WithValidMethods([]string{AlgRS256, AlgEdDSA}),
+		jwt.WithoutClaimsValidation(), // tolerate expiry; we verify issuer manually
+	)
+	if err != nil {
+		return nil, err
+	}
+	if iss, _ := claims["iss"].(string); iss != i.issuer {
+		return nil, fmt.Errorf("issuer mismatch")
+	}
+	vt := &VerifiedToken{Claims: claims}
+	vt.Subject, _ = claims["sub"].(string)
+	vt.Audience = audienceString(claims)
+	return vt, nil
+}
+
 func audienceString(claims jwt.MapClaims) string {
 	switch v := claims["aud"].(type) {
 	case string:

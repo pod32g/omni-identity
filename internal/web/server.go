@@ -19,15 +19,17 @@ const sessionTTL = 12 * time.Hour
 
 // Server holds shared dependencies and the route mux.
 type Server struct {
-	cfg      *config.Config
-	db       *store.DB
-	sessions *auth.SessionManager
-	keys     *tokens.KeyManager
-	issuer   *tokens.Issuer
-	tmpl     *templates
-	metrics  *metrics
-	mux      *http.ServeMux
-	handler  http.Handler
+	cfg       *config.Config
+	db        *store.DB
+	sessions  *auth.SessionManager
+	keys      *tokens.KeyManager
+	issuer    *tokens.Issuer
+	tmpl      *templates
+	branding  *brandingService
+	loginRate *rateLimiter
+	metrics   *metrics
+	mux       *http.ServeMux
+	handler   http.Handler
 }
 
 // NewServer builds a Server with all routes registered. It ensures signing keys
@@ -42,15 +44,19 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{
-		cfg:      cfg,
-		db:       db,
-		sessions: auth.NewSessionManager(db, cfg.Cookies.Secure, sessionTTL),
-		keys:     km,
-		issuer:   tokens.NewIssuer(km, cfg.Security.Issuer, cfg.Security.TokenTTL, cfg.Security.TokenTTL),
-		tmpl:     tmpl,
-		metrics:  newMetrics(),
-		mux:      http.NewServeMux(),
+		cfg:       cfg,
+		db:        db,
+		sessions:  auth.NewSessionManager(db, cfg.Cookies.Secure, sessionTTL),
+		keys:      km,
+		issuer:    tokens.NewIssuer(km, cfg.Security.Issuer, cfg.Security.TokenTTL, cfg.Security.TokenTTL),
+		tmpl:      tmpl,
+		branding:  newBrandingService(db.GetBranding),
+		loginRate: newRateLimiter(loginMaxAttempts, loginWindow),
+		metrics:   newMetrics(),
+		mux:       http.NewServeMux(),
 	}
+	// Render branding on every page; read live so admin edits take effect.
+	tmpl.brand = s.branding.Current
 	s.routes()
 	s.handler = s.withMiddleware(s.mux)
 	return s, nil
@@ -71,9 +77,13 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("GET /login", s.handleLoginForm)
 	s.mux.HandleFunc("POST /login", s.handleLoginSubmit)
+	s.mux.HandleFunc("GET /consent", s.handleConsentForm)
+	s.mux.HandleFunc("POST /consent", s.handleConsentSubmit)
+	s.mux.HandleFunc("GET /logout", s.handleLogoutPage)
 	s.mux.HandleFunc("POST /logout", s.handleLogout)
 	s.mux.HandleFunc("GET /setup", s.handleSetupForm)
 	s.mux.HandleFunc("POST /setup", s.handleSetupSubmit)
+	s.mux.HandleFunc("GET /branding/logo", s.handleBrandingLogo)
 
 	s.mux.HandleFunc("GET /admin", s.requireAdmin(s.handleAdminHome))
 	s.mux.HandleFunc("GET /admin/users", s.requireAdmin(s.handleAdminUsers))
@@ -87,6 +97,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /admin/clients/{id}/disable", s.requireAdmin(s.handleAdminToggleClient))
 	s.mux.HandleFunc("POST /admin/clients/{id}/rotate", s.requireAdmin(s.handleAdminRotateClient))
 	s.mux.HandleFunc("GET /admin/settings", s.requireAdmin(s.handleAdminSettings))
+	s.mux.HandleFunc("POST /admin/settings", s.requireAdmin(s.handleAdminUpdateBranding))
+	s.mux.HandleFunc("POST /admin/settings/logo", s.requireAdmin(s.handleAdminUploadLogo))
 
 	s.mux.HandleFunc("GET /{$}", s.handleRoot)
 }

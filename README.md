@@ -12,14 +12,31 @@ first, one binary, SQLite.
 - Local users with Argon2id password hashing
 - OIDC: Authorization Code flow + **PKCE (S256)**, refresh tokens (with rotation
   & reuse detection), ID tokens, access tokens
+- **Hosted, branded login page** — unauthenticated authorization requests are
+  parked server-side and the user is sent to a polished `/login` ("Sign in to
+  continue to *<app>*") that shows the requesting application's name, logo, and
+  domain; an existing session skips login automatically
+- **Per-client consent** — trusted first-party apps skip consent; third-party
+  apps get a consent screen listing the requested scopes and the user identity
+- **RP-initiated logout** (`/logout`) with `id_token_hint`,
+  `post_logout_redirect_uri` (exact allowlist), and `state`; revokes the
+  browser's refresh tokens for the client
+- **Configurable branding** (product name, uploaded logo, accent color, footer,
+  background) applied to the login, consent, logout, and error pages
+- **Rich client metadata**: display name, logo URL, homepage, allowed redirect &
+  post-logout URIs, public/confidential type
+- Login hardening: CSRF, per-IP+user **rate limiting**, session-id rotation,
+  generic errors, exact redirect matching (no wildcards / open redirects)
 - Signed JWTs (RSA **RS256** default, plus Ed25519 **EdDSA**) published via JWKS
 - Discovery endpoint (`/.well-known/openid-configuration`)
-- Browser sessions with CSRF-protected forms and secure cookies
-- Minimal admin UI: users, applications (clients), settings
+- Minimal admin UI: users, applications (clients), branding settings
 - First-run web wizard to create the initial admin
 - Token revocation (RFC 7009) for refresh tokens
 - Structured request logging and a basic Prometheus-style `/metrics` endpoint
 - Single binary + SQLite
+
+See [docs/INTEGRATION.md](docs/INTEGRATION.md) for how applications add a
+**"Continue with Omni Identity"** button using Authorization Code + PKCE.
 
 ## Build
 
