@@ -134,6 +134,32 @@ database:
 	}
 }
 
+func TestLoadMissingFileUsesEnvAndDefaults(t *testing.T) {
+	// In a container we drive config purely via env, with no file present.
+	t.Setenv("OMNI_SERVER_PUBLIC_URL", "https://id.example.com")
+	t.Setenv("OMNI_DATABASE_PATH", "/data/omni-identity.db")
+
+	cfg, err := Load(filepath.Join(t.TempDir(), "does-not-exist.yaml"))
+	if err != nil {
+		t.Fatalf("Load with missing file should succeed via env: %v", err)
+	}
+	if cfg.Server.PublicURL != "https://id.example.com" {
+		t.Errorf("public_url = %q", cfg.Server.PublicURL)
+	}
+	if cfg.Database.Path != "/data/omni-identity.db" {
+		t.Errorf("db path = %q", cfg.Database.Path)
+	}
+	if cfg.Server.Port != 8080 {
+		t.Errorf("default port = %d", cfg.Server.Port)
+	}
+}
+
+func TestLoadMissingFileWithoutPublicURLStillErrors(t *testing.T) {
+	if _, err := Load(filepath.Join(t.TempDir(), "nope.yaml")); err == nil {
+		t.Error("missing file and no public_url should still fail validation")
+	}
+}
+
 func TestLoadRejectsMissingPublicURL(t *testing.T) {
 	path := writeTempConfig(t, `
 server:

@@ -10,6 +10,7 @@
 *.db-shm
 config.yaml
 config.local.yaml
+.env
 
 # Go
 /vendor/

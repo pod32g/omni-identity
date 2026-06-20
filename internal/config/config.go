@@ -3,7 +3,9 @@
 package config
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"strconv"
 	"time"
@@ -72,16 +74,20 @@ const (
 	defaultRefreshTokenTTL = 720 * time.Hour
 )
 
-// Load reads, defaults, env-overrides, and validates the config at path.
+// Load reads, defaults, env-overrides, and validates the config at path. A
+// missing file is not an error: configuration then comes from environment
+// variables and defaults (useful for containerized, env-only deployments).
 func Load(path string) (*Config, error) {
 	raw, err := os.ReadFile(path)
-	if err != nil {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("read config: %w", err)
 	}
 
 	var fc fileConfig
-	if err := yaml.Unmarshal(raw, &fc); err != nil {
-		return nil, fmt.Errorf("parse config: %w", err)
+	if len(raw) > 0 {
+		if err := yaml.Unmarshal(raw, &fc); err != nil {
+			return nil, fmt.Errorf("parse config: %w", err)
+		}
 	}
 
 	applyEnvOverrides(&fc)

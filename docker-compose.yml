@@ -1,0 +1,50 @@
+# Omni Identity deployment. The image is built from the repo Dockerfile (a CGO
+# SQLite binary on glibc distroless). All persistent state — users, clients,
+# sessions, and the signing keys — lives in a named volume so it survives
+# container recreation; the volume name is pinned so the deploy's backup/restore
+# can address it directly.
+#
+# This runs on the same host as omni-logging (which publishes :8080), so the
+# default published port here is 8081. Override via a .env file (see .env.example).
+services:
+  omni-identity:
+    build: .
+    image: omni-identity:latest
+    container_name: omni-identity
+    restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    command: ["serve"]
+    ports:
+      - "${OMNI_IDENTITY_HOST_PORT:-8081}:8080"
+    environment:
+      # The app listens on :8080 inside the container; the host maps 8081->8080.
+      OMNI_SERVER_HOST: 0.0.0.0
+      OMNI_SERVER_PORT: "8080"
+      OMNI_DATABASE_PATH: /data/omni-identity.db
+      # Public base URL clients use to reach this server (also the OIDC issuer).
+      OMNI_SERVER_PUBLIC_URL: ${OMNI_SERVER_PUBLIC_URL:-http://192.168.68.34:8081}
+      # Empty => issuer defaults to public_url.
+      OMNI_SECURITY_ISSUER: ${OMNI_SECURITY_ISSUER:-}
+      # Secure cookies require HTTPS; keep false for plain-http LAN access.
+      OMNI_COOKIES_SECURE: ${OMNI_COOKIES_SECURE:-false}
+    volumes:
+      - omni-identity-data:/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    healthcheck:
+      # The distroless image has no shell/curl, so the binary probes itself.
+      test: ["CMD", "/omni-identity", "healthcheck", "--url", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  omni-identity-data:
+    name: omni-identity-data

@@ -64,11 +64,19 @@ Any value can be overridden by environment variables, e.g. `OMNI_SERVER_PORT`,
 ## Run
 
 ```sh
-./omni-identity -config config.yaml
+./omni-identity serve -config config.yaml
 ```
 
 On first launch, open the public URL — you'll be sent to `/setup` to create the
 first administrator. The wizard disables itself once an admin exists.
+
+The binary also exposes operational subcommands used by the deploy pipeline:
+
+```sh
+omni-identity backup      --db ./omni-identity.db --out ./snapshot.db   # online VACUUM INTO
+omni-identity integrity   --db ./omni-identity.db                       # PRAGMA integrity_check
+omni-identity healthcheck --url http://localhost:8080/healthz          # 2xx = healthy
+```
 
 ## Register a client (under 5 minutes)
 
@@ -119,6 +127,18 @@ Code + PKCE flow and the discovery document above.
   revoked — keep `token_ttl` short (default 15m); `/oauth2/revoke` invalidates
   refresh tokens, which stops renewal.
 - Run behind HTTPS in production and keep `cookies.secure: true`.
+
+## Deployment
+
+Omni Identity ships with a Docker image (CGO SQLite on glibc distroless,
+non-root, read-only rootfs) and a `docker compose` stack, plus a self-hosted
+GitHub Actions pipeline that builds and deploys to a target host with
+pre-deploy DB backup, integrity check, and auto-heal. See
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+```sh
+make compose-up      # build + run locally via docker compose (uses .env)
+```
 
 ## Non-goals (V1)
 

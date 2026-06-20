@@ -1,0 +1,15 @@
+# Keep the build context small and free of secrets/artifacts.
+.git
+.github
+/omni-identity
+/dist
+*.db
+*.db-wal
+*.db-shm
+*.test
+config.yaml
+config.local.yaml
+.env
+.DS_Store
+docs
+*.md
