@@ -3,9 +3,9 @@ name: CI/CD
 on:
   push:
     branches: ['**']
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE']   # docs-only changes don't build/deploy
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE', 'design-system/**', '.design-sync/**']   # docs-only changes don't build/deploy
   pull_request:
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE', 'design-system/**', '.design-sync/**']
   workflow_dispatch:   # allow manual build+deploy from the Actions tab
 
 # Cancel superseded runs per ref, except on main (never cancel a main deploy).
