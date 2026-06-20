@@ -1,0 +1,18 @@
+.omni-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--omni-radius-control);
+  border: 1px solid var(--omni-border-strong);
+  background: var(--omni-surface-inset);
+  color: var(--omni-text);
+  font-size: var(--omni-font-size-base);
+  font-family: var(--omni-font-family);
+}
+.omni-input::placeholder {
+  color: var(--omni-text-muted);
+}
+.omni-input:focus {
+  outline: 2px solid var(--omni-accent);
+  border-color: var(--omni-accent);
+}

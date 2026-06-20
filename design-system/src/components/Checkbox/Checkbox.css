@@ -1,0 +1,12 @@
+.omni-checkbox {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--omni-space-2);
+  font-size: var(--omni-font-size-sm);
+  color: var(--omni-text-dim);
+  cursor: pointer;
+}
+.omni-checkbox input {
+  accent-color: var(--omni-accent);
+}

@@ -1,0 +1,26 @@
+.omni-btn {
+  box-sizing: border-box;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: var(--omni-radius-control);
+  font-weight: 600;
+  font-size: var(--omni-font-size-base);
+  font-family: var(--omni-font-family);
+  cursor: pointer;
+  line-height: 1.2;
+}
+.omni-btn--primary {
+  background: var(--omni-accent);
+  color: #fff;
+}
+.omni-btn--primary:hover {
+  background: var(--omni-accent-hover);
+}
+.omni-btn--secondary {
+  background: var(--omni-border-strong);
+  color: var(--omni-text);
+}
+.omni-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

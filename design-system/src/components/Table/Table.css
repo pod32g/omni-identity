@@ -1,0 +1,19 @@
+.omni-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--omni-font-size-base);
+  color: var(--omni-text);
+}
+.omni-table th,
+.omni-table td {
+  text-align: left;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--omni-border);
+}
+.omni-table th {
+  color: var(--omni-text-muted);
+  font-weight: 600;
+  font-size: var(--omni-font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

@@ -1,0 +1,19 @@
+.omni-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--omni-space-1);
+  font-size: var(--omni-font-size-sm);
+  color: var(--omni-text-dim);
+}
+.omni-field__control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--omni-space-1);
+}
+.omni-field__label {
+  color: var(--omni-text-dim);
+}
+.omni-field__hint {
+  color: var(--omni-text-muted);
+  font-size: var(--omni-font-size-xs);
+}

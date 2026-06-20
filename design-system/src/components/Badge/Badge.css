@@ -1,0 +1,14 @@
+.omni-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: var(--omni-radius-pill);
+  font-size: var(--omni-font-size-xs);
+}
+.omni-badge--ok {
+  background: var(--omni-ok-bg);
+  color: var(--omni-ok-text);
+}
+.omni-badge--off {
+  background: var(--omni-danger-bg);
+  color: var(--omni-danger-text);
+}

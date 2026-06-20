@@ -15,6 +15,12 @@ config.local.yaml
 # Go
 /vendor/
 
+# design-system (JS component library)
+design-system/node_modules/
+design-system/dist/
+design-system/storybook-static/
+design-system/.storybook-out/
+
 # Editor / OS
 .DS_Store
 .idea/

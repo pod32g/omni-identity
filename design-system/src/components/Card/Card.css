@@ -1,0 +1,17 @@
+.omni-card {
+  box-sizing: border-box;
+  width: 100%;
+  background: var(--omni-surface);
+  border: 1px solid var(--omni-border);
+  border-radius: var(--omni-radius-card);
+  padding: 28px 32px;
+  box-shadow: var(--omni-shadow-card);
+  color: var(--omni-text);
+  font: var(--omni-font-body);
+}
+.omni-card--default {
+  max-width: 760px;
+}
+.omni-card--auth {
+  max-width: 380px;
+}

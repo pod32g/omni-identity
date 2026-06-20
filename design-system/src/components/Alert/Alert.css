@@ -1,0 +1,17 @@
+.omni-alert {
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: var(--omni-radius-control);
+  font-size: var(--omni-font-size-sm);
+  border: 1px solid transparent;
+}
+.omni-alert--error {
+  background: var(--omni-danger-bg);
+  border-color: var(--omni-danger-border);
+  color: var(--omni-danger-text);
+}
+.omni-alert--success {
+  background: var(--omni-ok-bg);
+  border-color: var(--omni-ok-border);
+  color: var(--omni-ok-text);
+}

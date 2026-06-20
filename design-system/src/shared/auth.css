@@ -1,0 +1,22 @@
+/* Shared typography + form layout used by the composed auth screens. */
+.omni-h1 {
+  font-size: var(--omni-font-size-h1);
+  margin: 0 0 4px;
+  color: var(--omni-text);
+}
+.omni-h2 {
+  font-size: var(--omni-font-size-h2);
+  margin: 24px 0 10px;
+  color: var(--omni-text);
+}
+.omni-muted {
+  color: var(--omni-text-muted);
+  font-size: var(--omni-font-size-sm);
+  margin-top: 0;
+}
+.omni-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--omni-space-4);
+  margin-top: 18px;
+}

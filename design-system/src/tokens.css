@@ -1,0 +1,61 @@
+/*
+ * Omni Identity design tokens.
+ * Extracted from internal/web/templates/base.html. Every component styles via
+ * these custom properties — never raw hex.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces & borders */
+  --omni-bg: #0f1115;
+  --omni-surface: #171a21;
+  --omni-surface-inset: #0f1115;
+  --omni-border: #262b36;
+  --omni-border-strong: #2c3340;
+
+  /* Text */
+  --omni-text: #e7e9ee;
+  --omni-text-dim: #b6bdca;
+  --omni-text-muted: #97a0b0;
+
+  /* Accent (primary action) */
+  --omni-accent: #4d7cff;
+  --omni-accent-hover: #3d6cf0;
+  --omni-link: #7aa2ff;
+
+  /* Danger / error */
+  --omni-danger-bg: #3a1b1f;
+  --omni-danger-border: #6e2a31;
+  --omni-danger-text: #ffb4bb;
+
+  /* Success / ok */
+  --omni-ok-bg: #143524;
+  --omni-ok-border: #1f5a3a;
+  --omni-ok-text: #7ee2a8;
+
+  /* Radii */
+  --omni-radius-card: 14px;
+  --omni-radius-control: 8px;
+  --omni-radius-pill: 999px;
+
+  /* Spacing scale */
+  --omni-space-1: 6px;
+  --omni-space-2: 8px;
+  --omni-space-3: 10px;
+  --omni-space-4: 14px;
+  --omni-space-5: 18px;
+  --omni-space-6: 24px;
+  --omni-space-7: 32px;
+
+  /* Typography */
+  --omni-font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --omni-font-body: 15px/1.5 var(--omni-font-family);
+  --omni-font-size-sm: 13px;
+  --omni-font-size-xs: 12px;
+  --omni-font-size-base: 14px;
+  --omni-font-size-h1: 20px;
+  --omni-font-size-h2: 16px;
+
+  /* Elevation */
+  --omni-shadow-card: 0 10px 40px rgba(0, 0, 0, 0.35);
+}

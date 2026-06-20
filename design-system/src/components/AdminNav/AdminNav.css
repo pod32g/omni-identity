@@ -1,0 +1,32 @@
+.omni-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.omni-nav {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  font-size: var(--omni-font-size-base);
+}
+.omni-nav__link {
+  color: var(--omni-link);
+  text-decoration: none;
+}
+.omni-nav__link:hover {
+  text-decoration: underline;
+}
+.omni-nav__link--active {
+  color: var(--omni-text);
+}
+.omni-topbar__end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.omni-topbar__user {
+  color: var(--omni-text-muted);
+  font-size: var(--omni-font-size-sm);
+}

@@ -1,0 +1,13 @@
+.omni-page {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--omni-bg);
+  color: var(--omni-text);
+  font: var(--omni-font-body);
+}
+.omni-page--center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
