@@ -1,0 +1,21 @@
+{{define "title"}}2FA enabled · Omni Identity{{end}}
+{{define "content"}}
+{{template "account-shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>Two-step verification is on</h1>
+    <p class="desc">Save these recovery codes somewhere safe.</p>
+  </div>
+  <div class="actions"><a class="btn primary" href="/account">Done</a></div>
+</div>
+<div class="page-body">
+  <div class="callout">
+    <strong>Recovery codes (shown once — store them now):</strong>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:8px">
+      {{range .RecoveryCodes}}<code>{{.}}</code>{{end}}
+    </div>
+  </div>
+  <p class="muted">Each code can be used once if you lose access to your authenticator app.</p>
+</div>
+{{template "account-shell-end" .}}
+{{end}}

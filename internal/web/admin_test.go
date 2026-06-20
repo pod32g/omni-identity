@@ -73,7 +73,7 @@ func TestAdminCreateUser(t *testing.T) {
 	rr := adminPost(srv, "/admin/users", url.Values{
 		"username": {"newbie"},
 		"email":    {"newbie@example.com"},
-		"password": {"password123"},
+		"password": {"password1234"},
 	}, sid)
 	if rr.Code != http.StatusSeeOther {
 		t.Fatalf("code = %d, want 303 (body: %s)", rr.Code, rr.Body.String())
@@ -105,11 +105,11 @@ func TestAdminChangeUserPassword(t *testing.T) {
 	target := createUser(t, srv, "user1", "oldpw", false)
 
 	rr := adminPost(srv, "/admin/users/"+target.ID+"/password",
-		url.Values{"password": {"brandnewpw"}}, sid)
+		url.Values{"password": {"brandnewpw123"}}, sid)
 	if rr.Code != http.StatusSeeOther {
 		t.Fatalf("code = %d, want 303", rr.Code)
 	}
-	if _, err := auth.Authenticate(context.Background(), srv.db, "user1", "brandnewpw"); err != nil {
+	if _, err := auth.Authenticate(context.Background(), srv.db, "user1", "brandnewpw123"); err != nil {
 		t.Errorf("new password should authenticate: %v", err)
 	}
 }

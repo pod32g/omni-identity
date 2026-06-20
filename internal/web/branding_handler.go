@@ -76,6 +76,7 @@ func (s *Server) handleAdminUpdateBranding(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.branding.Reload(r.Context())
+	s.audit(r, evtBrandingUpdate, auditEntry{actorUserID: actorID(r), success: true})
 	http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
 }
 

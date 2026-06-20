@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/pod32g/omni-identity/internal/auth"
@@ -38,9 +39,23 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Require an authenticated browser session; otherwise park and bounce to login.
-	sess, err := s.sessions.Current(r)
-	if err != nil {
+	q := r.URL.Query()
+	prompt := q.Get("prompt")
+	sess, sessErr := s.sessions.Current(r)
+	authed := sessErr == nil
+
+	// Honor re-authentication requirements: prompt=login or a max_age that the
+	// current session's age exceeds forces a fresh login.
+	if authed && (prompt == "login" || maxAgeExceeded(q.Get("max_age"), sess.CreatedAt)) {
+		authed = false
+	}
+
+	if !authed {
+		// prompt=none must not show UI; report back to the client per OIDC.
+		if prompt == "none" {
+			redirectErr(w, r, p.redirectURI, "login_required", "authentication is required but prompt=none was set", p.state)
+			return
+		}
 		s.parkAndRedirect(w, r, p, "/login")
 		return
 	}
@@ -50,7 +65,24 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		s.issueCode(w, r, p, sess.UserID, sess.CreatedAt)
 		return
 	}
+	if prompt == "none" {
+		redirectErr(w, r, p.redirectURI, "consent_required", "consent is required but prompt=none was set", p.state)
+		return
+	}
 	s.parkAndRedirect(w, r, p, "/consent")
+}
+
+// maxAgeExceeded reports whether the session login is older than the requested
+// max_age (seconds). A blank or invalid max_age never forces re-auth.
+func maxAgeExceeded(maxAge string, authTime time.Time) bool {
+	if maxAge == "" {
+		return false
+	}
+	secs, err := strconv.Atoi(maxAge)
+	if err != nil || secs < 0 {
+		return false
+	}
+	return time.Since(authTime) > time.Duration(secs)*time.Second
 }
 
 // validateAuthorize parses and validates the request. Errors before the

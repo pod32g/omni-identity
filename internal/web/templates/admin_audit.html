@@ -1,0 +1,33 @@
+{{define "title"}}Audit log · Omni Identity{{end}}
+{{define "content"}}
+{{template "shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>Audit log <span class="count">{{len .Events}}</span></h1>
+    <p class="desc">Recent security events (most recent first).</p>
+  </div>
+</div>
+<div class="page-body">
+  <div class="panel">
+    <table class="omni">
+      <thead>
+        <tr><th>Time</th><th>Event</th><th>User</th><th>Client</th><th>IP</th><th>Result</th><th>Detail</th></tr>
+      </thead>
+      <tbody>
+        {{range .Events}}
+        <tr>
+          <td class="t-secondary" style="white-space:nowrap">{{.Time}}</td>
+          <td><code>{{.Event}}</code></td>
+          <td>{{.Username}}</td>
+          <td>{{if .ClientID}}<code>{{.ClientID}}</code>{{end}}</td>
+          <td class="t-secondary">{{.IP}}</td>
+          <td>{{if .Success}}<span class="chip ok"><span class="dot"></span>ok</span>{{else}}<span class="chip off"><span class="dot"></span>fail</span>{{end}}</td>
+          <td class="t-secondary">{{.Detail}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{template "shell-end" .}}
+{{end}}

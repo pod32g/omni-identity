@@ -219,7 +219,7 @@
   <span class="brand-name">Omni Identity</span>
   <span class="tb-divider"></span>
   <span class="spacer"></span>
-  <span class="t-caption">{{with .Me}}{{.Username}}{{end}}</span>
+  <a class="btn sm" href="/account">{{with .Me}}{{.Username}}{{end}}</a>
   <form method="post" action="/logout" class="inline">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
     <button class="btn sm" type="submit">Sign out</button>
@@ -234,8 +234,9 @@
   <div class="group-label">Access</div>
   <a class="omni-sidebar-item{{if eq .Active "clients"}} active{{end}}" href="/admin/clients"><span class="ico">{{template "ic-grid" .}}</span><span>Applications</span></a>
   <div class="group-label">System</div>
+  <a class="omni-sidebar-item{{if eq .Active "audit"}} active{{end}}" href="/admin/audit"><span class="ico">{{template "ic-shield" .}}</span><span>Audit log</span></a>
   <a class="omni-sidebar-item{{if eq .Active "settings"}} active{{end}}" href="/admin/settings"><span class="ico">{{template "ic-settings" .}}</span><span>Settings</span></a>
-  <div class="sidebar-foot">Omni Identity · V1</div>
+  <div class="sidebar-foot">Omni Identity</div>
 </aside>
 {{end}}
 
@@ -252,3 +253,29 @@
   </div>
 </div>
 {{end}}
+
+{{/* Account shell: top bar + a single centered content column (no admin sidebar),
+     for self-service pages reachable by any signed-in user. */}}
+{{define "account-shell-start"}}
+<div class="shell" data-app="account">
+  <header class="omni-toolbar">
+    {{template "omni-brand-inline" .}}
+    <span class="tb-divider"></span>
+    <span class="t-caption">Account</span>
+    <span class="spacer"></span>
+    <span class="t-caption">{{with .Me}}{{.Username}}{{end}}</span>
+    <form method="post" action="/logout" class="inline">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button class="btn sm" type="submit">Sign out</button>
+    </form>
+  </header>
+  <main class="omni-main"><div style="max-width:760px;margin:0 auto">
+{{end}}
+
+{{define "account-shell-end"}}
+  </div></main>
+</div>
+{{end}}
+
+{{/* Compact brand lockup for toolbars. */}}
+{{define "omni-brand-inline"}}{{with brand}}{{if .HasLogo}}<img class="brand-logo" src="{{.LogoURL}}" alt="{{.ProductName}}" style="height:22px">{{else}}<span class="brand-mark">{{template "ic-shield" .}}</span><span class="brand-name">{{.ProductName}}</span>{{end}}{{end}}{{end}}

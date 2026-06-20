@@ -21,6 +21,7 @@ type DiscoveryDocument struct {
 	UserinfoEndpoint                  string   `json:"userinfo_endpoint"`
 	JWKSURI                           string   `json:"jwks_uri"`
 	RevocationEndpoint                string   `json:"revocation_endpoint"`
+	IntrospectionEndpoint             string   `json:"introspection_endpoint"`
 	EndSessionEndpoint                string   `json:"end_session_endpoint"`
 	ResponseTypesSupported            []string `json:"response_types_supported"`
 	GrantTypesSupported               []string `json:"grant_types_supported"`
@@ -29,6 +30,7 @@ type DiscoveryDocument struct {
 	ScopesSupported                   []string `json:"scopes_supported"`
 	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
 	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported"`
+	PromptValuesSupported             []string `json:"prompt_values_supported"`
 	ClaimsSupported                   []string `json:"claims_supported"`
 }
 
@@ -44,14 +46,16 @@ func BuildDiscovery(issuer string) DiscoveryDocument {
 		UserinfoEndpoint:                  base + "/userinfo",
 		JWKSURI:                           base + "/jwks.json",
 		RevocationEndpoint:                base + "/oauth2/revoke",
+		IntrospectionEndpoint:             base + "/oauth2/introspect",
 		EndSessionEndpoint:                base + "/logout",
 		ResponseTypesSupported:            []string{"code"},
-		GrantTypesSupported:               []string{"authorization_code", "refresh_token"},
+		GrantTypesSupported:               []string{"authorization_code", "refresh_token", "client_credentials"},
 		SubjectTypesSupported:             []string{"public"},
 		IDTokenSigningAlgValuesSupported:  []string{"RS256", "EdDSA"},
 		ScopesSupported:                   []string{ScopeOpenID, ScopeProfile, ScopeEmail, ScopeOfflineAccess},
 		TokenEndpointAuthMethodsSupported: []string{"client_secret_basic", "client_secret_post", "none"},
 		CodeChallengeMethodsSupported:     []string{"S256"},
+		PromptValuesSupported:             []string{"none", "login", "consent"},
 		ClaimsSupported: []string{
 			"sub", "iss", "aud", "exp", "iat",
 			"email", "email_verified", "preferred_username", "name",

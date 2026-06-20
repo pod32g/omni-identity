@@ -35,6 +35,8 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 		s.grantAuthorizationCode(w, r)
 	case "refresh_token":
 		s.grantRefreshToken(w, r)
+	case "client_credentials":
+		s.grantClientCredentials(w, r)
 	default:
 		oauthError(w, http.StatusBadRequest, "unsupported_grant_type", "unsupported grant_type")
 	}
@@ -98,6 +100,7 @@ func (s *Server) grantAuthorizationCode(w http.ResponseWriter, r *http.Request) 
 		}
 		resp.RefreshToken = raw
 	}
+	s.audit(r, evtTokenIssued, auditEntry{actorUserID: user.ID, username: user.Username, clientID: client.ClientID, success: true, detail: "authorization_code"})
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -181,6 +184,7 @@ func (s *Server) grantRefreshToken(w http.ResponseWriter, r *http.Request) {
 	if newRT != nil {
 		resp.RefreshToken = rawRefresh
 	}
+	s.audit(r, evtTokenIssued, auditEntry{actorUserID: user.ID, username: user.Username, clientID: client.ClientID, success: true, detail: "refresh_token"})
 	writeJSON(w, http.StatusOK, resp)
 }
 

@@ -33,11 +33,19 @@ type DatabaseConfig struct {
 	Path string
 }
 
-// SecurityConfig holds issuer and token lifetime settings.
+// SecurityConfig holds issuer, token lifetime, and account-protection settings.
 type SecurityConfig struct {
 	Issuer          string
 	TokenTTL        time.Duration
 	RefreshTokenTTL time.Duration
+	// Account lockout.
+	MaxFailedLogins int
+	LockoutDuration time.Duration
+	// Password policy.
+	PasswordMinLength int
+	// SessionIdleTimeout expires idle sessions; 0 disables idle expiry (the
+	// absolute session lifetime still applies).
+	SessionIdleTimeout time.Duration
 }
 
 // CookieConfig holds browser cookie settings.
@@ -56,9 +64,13 @@ type fileConfig struct {
 		Path string `yaml:"path"`
 	} `yaml:"database"`
 	Security struct {
-		Issuer          string `yaml:"issuer"`
-		TokenTTL        string `yaml:"token_ttl"`
-		RefreshTokenTTL string `yaml:"refresh_token_ttl"`
+		Issuer             string `yaml:"issuer"`
+		TokenTTL           string `yaml:"token_ttl"`
+		RefreshTokenTTL    string `yaml:"refresh_token_ttl"`
+		MaxFailedLogins    int    `yaml:"max_failed_logins"`
+		LockoutDuration    string `yaml:"lockout_duration"`
+		PasswordMinLength  int    `yaml:"password_min_length"`
+		SessionIdleTimeout string `yaml:"session_idle_timeout"`
 	} `yaml:"security"`
 	Cookies struct {
 		// Secure is a pointer so we can tell "unset" from "false".
@@ -67,11 +79,14 @@ type fileConfig struct {
 }
 
 const (
-	defaultHost            = "0.0.0.0"
-	defaultPort            = 8080
-	defaultDBPath          = "./omni-identity.db"
-	defaultTokenTTL        = 15 * time.Minute
-	defaultRefreshTokenTTL = 720 * time.Hour
+	defaultHost              = "0.0.0.0"
+	defaultPort              = 8080
+	defaultDBPath            = "./omni-identity.db"
+	defaultTokenTTL          = 15 * time.Minute
+	defaultRefreshTokenTTL   = 720 * time.Hour
+	defaultMaxFailedLogins   = 5
+	defaultLockoutDuration   = 15 * time.Minute
+	defaultPasswordMinLength = 12
 )
 
 // Load reads, defaults, env-overrides, and validates the config at path. A
@@ -106,6 +121,16 @@ func Load(path string) (*Config, error) {
 	cfg.Security.RefreshTokenTTL, err = parseDurationOr(fc.Security.RefreshTokenTTL, defaultRefreshTokenTTL)
 	if err != nil {
 		return nil, fmt.Errorf("security.refresh_token_ttl: %w", err)
+	}
+	cfg.Security.MaxFailedLogins = orDefaultInt(fc.Security.MaxFailedLogins, defaultMaxFailedLogins)
+	cfg.Security.LockoutDuration, err = parseDurationOr(fc.Security.LockoutDuration, defaultLockoutDuration)
+	if err != nil {
+		return nil, fmt.Errorf("security.lockout_duration: %w", err)
+	}
+	cfg.Security.PasswordMinLength = orDefaultInt(fc.Security.PasswordMinLength, defaultPasswordMinLength)
+	cfg.Security.SessionIdleTimeout, err = parseDurationOr(fc.Security.SessionIdleTimeout, 0)
+	if err != nil {
+		return nil, fmt.Errorf("security.session_idle_timeout: %w", err)
 	}
 
 	cfg.Cookies.Secure = true
@@ -155,6 +180,22 @@ func applyEnvOverrides(fc *fileConfig) {
 	}
 	if v := os.Getenv("OMNI_SECURITY_REFRESH_TOKEN_TTL"); v != "" {
 		fc.Security.RefreshTokenTTL = v
+	}
+	if v := os.Getenv("OMNI_SECURITY_MAX_FAILED_LOGINS"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			fc.Security.MaxFailedLogins = n
+		}
+	}
+	if v := os.Getenv("OMNI_SECURITY_LOCKOUT_DURATION"); v != "" {
+		fc.Security.LockoutDuration = v
+	}
+	if v := os.Getenv("OMNI_SECURITY_PASSWORD_MIN_LENGTH"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			fc.Security.PasswordMinLength = n
+		}
+	}
+	if v := os.Getenv("OMNI_SECURITY_SESSION_IDLE_TIMEOUT"); v != "" {
+		fc.Security.SessionIdleTimeout = v
 	}
 	if v := os.Getenv("OMNI_COOKIES_SECURE"); v != "" {
 		b := v == "true" || v == "1"

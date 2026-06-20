@@ -10,6 +10,7 @@ import (
 
 	"github.com/pod32g/omni-identity/internal/auth"
 	"github.com/pod32g/omni-identity/internal/config"
+	"github.com/pod32g/omni-identity/internal/crypto"
 	"github.com/pod32g/omni-identity/internal/store"
 	"github.com/pod32g/omni-identity/internal/tokens"
 )
@@ -27,6 +28,8 @@ type Server struct {
 	tmpl      *templates
 	branding  *brandingService
 	loginRate *rateLimiter
+	mfaRate   *rateLimiter
+	enc       *crypto.Encryptor
 	metrics   *metrics
 	mux       *http.ServeMux
 	handler   http.Handler
@@ -43,15 +46,31 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Persisted server secret used to encrypt sensitive columns (TOTP secrets).
+	keyB64, err := db.GetOrCreateAppSecret(context.Background(), crypto.GenerateKeyB64)
+	if err != nil {
+		return nil, err
+	}
+	enc, err := crypto.NewEncryptorFromB64(keyB64)
+	if err != nil {
+		return nil, err
+	}
+
+	sessions := auth.NewSessionManager(db, cfg.Cookies.Secure, sessionTTL)
+	sessions.SetIdleTimeout(cfg.Security.SessionIdleTimeout)
+
 	s := &Server{
 		cfg:       cfg,
 		db:        db,
-		sessions:  auth.NewSessionManager(db, cfg.Cookies.Secure, sessionTTL),
+		sessions:  sessions,
 		keys:      km,
 		issuer:    tokens.NewIssuer(km, cfg.Security.Issuer, cfg.Security.TokenTTL, cfg.Security.TokenTTL),
 		tmpl:      tmpl,
 		branding:  newBrandingService(db.GetBranding),
 		loginRate: newRateLimiter(loginMaxAttempts, loginWindow),
+		mfaRate:   newRateLimiter(loginMaxAttempts, loginWindow),
+		enc:       enc,
 		metrics:   newMetrics(),
 		mux:       http.NewServeMux(),
 	}
@@ -72,11 +91,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /oauth2/authorize", s.handleAuthorize)
 	s.mux.HandleFunc("POST /oauth2/token", s.handleToken)
 	s.mux.HandleFunc("POST /oauth2/revoke", s.handleRevoke)
+	s.mux.HandleFunc("POST /oauth2/introspect", s.handleIntrospect)
 	s.mux.HandleFunc("GET /userinfo", s.handleUserinfo)
 	s.mux.HandleFunc("POST /userinfo", s.handleUserinfo)
 
 	s.mux.HandleFunc("GET /login", s.handleLoginForm)
 	s.mux.HandleFunc("POST /login", s.handleLoginSubmit)
+	s.mux.HandleFunc("GET /login/mfa", s.handleMFAForm)
+	s.mux.HandleFunc("POST /login/mfa", s.handleMFASubmit)
 	s.mux.HandleFunc("GET /consent", s.handleConsentForm)
 	s.mux.HandleFunc("POST /consent", s.handleConsentSubmit)
 	s.mux.HandleFunc("GET /logout", s.handleLogoutPage)
@@ -84,6 +106,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /setup", s.handleSetupForm)
 	s.mux.HandleFunc("POST /setup", s.handleSetupSubmit)
 	s.mux.HandleFunc("GET /branding/logo", s.handleBrandingLogo)
+
+	s.mux.HandleFunc("GET /account", s.requireUser(s.handleAccount))
+	s.mux.HandleFunc("POST /account/password", s.requireUser(s.handleAccountPassword))
+	s.mux.HandleFunc("POST /account/sessions/revoke", s.requireUser(s.handleRevokeOtherSessions))
+	s.mux.HandleFunc("GET /account/mfa/setup", s.requireUser(s.handleMFASetup))
+	s.mux.HandleFunc("POST /account/mfa/enable", s.requireUser(s.handleMFAEnable))
+	s.mux.HandleFunc("POST /account/mfa/disable", s.requireUser(s.handleMFADisable))
 
 	s.mux.HandleFunc("GET /admin", s.requireAdmin(s.handleAdminHome))
 	s.mux.HandleFunc("GET /admin/users", s.requireAdmin(s.handleAdminUsers))
@@ -96,9 +125,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /admin/clients/{id}", s.requireAdmin(s.handleAdminUpdateClient))
 	s.mux.HandleFunc("POST /admin/clients/{id}/disable", s.requireAdmin(s.handleAdminToggleClient))
 	s.mux.HandleFunc("POST /admin/clients/{id}/rotate", s.requireAdmin(s.handleAdminRotateClient))
+	s.mux.HandleFunc("POST /admin/users/{id}/unlock", s.requireAdmin(s.handleAdminUnlockUser))
+	s.mux.HandleFunc("POST /admin/users/{id}/mfa/reset", s.requireAdmin(s.handleAdminResetMFA))
 	s.mux.HandleFunc("GET /admin/settings", s.requireAdmin(s.handleAdminSettings))
 	s.mux.HandleFunc("POST /admin/settings", s.requireAdmin(s.handleAdminUpdateBranding))
 	s.mux.HandleFunc("POST /admin/settings/logo", s.requireAdmin(s.handleAdminUploadLogo))
+	s.mux.HandleFunc("GET /admin/audit", s.requireAdmin(s.handleAdminAudit))
 
 	s.mux.HandleFunc("GET /{$}", s.handleRoot)
 }

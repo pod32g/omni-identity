@@ -99,11 +99,13 @@ func (s *Server) handleConsentSubmit(w http.ResponseWriter, r *http.Request) {
 	if r.PostFormValue("action") != "allow" {
 		// User cancelled: tell the client per RFC 6749 and drop the request.
 		_ = s.db.DeleteAuthRequest(r.Context(), reqID)
+		s.audit(r, evtConsentDenied, auditEntry{actorUserID: sess.UserID, clientID: p.client.ClientID})
 		redirectErr(w, r, p.redirectURI, "access_denied", "the user denied the request", p.state)
 		return
 	}
 
 	_ = s.db.DeleteAuthRequest(r.Context(), reqID)
+	s.audit(r, evtConsentGranted, auditEntry{actorUserID: sess.UserID, clientID: p.client.ClientID, success: true})
 	authTime := sess.CreatedAt
 	if authTime.IsZero() {
 		authTime = time.Now().UTC()

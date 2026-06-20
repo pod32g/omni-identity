@@ -115,6 +115,9 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		haveReq = true
 	}
 
+	password := r.PostFormValue("password")
+	now := time.Now().UTC()
+
 	// Rate-limit by client IP + submitted username to blunt credential stuffing.
 	rlKey := clientIP(r) + "|" + username
 	if !s.loginRate.Allowed(rlKey) {
@@ -124,31 +127,81 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := auth.Authenticate(r.Context(), s.db, username, r.PostFormValue("password"))
-	if err != nil {
+	invalid := func() {
 		s.loginRate.Fail(rlKey)
-		s.renderLogin(w, r, http.StatusUnauthorized,
-			"Invalid username or password.", reqID, next, app)
+		s.renderLogin(w, r, http.StatusUnauthorized, "Invalid username or password.", reqID, next, app)
+	}
+
+	user, err := s.db.GetUserByUsername(r.Context(), username)
+	if err != nil {
+		auth.DummyVerify(password) // equalize timing for unknown users
+		s.audit(r, evtLoginFailed, auditEntry{username: username, detail: "unknown user"})
+		invalid()
 		return
 	}
+
+	// Account lockout: refuse before checking the password.
+	if user.IsLocked(now) {
+		s.audit(r, evtLoginLocked, auditEntry{actorUserID: user.ID, username: username, detail: "attempt while locked"})
+		s.renderLogin(w, r, http.StatusTooManyRequests,
+			"Your account is temporarily locked due to too many failed sign-in attempts. Please try again later.",
+			reqID, next, app)
+		return
+	}
+
+	ok, _ := auth.VerifyPassword(password, user.PasswordHash)
+	if !ok || user.Disabled {
+		if !user.Disabled {
+			count, _ := s.db.RecordFailedLogin(r.Context(), user.ID,
+				s.cfg.Security.MaxFailedLogins, now.Add(s.cfg.Security.LockoutDuration))
+			if count >= s.cfg.Security.MaxFailedLogins {
+				s.audit(r, evtLoginLocked, auditEntry{actorUserID: user.ID, username: username, detail: "locked after failed attempts"})
+			} else {
+				s.audit(r, evtLoginFailed, auditEntry{actorUserID: user.ID, username: username, detail: "bad password"})
+			}
+		} else {
+			s.audit(r, evtLoginFailed, auditEntry{actorUserID: user.ID, username: username, detail: "disabled account"})
+		}
+		invalid()
+		return
+	}
+
+	// Password correct: clear failure state.
+	_ = s.db.ResetFailedLogins(r.Context(), user.ID)
 	s.loginRate.Reset(rlKey)
 
+	// Second factor required? Park a challenge and divert to the MFA step.
+	if user.MFAEnabled {
+		s.startMFAChallenge(w, r, user, next, reqID)
+		return
+	}
+
 	// Rotates the session id (fixation guard) on success.
-	if _, err := s.sessions.Issue(w, r, user.ID); err != nil {
+	if _, err := s.sessions.Issue(w, r, user.ID, "pwd"); err != nil {
 		http.Error(w, "could not create session", http.StatusInternalServerError)
 		return
 	}
+	s.audit(r, evtLoginSuccess, auditEntry{actorUserID: user.ID, username: username, success: true})
 
 	if haveReq {
-		s.continueAfterAuth(w, r, p, reqID, user.ID, time.Now().UTC())
+		s.continueAfterAuth(w, r, p, reqID, user.ID, now)
 		return
 	}
 
 	dest := next
 	if dest == "" {
-		dest = "/admin"
+		dest = redirectAfterLogin(user)
 	}
 	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
+// redirectAfterLogin sends admins to the console and everyone else to their
+// self-service account page.
+func redirectAfterLogin(u *model.User) string {
+	if u.IsAdmin {
+		return "/admin"
+	}
+	return "/account"
 }
 
 // continueAfterAuth resumes a parked authorization request once the user is
@@ -180,10 +233,15 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid CSRF token", http.StatusForbidden)
 		return
 	}
+	var actor string
+	if sess, err := s.sessions.Current(r); err == nil {
+		actor = sess.UserID
+	}
 	if err := s.sessions.Destroy(w, r); err != nil {
 		http.Error(w, "logout failed", http.StatusInternalServerError)
 		return
 	}
+	s.audit(r, evtLogout, auditEntry{actorUserID: actor, success: true})
 	s.renderSignedOut(w, r, "")
 }
 
@@ -234,8 +292,8 @@ func (s *Server) handleSetupSubmit(w http.ResponseWriter, r *http.Request) {
 		reRender("Username and email are required.")
 		return
 	}
-	if len(password) < 8 {
-		reRender("Password must be at least 8 characters.")
+	if msg := auth.ValidatePassword(password, username, email, s.cfg.Security.PasswordMinLength); msg != "" {
+		reRender(msg)
 		return
 	}
 
@@ -259,10 +317,11 @@ func (s *Server) handleSetupSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := s.sessions.Issue(w, r, user.ID); err != nil {
+	if _, err := s.sessions.Issue(w, r, user.ID, "pwd"); err != nil {
 		http.Error(w, "could not create session", http.StatusInternalServerError)
 		return
 	}
+	s.audit(r, evtLoginSuccess, auditEntry{actorUserID: user.ID, username: username, success: true, detail: "first-run admin"})
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
 }
 

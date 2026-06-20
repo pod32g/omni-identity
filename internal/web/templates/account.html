@@ -1,0 +1,73 @@
+{{define "title"}}Account · Omni Identity{{end}}
+{{define "content"}}
+{{template "account-shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>Your account</h1>
+    <p class="desc">{{.Me.Username}} · {{.Me.Email}}</p>
+  </div>
+  {{if .Me.IsAdmin}}<div class="actions"><a class="btn" href="/admin">Admin console</a></div>{{end}}
+</div>
+<div class="page-body">
+  {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+  {{if .Saved}}<div class="alert success">{{.Saved}}</div>{{end}}
+
+  <div class="panel">
+    <div class="panel-hd">Two-step verification</div>
+    <div class="panel-bd">
+      {{if .MFAEnabled}}
+        <p class="inline"><span class="chip ok"><span class="dot"></span>Enabled</span></p>
+        <form method="post" action="/account/mfa/disable" class="stack" style="margin-top:12px;max-width:320px">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <label class="field">Confirm your password to disable
+            <input name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <button class="btn danger" type="submit" style="align-self:flex-start">Disable 2FA</button>
+        </form>
+      {{else}}
+        <p class="muted">Add a second factor (TOTP) for stronger account security.</p>
+        <p style="margin-top:12px"><a class="btn primary" href="/account/mfa/setup">Set up two-step verification</a></p>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">Change password</div>
+    <div class="panel-bd">
+      <form class="stack" method="post" action="/account/password" style="margin-top:0;max-width:360px">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <label class="field">Current password
+          <input name="current_password" type="password" autocomplete="current-password" required>
+        </label>
+        <label class="field">New password
+          <input name="new_password" type="password" autocomplete="new-password" required>
+        </label>
+        <button class="btn primary" type="submit" style="align-self:flex-start">Change password</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">Active sessions</div>
+    <div class="panel-bd">
+      <table class="omni">
+        <thead><tr><th>Device</th><th>Started</th><th></th></tr></thead>
+        <tbody>
+          {{range .Sessions}}
+          <tr>
+            <td>{{if .UserAgent}}{{.UserAgent}}{{else}}Unknown device{{end}}</td>
+            <td class="t-secondary">{{.CreatedAt}}</td>
+            <td>{{if .Current}}<span class="chip ok"><span class="dot"></span>This session</span>{{end}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+      <form method="post" action="/account/sessions/revoke" style="margin-top:12px">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button class="btn" type="submit">Sign out of all other sessions</button>
+      </form>
+    </div>
+  </div>
+</div>
+{{template "account-shell-end" .}}
+{{end}}

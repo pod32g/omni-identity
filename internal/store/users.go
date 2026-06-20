@@ -9,14 +9,16 @@ import (
 	"github.com/pod32g/omni-identity/internal/model"
 )
 
-const userColumns = `id, username, email, password_hash, is_admin, disabled, created_at, updated_at`
+const userColumns = `id, username, email, password_hash, is_admin, disabled, ` +
+	`failed_login_count, locked_until, mfa_enabled, totp_secret, created_at, updated_at`
 
 // CreateUser inserts a new user.
 func (d *DB) CreateUser(ctx context.Context, u *model.User) error {
 	_, err := d.sql.ExecContext(ctx, `
 		INSERT INTO users (`+userColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		u.ID, u.Username, u.Email, u.PasswordHash, u.IsAdmin, u.Disabled,
+		u.FailedLoginCount, nullTime(u.LockedUntil), u.MFAEnabled, u.TOTPSecret,
 		u.CreatedAt.UTC(), u.UpdatedAt.UTC(),
 	)
 	return err
@@ -100,10 +102,14 @@ func (d *DB) ListUsers(ctx context.Context) ([]model.User, error) {
 }
 
 func scanUser(s scanner) (*model.User, error) {
-	var u model.User
+	var (
+		u           model.User
+		lockedUntil sql.NullTime
+	)
 	err := s.Scan(
 		&u.ID, &u.Username, &u.Email, &u.PasswordHash,
-		&u.IsAdmin, &u.Disabled, &u.CreatedAt, &u.UpdatedAt,
+		&u.IsAdmin, &u.Disabled, &u.FailedLoginCount, &lockedUntil,
+		&u.MFAEnabled, &u.TOTPSecret, &u.CreatedAt, &u.UpdatedAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -111,7 +117,18 @@ func scanUser(s scanner) (*model.User, error) {
 	if err != nil {
 		return nil, err
 	}
+	if lockedUntil.Valid {
+		u.LockedUntil = lockedUntil.Time
+	}
 	return &u, nil
+}
+
+// nullTime maps a zero time.Time to SQL NULL.
+func nullTime(t time.Time) any {
+	if t.IsZero() {
+		return nil
+	}
+	return t.UTC()
 }
 
 // requireRow converts a zero-rows-affected result into ErrNotFound.

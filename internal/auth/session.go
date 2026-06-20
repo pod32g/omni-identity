@@ -21,26 +21,32 @@ type SessionStore interface {
 	CreateSession(ctx context.Context, s *model.Session) error
 	GetSession(ctx context.Context, id string) (*model.Session, error)
 	DeleteSession(ctx context.Context, id string) error
+	TouchSession(ctx context.Context, id string, at time.Time) error
 }
 
 // SessionManager issues, reads, and destroys browser sessions backed by a store
 // and an opaque session cookie.
 type SessionManager struct {
-	store  SessionStore
-	secure bool
-	ttl    time.Duration
+	store       SessionStore
+	secure      bool
+	ttl         time.Duration
+	idleTimeout time.Duration // 0 disables idle expiry
 }
 
 // NewSessionManager builds a SessionManager. secure controls the cookie Secure
-// flag; ttl is the session lifetime.
+// flag; ttl is the absolute session lifetime.
 func NewSessionManager(s SessionStore, secure bool, ttl time.Duration) *SessionManager {
 	return &SessionManager{store: s, secure: secure, ttl: ttl}
 }
 
-// Issue creates a session for userID, persists it, and sets the session cookie.
-// Any session referenced by the inbound cookie is deleted first, so the session
-// id rotates on every login and a fixated id cannot be reused post-auth.
-func (m *SessionManager) Issue(w http.ResponseWriter, r *http.Request, userID string) (*model.Session, error) {
+// SetIdleTimeout configures idle-session expiry (0 disables it).
+func (m *SessionManager) SetIdleTimeout(d time.Duration) { m.idleTimeout = d }
+
+// Issue creates a session for userID with the given auth methods (amr),
+// persists it, and sets the session cookie. Any session referenced by the
+// inbound cookie is deleted first, so the session id rotates on every login and
+// a fixated id cannot be reused post-auth.
+func (m *SessionManager) Issue(w http.ResponseWriter, r *http.Request, userID, amr string) (*model.Session, error) {
 	if c, err := r.Cookie(sessionCookieName); err == nil && c.Value != "" {
 		// Best-effort: drop the prior session row before minting a fresh id.
 		_ = m.store.DeleteSession(r.Context(), c.Value)
@@ -53,6 +59,8 @@ func (m *SessionManager) Issue(w http.ResponseWriter, r *http.Request, userID st
 		UserAgent:  r.UserAgent(),
 		CreatedAt:  now,
 		ExpiresAt:  now.Add(m.ttl),
+		LastSeenAt: now,
+		AMR:        amr,
 	}
 	if err := m.store.CreateSession(r.Context(), sess); err != nil {
 		return nil, err
@@ -71,6 +79,9 @@ func (m *SessionManager) Issue(w http.ResponseWriter, r *http.Request, userID st
 }
 
 // Current returns the session referenced by the request cookie, or ErrNoSession.
+// When an idle timeout is configured, a session whose last activity predates the
+// timeout is treated as expired (and deleted). Otherwise the last-seen time is
+// refreshed best-effort.
 func (m *SessionManager) Current(r *http.Request) (*model.Session, error) {
 	c, err := r.Cookie(sessionCookieName)
 	if err != nil || c.Value == "" {
@@ -82,6 +93,19 @@ func (m *SessionManager) Current(r *http.Request) (*model.Session, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	now := time.Now().UTC()
+	if m.idleTimeout > 0 {
+		last := sess.LastSeenAt
+		if last.IsZero() {
+			last = sess.CreatedAt
+		}
+		if now.Sub(last) > m.idleTimeout {
+			_ = m.store.DeleteSession(r.Context(), sess.ID)
+			return nil, ErrNoSession
+		}
+		_ = m.store.TouchSession(r.Context(), sess.ID, now)
+		sess.LastSeenAt = now
 	}
 	return sess, nil
 }

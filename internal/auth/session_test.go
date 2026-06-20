@@ -48,7 +48,7 @@ func TestIssueSetsCookieAndPersistsSession(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/login", nil)
-	sess, err := sm.Issue(rr, req, u.ID)
+	sess, err := sm.Issue(rr, req, u.ID, "pwd")
 	if err != nil {
 		t.Fatalf("Issue: %v", err)
 	}
@@ -80,7 +80,7 @@ func TestCurrentReturnsIssuedSession(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/login", nil)
-	sess, _ := sm.Issue(rr, req, u.ID)
+	sess, _ := sm.Issue(rr, req, u.ID, "pwd")
 
 	next := httptest.NewRequest(http.MethodGet, "/admin", nil)
 	next.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sess.ID})
@@ -110,7 +110,7 @@ func TestDestroyDeletesSessionAndClearsCookie(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/login", nil)
-	sess, _ := sm.Issue(rr, req, u.ID)
+	sess, _ := sm.Issue(rr, req, u.ID, "pwd")
 
 	logoutReq := httptest.NewRequest(http.MethodPost, "/logout", nil)
 	logoutReq.AddCookie(&http.Cookie{Name: sessionCookieName, Value: sess.ID})

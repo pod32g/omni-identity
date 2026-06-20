@@ -24,6 +24,8 @@
           <td>
             {{if .Disabled}}<span class="chip off"><span class="dot"></span>disabled</span>
             {{else}}<span class="chip ok"><span class="dot"></span>active</span>{{end}}
+            {{if .Locked}}<span class="chip off"><span class="dot"></span>locked</span>{{end}}
+            {{if .MFAEnabled}}<span class="chip"><span class="dot"></span>2FA</span>{{end}}
           </td>
           <td class="row-actions">
             <form method="post" action="/admin/users/{{.ID}}/disable">
@@ -31,6 +33,18 @@
               <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
               <button class="btn sm" type="submit">{{if .Disabled}}Enable{{else}}Disable{{end}}</button>
             </form>
+            {{if .Locked}}
+            <form method="post" action="/admin/users/{{.ID}}/unlock">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button class="btn sm" type="submit">Unlock</button>
+            </form>
+            {{end}}
+            {{if .MFAEnabled}}
+            <form method="post" action="/admin/users/{{.ID}}/mfa/reset">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button class="btn sm" type="submit">Reset 2FA</button>
+            </form>
+            {{end}}
             <form method="post" action="/admin/users/{{.ID}}/password" class="inline">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <input name="password" type="password" placeholder="new password" minlength="8" required style="width:150px">

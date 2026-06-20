@@ -189,7 +189,7 @@ func TestPostSetupCreatesFirstAdmin(t *testing.T) {
 	form := url.Values{
 		"username":   {"root"},
 		"email":      {"root@example.com"},
-		"password":   {"supersecret"},
+		"password":   {"supersecret123"},
 		"csrf_token": {"tok"},
 	}
 	rr := do(srv, postForm("/setup", form, "tok"))

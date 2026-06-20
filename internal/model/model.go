@@ -19,9 +19,23 @@ type User struct {
 	PasswordHash string
 	IsAdmin      bool
 	Disabled     bool
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// Account lockout bookkeeping.
+	FailedLoginCount int
+	LockedUntil      time.Time // zero = not locked
+	// Multi-factor authentication (TOTP).
+	MFAEnabled bool
+	TOTPSecret string // AES-GCM ciphertext (base64), empty when MFA disabled
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
+
+// IsLocked reports whether the account is currently locked out.
+func (u *User) IsLocked(now time.Time) bool {
+	return !u.LockedUntil.IsZero() && now.Before(u.LockedUntil)
+}
+
+// Locked is a no-argument convenience for templates (uses wall-clock now).
+func (u *User) Locked() bool { return u.IsLocked(time.Now().UTC()) }
 
 // Session is a browser login session.
 type Session struct {
@@ -31,6 +45,42 @@ type Session struct {
 	UserAgent  string
 	CreatedAt  time.Time
 	ExpiresAt  time.Time
+	LastSeenAt time.Time // zero when never updated; used for idle timeout
+	AMR        string    // space-separated auth methods (e.g. "pwd mfa")
+}
+
+// AuditEvent is a recorded security-relevant event.
+type AuditEvent struct {
+	ID          string
+	CreatedAt   time.Time
+	Event       string
+	ActorUserID string
+	Username    string
+	ClientID    string
+	IP          string
+	UserAgent   string
+	Success     bool
+	Detail      string
+}
+
+// RecoveryCode is a hashed, single-use MFA recovery code.
+type RecoveryCode struct {
+	ID        string
+	UserID    string
+	CodeHash  string
+	Used      bool
+	CreatedAt time.Time
+}
+
+// LoginChallenge is a pending second-factor step issued after a correct
+// password but before a session is granted.
+type LoginChallenge struct {
+	ID        string
+	UserID    string
+	Next      string
+	Req       string
+	CreatedAt time.Time
+	ExpiresAt time.Time
 }
 
 // Client is a registered OAuth2/OIDC client application.

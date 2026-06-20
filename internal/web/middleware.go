@@ -77,7 +77,7 @@ func (m *metrics) render() string {
 // logging is outermost so it observes the final status, including 500s written
 // by the recoverer.
 func (s *Server) withMiddleware(h http.Handler) http.Handler {
-	return s.logging(s.recoverer(securityHeaders(h)))
+	return s.logging(s.recoverer(s.securityHeaders(h)))
 }
 
 func (s *Server) logging(next http.Handler) http.Handler {
@@ -112,7 +112,7 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 	})
 }
 
-func securityHeaders(next http.Handler) http.Handler {
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
@@ -122,6 +122,10 @@ func securityHeaders(next http.Handler) http.Handler {
 		// externally hosted logo; the uploaded Omni logo is served from 'self'.
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; frame-ancestors 'none'")
+		// HSTS only when serving over HTTPS (secure cookies imply TLS).
+		if s.cfg.Cookies.Secure {
+			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		}
 		next.ServeHTTP(w, r)
 	})
 }

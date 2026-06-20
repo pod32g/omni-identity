@@ -27,6 +27,7 @@ func (s *Server) handleRevoke(w http.ResponseWriter, r *http.Request) {
 		if rt, err := s.db.GetRefreshTokenByHash(r.Context(), auth.HashToken(raw)); err == nil {
 			if rt.ClientID == client.ClientID {
 				_ = s.db.RevokeRefreshToken(r.Context(), rt.ID)
+				s.audit(r, evtTokenRevoked, auditEntry{actorUserID: rt.UserID, clientID: client.ClientID, success: true})
 			}
 		}
 	}

@@ -181,6 +181,7 @@ func (s *Server) handleAdminCreateClient(w http.ResponseWriter, r *http.Request)
 		s.renderClients(w, r, http.StatusBadRequest, "Could not create client.")
 		return
 	}
+	s.audit(r, evtClientCreated, auditEntry{actorUserID: actorID(r), clientID: c.ClientID, success: true})
 	// Show the secret exactly once.
 	s.renderClientDetail(w, r, http.StatusOK, c, secret, "")
 }
@@ -212,6 +213,7 @@ func (s *Server) handleAdminUpdateClient(w http.ResponseWriter, r *http.Request)
 		s.renderClientDetail(w, r, http.StatusBadRequest, existing, "", "Could not update client.")
 		return
 	}
+	s.audit(r, evtClientUpdated, auditEntry{actorUserID: actorID(r), clientID: existing.ClientID, success: true})
 	http.Redirect(w, r, "/admin/clients/"+existing.ClientID, http.StatusSeeOther)
 }
 
@@ -246,5 +248,6 @@ func (s *Server) handleAdminRotateClient(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	c.ClientSecretHash = auth.HashToken(secret)
+	s.audit(r, evtClientSecret, auditEntry{actorUserID: actorID(r), clientID: c.ClientID, success: true})
 	s.renderClientDetail(w, r, http.StatusOK, c, secret, "")
 }

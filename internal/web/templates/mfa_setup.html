@@ -1,0 +1,36 @@
+{{define "title"}}Set up 2FA · Omni Identity{{end}}
+{{define "content"}}
+{{template "account-shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>Set up two-step verification</h1>
+    <p class="desc">Scan or enter this key in an authenticator app, then confirm a code.</p>
+  </div>
+  <div class="actions"><a class="btn" href="/account">Cancel</a></div>
+</div>
+<div class="page-body">
+  {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+  <div class="panel">
+    <div class="panel-hd">1 · Add to your authenticator</div>
+    <div class="panel-bd">
+      <p class="muted">Enter this secret key manually in Google Authenticator, 1Password, Authy, etc.:</p>
+      <p style="margin-top:8px"><code style="font-size:16px; letter-spacing:1px">{{.Secret}}</code></p>
+      <p class="muted" style="margin-top:12px">Or use this setup URI:</p>
+      <p><code style="word-break:break-all">{{.OTPAuth}}</code></p>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-hd">2 · Confirm a code</div>
+    <div class="panel-bd">
+      <form class="stack" method="post" action="/account/mfa/enable" style="margin-top:0;max-width:320px">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <label class="field">6-digit code
+          <input name="code" inputmode="numeric" autocomplete="one-time-code" autofocus required>
+        </label>
+        <button class="btn primary" type="submit" style="align-self:flex-start">Enable two-step verification</button>
+      </form>
+    </div>
+  </div>
+</div>
+{{template "account-shell-end" .}}
+{{end}}

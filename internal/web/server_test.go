@@ -24,6 +24,9 @@ func testServer(t *testing.T) *Server {
 	cfg.Security.Issuer = "http://localhost:8080"
 	cfg.Security.TokenTTL = 15 * time.Minute
 	cfg.Security.RefreshTokenTTL = 720 * time.Hour
+	cfg.Security.MaxFailedLogins = 5
+	cfg.Security.LockoutDuration = 15 * time.Minute
+	cfg.Security.PasswordMinLength = 12
 	srv, err := NewServer(cfg, db)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)

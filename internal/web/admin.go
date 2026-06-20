@@ -14,7 +14,10 @@ import (
 
 type ctxKey int
 
-const userCtxKey ctxKey = iota
+const (
+	userCtxKey ctxKey = iota
+	sessCtxKey
+)
 
 // requireAdmin wraps a handler so only authenticated admin users may reach it.
 func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
@@ -93,8 +96,8 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.renderUsers(w, r, http.StatusBadRequest, "Username and email are required.")
 		return
 	}
-	if len(password) < 8 {
-		s.renderUsers(w, r, http.StatusBadRequest, "Password must be at least 8 characters.")
+	if msg := auth.ValidatePassword(password, username, email, s.cfg.Security.PasswordMinLength); msg != "" {
+		s.renderUsers(w, r, http.StatusBadRequest, msg)
 		return
 	}
 	hash, err := auth.HashPassword(password)
@@ -111,7 +114,15 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 		s.renderUsers(w, r, http.StatusBadRequest, "Could not create user (username or email may be taken).")
 		return
 	}
+	s.audit(r, evtUserCreated, auditEntry{actorUserID: actorID(r), username: username, success: true, detail: "admin=" + boolStr(isAdmin)})
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+}
+
+func boolStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
 }
 
 func (s *Server) handleAdminToggleUser(w http.ResponseWriter, r *http.Request) {
@@ -129,6 +140,11 @@ func (s *Server) handleAdminToggleUser(w http.ResponseWriter, r *http.Request) {
 		s.renderUsers(w, r, http.StatusBadRequest, "Could not update user.")
 		return
 	}
+	if disabled {
+		// Revoke active sessions for a disabled account immediately.
+		_, _ = s.db.DeleteSessionsForUser(r.Context(), id, "")
+	}
+	s.audit(r, evtUserDisabled, auditEntry{actorUserID: actorID(r), success: true, detail: "id=" + id + " disabled=" + boolStr(disabled)})
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
@@ -138,8 +154,8 @@ func (s *Server) handleAdminUserPassword(w http.ResponseWriter, r *http.Request)
 	}
 	id := r.PathValue("id")
 	password := r.PostFormValue("password")
-	if len(password) < 8 {
-		s.renderUsers(w, r, http.StatusBadRequest, "Password must be at least 8 characters.")
+	if msg := auth.ValidatePassword(password, "", "", s.cfg.Security.PasswordMinLength); msg != "" {
+		s.renderUsers(w, r, http.StatusBadRequest, msg)
 		return
 	}
 	hash, err := auth.HashPassword(password)
@@ -151,6 +167,9 @@ func (s *Server) handleAdminUserPassword(w http.ResponseWriter, r *http.Request)
 		s.renderUsers(w, r, http.StatusBadRequest, "Could not change password.")
 		return
 	}
+	// Force re-auth elsewhere by clearing the target's other sessions.
+	_, _ = s.db.DeleteSessionsForUser(r.Context(), id, "")
+	s.audit(r, evtPasswordChange, auditEntry{actorUserID: actorID(r), success: true, detail: "admin set password for id=" + id})
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
