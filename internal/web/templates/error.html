@@ -1,7 +1,16 @@
 {{define "title"}}Error · Omni Identity{{end}}
-{{define "cardclass"}}auth-card{{end}}
 {{define "content"}}
-<h1>Something went wrong</h1>
-<div class="error">{{.Message}}</div>
-<p class="muted"><a href="/login">Return to sign in</a></p>
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <span class="brand-mark">{{template "ic-shield" .}}</span>
+      <span class="brand-name">Omni Identity</span>
+    </div>
+    <div class="panel">
+      <h1>Something went wrong</h1>
+      <div class="alert error" style="margin-top:14px">{{.Message}}</div>
+      <p class="muted" style="margin-top:16px"><a href="/login">Return to sign in</a></p>
+    </div>
+  </div>
+</div>
 {{end}}

@@ -1,45 +1,67 @@
 {{define "title"}}Applications · Omni Identity{{end}}
 {{define "content"}}
-{{template "adminnav" .}}
-<h1>Applications</h1>
-{{if .Error}}<div class="error">{{.Error}}</div>{{end}}
-<table>
-  <tr><th>Name</th><th>Client ID</th><th>Type</th><th>Status</th><th>Actions</th></tr>
-  {{range .Clients}}
-  <tr>
-    <td><a href="/admin/clients/{{.ClientID}}">{{.Name}}</a></td>
-    <td><code>{{.ClientID}}</code></td>
-    <td>{{.Type}}</td>
-    <td>{{if .Disabled}}<span class="pill off">disabled</span>{{else}}<span class="pill ok">active</span>{{end}}</td>
-    <td class="row-actions">
-      <a href="/admin/clients/{{.ClientID}}"><button class="secondary" type="button">Edit</button></a>
-      <form method="post" action="/admin/clients/{{.ClientID}}/disable">
-        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-        <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
-        <button class="secondary" type="submit">{{if .Disabled}}Enable{{else}}Disable{{end}}</button>
-      </form>
-    </td>
-  </tr>
-  {{end}}
-</table>
+{{template "shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>Applications <span class="count">{{len .Clients}}</span></h1>
+    <p class="desc">Apps that authenticate users through Omni Identity via OIDC.</p>
+  </div>
+</div>
+<div class="page-body">
+  {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
 
-<h2>Register application</h2>
-<form method="post" action="/admin/clients">
-  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-  <label>Name <input name="name" required></label>
-  <label>Client ID <input name="client_id" placeholder="optional — generated if blank"></label>
-  <label>Type
-    <select name="type">
-      <option value="confidential">confidential (server-side, has secret)</option>
-      <option value="public">public (SPA/native, uses PKCE)</option>
-    </select>
-  </label>
-  <label>Redirect URIs (one per line)
-    <textarea name="redirect_uris" rows="3" placeholder="https://app.example.com/callback" required></textarea>
-  </label>
-  <label>Scopes (space separated)
-    <input name="scopes" value="openid email profile" required>
-  </label>
-  <button type="submit">Register application</button>
-</form>
+  <div class="panel">
+    <table class="omni">
+      <thead>
+        <tr><th>Name</th><th>Client ID</th><th>Type</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {{range .Clients}}
+        <tr>
+          <td><a href="/admin/clients/{{.ClientID}}">{{.Name}}</a></td>
+          <td><code>{{.ClientID}}</code></td>
+          <td class="t-secondary">{{.Type}}</td>
+          <td>
+            {{if .Disabled}}<span class="chip off"><span class="dot"></span>disabled</span>
+            {{else}}<span class="chip ok"><span class="dot"></span>active</span>{{end}}
+          </td>
+          <td class="row-actions">
+            <a class="btn sm" href="/admin/clients/{{.ClientID}}">Edit</a>
+            <form method="post" action="/admin/clients/{{.ClientID}}/disable">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
+              <button class="btn sm" type="submit">{{if .Disabled}}Enable{{else}}Disable{{end}}</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">{{template "ic-plus" .}} Register application</div>
+    <div class="panel-bd">
+      <form class="stack" method="post" action="/admin/clients" style="margin-top:0;max-width:520px">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <label class="field">Name <input name="name" required></label>
+        <label class="field">Client ID <input name="client_id" placeholder="optional — generated if blank"></label>
+        <label class="field">Type
+          <select name="type">
+            <option value="confidential">confidential (server-side, has secret)</option>
+            <option value="public">public (SPA/native, uses PKCE)</option>
+          </select>
+        </label>
+        <label class="field">Redirect URIs (one per line)
+          <textarea name="redirect_uris" rows="3" placeholder="https://app.example.com/callback" required></textarea>
+        </label>
+        <label class="field">Scopes (space separated)
+          <input name="scopes" value="openid email profile" required>
+        </label>
+        <button class="btn primary" type="submit" style="align-self:flex-start">Register application</button>
+      </form>
+    </div>
+  </div>
+</div>
+{{template "shell-end" .}}
 {{end}}

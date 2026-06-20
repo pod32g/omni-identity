@@ -1,39 +1,61 @@
 {{define "title"}}Users · Omni Identity{{end}}
 {{define "content"}}
-{{template "adminnav" .}}
-<h1>Users</h1>
-{{if .Error}}<div class="error">{{.Error}}</div>{{end}}
-<table>
-  <tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
-  {{range .Users}}
-  <tr>
-    <td>{{.Username}}</td>
-    <td>{{.Email}}</td>
-    <td>{{if .IsAdmin}}admin{{else}}user{{end}}</td>
-    <td>{{if .Disabled}}<span class="pill off">disabled</span>{{else}}<span class="pill ok">active</span>{{end}}</td>
-    <td class="row-actions">
-      <form method="post" action="/admin/users/{{.ID}}/disable">
-        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-        <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
-        <button class="secondary" type="submit">{{if .Disabled}}Enable{{else}}Disable{{end}}</button>
-      </form>
-      <form method="post" action="/admin/users/{{.ID}}/password" class="inline">
-        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-        <input name="password" type="password" placeholder="new password" minlength="8" required>
-        <button class="secondary" type="submit">Set</button>
-      </form>
-    </td>
-  </tr>
-  {{end}}
-</table>
+{{template "shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>Users <span class="count">{{len .Users}}</span></h1>
+    <p class="desc">Local accounts that can sign in to Omni Identity.</p>
+  </div>
+</div>
+<div class="page-body">
+  {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
 
-<h2>Create user</h2>
-<form method="post" action="/admin/users">
-  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-  <label>Username <input name="username" required></label>
-  <label>Email <input name="email" type="email" required></label>
-  <label>Password <input name="password" type="password" minlength="8" required></label>
-  <label class="inline"><input type="checkbox" name="is_admin"> Administrator</label>
-  <button type="submit">Create user</button>
-</form>
+  <div class="panel">
+    <table class="omni">
+      <thead>
+        <tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {{range .Users}}
+        <tr>
+          <td>{{.Username}}</td>
+          <td class="t-secondary">{{.Email}}</td>
+          <td>{{if .IsAdmin}}<span class="chip">admin</span>{{else}}<span class="t-tertiary">user</span>{{end}}</td>
+          <td>
+            {{if .Disabled}}<span class="chip off"><span class="dot"></span>disabled</span>
+            {{else}}<span class="chip ok"><span class="dot"></span>active</span>{{end}}
+          </td>
+          <td class="row-actions">
+            <form method="post" action="/admin/users/{{.ID}}/disable">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
+              <button class="btn sm" type="submit">{{if .Disabled}}Enable{{else}}Disable{{end}}</button>
+            </form>
+            <form method="post" action="/admin/users/{{.ID}}/password" class="inline">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <input name="password" type="password" placeholder="new password" minlength="8" required style="width:150px">
+              <button class="btn sm" type="submit">Set</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">{{template "ic-plus" .}} Create user</div>
+    <div class="panel-bd">
+      <form class="stack" method="post" action="/admin/users" style="margin-top:0;max-width:420px">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <label class="field">Username <input name="username" required></label>
+        <label class="field">Email <input name="email" type="email" required></label>
+        <label class="field">Password <input name="password" type="password" minlength="8" required></label>
+        <label class="field inline"><input type="checkbox" name="is_admin"> Administrator</label>
+        <button class="btn primary" type="submit" style="align-self:flex-start">Create user</button>
+      </form>
+    </div>
+  </div>
+</div>
+{{template "shell-end" .}}
 {{end}}

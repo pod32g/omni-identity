@@ -13,6 +13,7 @@ import (
 type adminClientsPage struct {
 	CSRFToken string
 	Me        *model.User
+	Active    string
 	Clients   []model.Client
 	Error     string
 }
@@ -20,6 +21,7 @@ type adminClientsPage struct {
 type adminClientDetailPage struct {
 	CSRFToken        string
 	Me               *model.User
+	Active           string
 	Client           *model.Client
 	RedirectURIsText string
 	ScopesText       string
@@ -33,6 +35,7 @@ func (s *Server) renderClients(w http.ResponseWriter, r *http.Request, status in
 	s.tmpl.render(w, status, "admin_clients", adminClientsPage{
 		CSRFToken: auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
 		Me:        currentUser(r),
+		Active:    "clients",
 		Clients:   clients,
 		Error:     errMsg,
 	})
@@ -42,6 +45,7 @@ func (s *Server) renderClientDetail(w http.ResponseWriter, r *http.Request, stat
 	s.tmpl.render(w, status, "admin_client_detail", adminClientDetailPage{
 		CSRFToken:        auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
 		Me:               currentUser(r),
+		Active:           "clients",
 		Client:           c,
 		RedirectURIsText: strings.Join(c.RedirectURIs, "\n"),
 		ScopesText:       strings.Join(c.AllowedScopes, " "),

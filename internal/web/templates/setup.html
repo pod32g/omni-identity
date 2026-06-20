@@ -1,20 +1,29 @@
 {{define "title"}}First-run setup · Omni Identity{{end}}
-{{define "cardclass"}}auth-card{{end}}
 {{define "content"}}
-<h1>Welcome to Omni Identity</h1>
-<p class="muted">Create the first administrator account to get started.</p>
-{{if .Error}}<div class="error">{{.Error}}</div>{{end}}
-<form method="post" action="/setup">
-  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-  <label>Username
-    <input name="username" value="{{.Username}}" autocomplete="username" autofocus required>
-  </label>
-  <label>Email
-    <input name="email" type="email" value="{{.Email}}" autocomplete="email" required>
-  </label>
-  <label>Password
-    <input name="password" type="password" autocomplete="new-password" minlength="8" required>
-  </label>
-  <button type="submit">Create admin &amp; sign in</button>
-</form>
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-brand">
+      <span class="brand-mark">{{template "ic-shield" .}}</span>
+      <span class="brand-name">Omni Identity</span>
+    </div>
+    <div class="panel">
+      <h1>Welcome</h1>
+      <p class="muted">Create the first administrator account to get started.</p>
+      {{if .Error}}<div class="alert error" style="margin-top:14px">{{.Error}}</div>{{end}}
+      <form class="stack" method="post" action="/setup">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <label class="field">Username
+          <input name="username" value="{{.Username}}" autocomplete="username" autofocus required>
+        </label>
+        <label class="field">Email
+          <input name="email" type="email" value="{{.Email}}" autocomplete="email" required>
+        </label>
+        <label class="field">Password
+          <input name="password" type="password" autocomplete="new-password" minlength="8" required>
+        </label>
+        <button class="btn primary block" type="submit">Create admin &amp; sign in</button>
+      </form>
+    </div>
+  </div>
+</div>
 {{end}}

@@ -60,6 +60,7 @@ func (s *Server) handleAdminHome(w http.ResponseWriter, r *http.Request) {
 type adminUsersPage struct {
 	CSRFToken string
 	Me        *model.User
+	Active    string
 	Users     []model.User
 	Error     string
 }
@@ -69,6 +70,7 @@ func (s *Server) renderUsers(w http.ResponseWriter, r *http.Request, status int,
 	s.tmpl.render(w, status, "admin_users", adminUsersPage{
 		CSRFToken: auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
 		Me:        currentUser(r),
+		Active:    "users",
 		Users:     users,
 		Error:     errMsg,
 	})
@@ -157,6 +159,7 @@ func (s *Server) handleAdminUserPassword(w http.ResponseWriter, r *http.Request)
 type adminSettingsPage struct {
 	CSRFToken  string
 	Me         *model.User
+	Active     string
 	Issuer     string
 	PublicURL  string
 	TokenTTL   string
@@ -167,6 +170,7 @@ func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
 	s.tmpl.render(w, http.StatusOK, "admin_settings", adminSettingsPage{
 		CSRFToken:  auth.CSRFToken(w, r, s.cfg.Cookies.Secure),
 		Me:         currentUser(r),
+		Active:     "settings",
 		Issuer:     s.cfg.Security.Issuer,
 		PublicURL:  s.cfg.Server.PublicURL,
 		TokenTTL:   s.cfg.Security.TokenTTL.String(),

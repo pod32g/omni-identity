@@ -1,14 +1,39 @@
 {{define "title"}}Settings · Omni Identity{{end}}
 {{define "content"}}
-{{template "adminnav" .}}
-<h1>Settings</h1>
-<p class="muted">These values come from the config file and are read-only in V1.</p>
-<table>
-  <tr><th>Issuer</th><td><code>{{.Issuer}}</code></td></tr>
-  <tr><th>Public URL</th><td><code>{{.PublicURL}}</code></td></tr>
-  <tr><th>Access token TTL</th><td>{{.TokenTTL}}</td></tr>
-  <tr><th>Refresh token TTL</th><td>{{.RefreshTTL}}</td></tr>
-  <tr><th>Discovery</th><td><code>{{.Issuer}}/.well-known/openid-configuration</code></td></tr>
-  <tr><th>JWKS</th><td><code>{{.Issuer}}/jwks.json</code></td></tr>
-</table>
+{{template "shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>Settings</h1>
+    <p class="desc">Read-only in V1 — these come from the config file.</p>
+  </div>
+</div>
+<div class="page-body">
+  <div class="panel">
+    <div class="panel-hd">Provider</div>
+    <div class="panel-bd">
+      <table class="omni">
+        <tbody>
+          <tr><td class="t-tertiary" style="width:200px">Issuer</td><td><code>{{.Issuer}}</code></td></tr>
+          <tr><td class="t-tertiary">Public URL</td><td><code>{{.PublicURL}}</code></td></tr>
+          <tr><td class="t-tertiary">Access token TTL</td><td>{{.TokenTTL}}</td></tr>
+          <tr><td class="t-tertiary">Refresh token TTL</td><td>{{.RefreshTTL}}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-hd">Endpoints</div>
+    <div class="panel-bd">
+      <table class="omni">
+        <tbody>
+          <tr><td class="t-tertiary" style="width:200px">Discovery</td><td><code>{{.Issuer}}/.well-known/openid-configuration</code></td></tr>
+          <tr><td class="t-tertiary">JWKS</td><td><code>{{.Issuer}}/jwks.json</code></td></tr>
+          <tr><td class="t-tertiary">Authorization</td><td><code>{{.Issuer}}/oauth2/authorize</code></td></tr>
+          <tr><td class="t-tertiary">Token</td><td><code>{{.Issuer}}/oauth2/token</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{{template "shell-end" .}}
 {{end}}

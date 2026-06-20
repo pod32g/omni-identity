@@ -1,49 +1,70 @@
 {{define "title"}}{{.Client.Name}} · Omni Identity{{end}}
 {{define "content"}}
-{{template "adminnav" .}}
-<h1>{{.Client.Name}}</h1>
-<p class="muted">Client ID: <code>{{.Client.ClientID}}</code> · {{.Client.Type}}</p>
-{{if .Error}}<div class="error">{{.Error}}</div>{{end}}
-
-{{if .NewSecret}}
-<div class="pill ok" style="display:block;padding:14px;margin:12px 0;">
-  <strong>Client secret (shown once — copy it now):</strong><br>
-  <code>{{.NewSecret}}</code>
+{{template "shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>{{.Client.Name}}</h1>
+    <p class="desc"><code>{{.Client.ClientID}}</code> · {{.Client.Type}}
+      {{if .Client.Disabled}}<span class="chip off"><span class="dot"></span>disabled</span>
+      {{else}}<span class="chip ok"><span class="dot"></span>active</span>{{end}}</p>
+  </div>
+  <div class="actions"><a class="btn" href="/admin/clients">Back</a></div>
 </div>
-{{end}}
+<div class="page-body">
+  {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+  {{if .NewSecret}}
+  <div class="callout">
+    <strong>Client secret (shown once — copy it now):</strong>
+    <code>{{.NewSecret}}</code>
+  </div>
+  {{end}}
 
-<h2>Configuration</h2>
-<form method="post" action="/admin/clients/{{.Client.ClientID}}">
-  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-  <label>Name <input name="name" value="{{.Client.Name}}" required></label>
-  <label>Type
-    <select name="type">
-      <option value="confidential" {{if eq .Client.Type "confidential"}}selected{{end}}>confidential</option>
-      <option value="public" {{if eq .Client.Type "public"}}selected{{end}}>public</option>
-    </select>
-  </label>
-  <label>Redirect URIs (one per line)
-    <textarea name="redirect_uris" rows="3" required>{{.RedirectURIsText}}</textarea>
-  </label>
-  <label>Scopes (space separated)
-    <input name="scopes" value="{{.ScopesText}}" required>
-  </label>
-  <p class="muted">Supported scopes: {{range .SupportedScopes}}<code>{{.}}</code> {{end}}</p>
-  <button type="submit">Save changes</button>
-</form>
+  <div class="panel">
+    <div class="panel-hd">Configuration</div>
+    <div class="panel-bd">
+      <form class="stack" method="post" action="/admin/clients/{{.Client.ClientID}}" style="margin-top:0;max-width:560px">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <label class="field">Name <input name="name" value="{{.Client.Name}}" required></label>
+        <label class="field">Type
+          <select name="type">
+            <option value="confidential" {{if eq .Client.Type "confidential"}}selected{{end}}>confidential</option>
+            <option value="public" {{if eq .Client.Type "public"}}selected{{end}}>public</option>
+          </select>
+        </label>
+        <label class="field">Redirect URIs (one per line)
+          <textarea name="redirect_uris" rows="3" required>{{.RedirectURIsText}}</textarea>
+        </label>
+        <label class="field">Scopes (space separated)
+          <input name="scopes" value="{{.ScopesText}}" required>
+        </label>
+        <p class="t-caption">Supported: {{range .SupportedScopes}}<code>{{.}}</code> {{end}}</p>
+        <button class="btn primary" type="submit" style="align-self:flex-start">Save changes</button>
+      </form>
+    </div>
+  </div>
 
-{{if eq .Client.Type "confidential"}}
-<h2>Secret</h2>
-<form method="post" action="/admin/clients/{{.Client.ClientID}}/rotate">
-  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-  <button class="secondary" type="submit">Rotate client secret</button>
-</form>
-{{end}}
+  {{if eq .Client.Type "confidential"}}
+  <div class="panel">
+    <div class="panel-hd">Secret</div>
+    <div class="panel-bd">
+      <form method="post" action="/admin/clients/{{.Client.ClientID}}/rotate">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button class="btn" type="submit">Rotate client secret</button>
+      </form>
+    </div>
+  </div>
+  {{end}}
 
-<h2>Status</h2>
-<form method="post" action="/admin/clients/{{.Client.ClientID}}/disable">
-  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-  <input type="hidden" name="disabled" value="{{if .Client.Disabled}}false{{else}}true{{end}}">
-  <button class="secondary" type="submit">{{if .Client.Disabled}}Enable client{{else}}Disable client{{end}}</button>
-</form>
+  <div class="panel">
+    <div class="panel-hd">Status</div>
+    <div class="panel-bd">
+      <form method="post" action="/admin/clients/{{.Client.ClientID}}/disable">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="disabled" value="{{if .Client.Disabled}}false{{else}}true{{end}}">
+        <button class="btn {{if not .Client.Disabled}}danger{{end}}" type="submit">{{if .Client.Disabled}}Enable client{{else}}Disable client{{end}}</button>
+      </form>
+    </div>
+  </div>
+</div>
+{{template "shell-end" .}}
 {{end}}
