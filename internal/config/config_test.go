@@ -17,6 +17,79 @@ func writeTempConfig(t *testing.T, body string) string {
 	return path
 }
 
+func TestLDAPDisabledByDefault(t *testing.T) {
+	cfg, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.LDAP.Enabled {
+		t.Fatal("LDAP should be off by default")
+	}
+}
+
+func TestLDAPPresetActiveDirectory(t *testing.T) {
+	cfg, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"+
+		"ldap:\n  enabled: true\n  preset: activedirectory\n"+
+		"  url: ldaps://dc:636\n  base_dn: dc=x\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.LDAP.UserFilter != "(&(objectClass=user)(sAMAccountName=%s))" {
+		t.Errorf("AD user_filter = %q", cfg.LDAP.UserFilter)
+	}
+	if cfg.LDAP.AttrUsername != "sAMAccountName" || cfg.LDAP.AttrDisplayName != "displayName" {
+		t.Errorf("AD attrs = %q / %q", cfg.LDAP.AttrUsername, cfg.LDAP.AttrDisplayName)
+	}
+	if cfg.LDAP.Timeout != 10*time.Second {
+		t.Errorf("default timeout = %v", cfg.LDAP.Timeout)
+	}
+}
+
+func TestLDAPDefaultPresetIsOpenLDAP(t *testing.T) {
+	cfg, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"+
+		"ldap:\n  enabled: true\n  url: ldap://h\n  base_dn: dc=x\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.LDAP.UserFilter != "(&(objectClass=inetOrgPerson)(uid=%s))" || cfg.LDAP.AttrUsername != "uid" {
+		t.Errorf("openldap default not applied: %+v", cfg.LDAP)
+	}
+}
+
+func TestLDAPExplicitFilterOverridesPreset(t *testing.T) {
+	cfg, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"+
+		"ldap:\n  enabled: true\n  preset: openldap\n  url: ldap://h\n"+
+		"  base_dn: dc=x\n  user_filter: \"(cn=%s)\"\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.LDAP.UserFilter != "(cn=%s)" {
+		t.Errorf("explicit filter should win: %q", cfg.LDAP.UserFilter)
+	}
+}
+
+func TestLDAPEnabledRequiresURL(t *testing.T) {
+	_, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"+
+		"ldap:\n  enabled: true\n  base_dn: dc=x\n"))
+	if err == nil {
+		t.Fatal("expected error for missing ldap.url")
+	}
+}
+
+func TestLDAPEnvOverride(t *testing.T) {
+	t.Setenv("OMNI_LDAP_ENABLED", "true")
+	t.Setenv("OMNI_LDAP_URL", "ldap://env-host:389")
+	t.Setenv("OMNI_LDAP_BASE_DN", "dc=env")
+	t.Setenv("OMNI_LDAP_BIND_PASSWORD", "envsecret")
+	cfg, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.LDAP.URL != "ldap://env-host:389" || cfg.LDAP.BindPassword != "envsecret" || !cfg.LDAP.Enabled {
+		t.Fatalf("env override failed: %+v", cfg.LDAP)
+	}
+}
+
 func TestLoadParsesFullConfig(t *testing.T) {
 	path := writeTempConfig(t, `
 server:
