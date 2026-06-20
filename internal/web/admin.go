@@ -222,10 +222,23 @@ type adminSettingsPage struct {
 	Host      string       // read-only infra (boot-bound)
 	Port      int
 	DBDriver  string
+	LDAP      ldapStatusView // read-only directory status (config/env bound)
 	Branding  *model.Branding
 	HasLogo   bool
 	Error     string
 	Saved     string
+}
+
+// ldapStatusView is the read-only directory summary shown on the settings page.
+// It deliberately omits the bind password and other secrets — those live in
+// config/env only and are never rendered.
+type ldapStatusView struct {
+	Enabled      bool
+	Preset       string
+	URL          string
+	StartTLS     bool
+	BaseDN       string
+	AdminGroupDN string
 }
 
 func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
@@ -245,7 +258,15 @@ func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status i
 		Host:      s.cfg.Server.Host,
 		Port:      s.cfg.Server.Port,
 		DBDriver:  s.cfg.Database.Driver,
-		Branding:  b,
+		LDAP: ldapStatusView{
+			Enabled:      s.cfg.LDAP.Enabled,
+			Preset:       s.cfg.LDAP.Preset,
+			URL:          s.cfg.LDAP.URL,
+			StartTLS:     s.cfg.LDAP.StartTLS,
+			BaseDN:       s.cfg.LDAP.BaseDN,
+			AdminGroupDN: s.cfg.LDAP.AdminGroupDN,
+		},
+		Branding: b,
 		HasLogo:   len(b.LogoBytes) > 0,
 		Error:     errMsg,
 		Saved:     saved,

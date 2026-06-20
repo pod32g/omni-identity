@@ -19,7 +19,7 @@
   <div class="panel">
     <table class="omni">
       <thead>
-        <tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Actions</th></tr>
+        <tr><th>Username</th><th>Email</th><th>Role</th><th>Source</th><th>Status</th><th>Actions</th></tr>
       </thead>
       <tbody>
         {{range .Users}}
@@ -27,6 +27,7 @@
           <td>{{.Username}}</td>
           <td class="t-secondary">{{.Email}}</td>
           <td>{{if .IsAdmin}}<span class="chip">admin</span>{{else}}<span class="t-tertiary">user</span>{{end}}</td>
+          <td>{{if .IsLocal}}<span class="t-tertiary">local</span>{{else}}<span class="chip">{{.AuthSource}}</span>{{end}}</td>
           <td>
             {{if .Disabled}}<span class="chip off"><span class="dot"></span>disabled</span>
             {{else}}<span class="chip ok"><span class="dot"></span>active</span>{{end}}
@@ -51,6 +52,7 @@
               <button class="btn sm" type="submit">Reset 2FA</button>
             </form>
             {{end}}
+            {{if .IsLocal}}
             <form method="post" action="/admin/users/{{.ID}}/reset-link">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button class="btn sm" type="submit">Reset link</button>
@@ -60,6 +62,9 @@
               <input name="password" type="password" placeholder="set password" minlength="8" required style="width:140px">
               <button class="btn sm" type="submit">Set</button>
             </form>
+            {{else}}
+            <span class="t-tertiary">managed by directory</span>
+            {{end}}
           </td>
         </tr>
         {{end}}

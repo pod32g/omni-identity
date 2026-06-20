@@ -142,6 +142,26 @@
   </div>
 
   <div class="panel">
+    <div class="panel-hd">Directory (LDAP) <span class="muted">(read-only — set via config/env, requires restart)</span></div>
+    <div class="panel-bd">
+      <table class="omni">
+        <tbody>
+          <tr><td class="t-tertiary" style="width:200px">Status</td><td>
+            {{if .LDAP.Enabled}}<span class="chip ok"><span class="dot"></span>enabled</span>
+            {{else}}<span class="chip off"><span class="dot"></span>disabled</span>{{end}}
+          </td></tr>
+          {{if .LDAP.Enabled}}
+          <tr><td class="t-tertiary">Preset</td><td><code>{{.LDAP.Preset}}</code></td></tr>
+          <tr><td class="t-tertiary">Server URL</td><td><code>{{.LDAP.URL}}</code>{{if .LDAP.StartTLS}} <span class="chip">StartTLS</span>{{end}}</td></tr>
+          <tr><td class="t-tertiary">Base DN</td><td><code>{{.LDAP.BaseDN}}</code></td></tr>
+          <tr><td class="t-tertiary">Admin group</td><td>{{if .LDAP.AdminGroupDN}}<code>{{.LDAP.AdminGroupDN}}</code>{{else}}<span class="t-tertiary">none</span>{{end}}</td></tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
     <div class="panel-hd">Endpoints</div>
     <div class="panel-bd">
       <table class="omni">

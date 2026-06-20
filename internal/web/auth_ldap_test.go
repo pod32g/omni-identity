@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/pod32g/omni-identity/internal/authn"
@@ -134,5 +135,33 @@ func TestAdminResetLinkBlockedForDirectoryUser(t *testing.T) {
 	rr := adminPost(srv, "/admin/users/"+u.ID+"/reset-link", url.Values{}, sid)
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("want 400 for directory user, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+}
+
+func TestAdminUsersPageShowsDirectorySource(t *testing.T) {
+	srv := testServer(t)
+	sid := adminSession(t, srv)
+	if _, err := srv.db.UpsertExternalUser(context.Background(), "ldap", "uid=jane,dc=x", "jane", "jane@x", "Jane", false); err != nil {
+		t.Fatal(err)
+	}
+	rr := adminGet(srv, "/admin/users", sid)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code = %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "managed by directory") || !strings.Contains(body, ">ldap<") {
+		t.Fatalf("users page missing directory source markers:\n%s", body)
+	}
+}
+
+func TestAdminSettingsPageShowsLDAPPanel(t *testing.T) {
+	srv := testServer(t)
+	sid := adminSession(t, srv)
+	rr := adminGet(srv, "/admin/settings", sid)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code = %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "Directory (LDAP)") {
+		t.Fatal("settings page missing the Directory (LDAP) panel")
 	}
 }
