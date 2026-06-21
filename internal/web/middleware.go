@@ -158,12 +158,20 @@ func (s *Server) logging(next http.Handler) http.Handler {
 		if r.URL.Path == "/healthz" || r.URL.Path == "/metrics" {
 			return // avoid log noise from probes/scrapers
 		}
-		slog.Info("http_request",
+		// Level by status so operators can filter: 5xx → error, 4xx → warn.
+		lvl := slog.LevelInfo
+		switch {
+		case rec.status >= 500:
+			lvl = slog.LevelError
+		case rec.status >= 400:
+			lvl = slog.LevelWarn
+		}
+		slog.Default().Log(r.Context(), lvl, "http_request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", rec.status,
 			"duration_ms", time.Since(start).Milliseconds(),
-			"remote", r.RemoteAddr,
+			"ip", clientIP(r),
 		)
 	})
 }

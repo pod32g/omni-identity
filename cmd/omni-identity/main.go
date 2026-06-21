@@ -148,6 +148,16 @@ func runServe(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Structured startup line (ships to omnilog) with the operative config.
+	slog.Info("omni-identity starting",
+		"version", version,
+		"addr", addr,
+		"issuer", cfg.Security.Issuer,
+		"db_driver", cfg.Database.Driver,
+		"ldap_enabled", cfg.LDAP.Enabled,
+		"log_shipping", cfg.Logging.Enabled,
+	)
+
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("omni-identity serving on %s (issuer %s)", addr, cfg.Security.Issuer)

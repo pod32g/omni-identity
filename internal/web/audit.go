@@ -65,8 +65,48 @@ func (s *Server) audit(r *http.Request, event string, e auditEntry) {
 		Success:     e.success,
 		Detail:      e.detail,
 	}
+	// Surface the event on the structured log stream too (this is the useful,
+	// security-relevant signal that ships to omnilog — logins, MFA, lockouts,
+	// token issuance, consent, and admin actions — not just raw HTTP requests).
+	logAuditEvent(ev)
+
 	// Use a detached context so logging survives a cancelled request.
 	if err := s.db.AppendAuditEvent(context.Background(), ev); err != nil {
 		slog.Error("audit append failed", "event", event, "error", err.Error())
+	}
+}
+
+// logAuditEvent emits one structured log line per audit event. Failed/locked/
+// denied events are logged at WARN so operators can filter to just the problems;
+// everything else is INFO. The message is the event name (e.g. "login.success")
+// and the fields are searchable in omnilog.
+func logAuditEvent(ev *model.AuditEvent) {
+	args := make([]any, 0, 12)
+	args = append(args, "event", ev.Event, "success", ev.Success)
+	if ev.Username != "" {
+		args = append(args, "username", ev.Username)
+	}
+	if ev.ActorUserID != "" {
+		args = append(args, "actor", ev.ActorUserID)
+	}
+	if ev.ClientID != "" {
+		args = append(args, "client_id", ev.ClientID)
+	}
+	if ev.IP != "" {
+		args = append(args, "ip", ev.IP)
+	}
+	if ev.Detail != "" {
+		args = append(args, "detail", ev.Detail)
+	}
+	slog.Default().Log(context.Background(), auditLevel(ev.Event), ev.Event, args...)
+}
+
+// auditLevel maps an audit event to a log level.
+func auditLevel(event string) slog.Level {
+	switch event {
+	case evtLoginFailed, evtLoginLocked, evtMFAFailed, evtConsentDenied:
+		return slog.LevelWarn
+	default:
+		return slog.LevelInfo
 	}
 }
