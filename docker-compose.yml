@@ -33,6 +33,17 @@ services:
       OMNI_SECURITY_ISSUER: ${OMNI_SECURITY_ISSUER:-}
       # Secure cookies require HTTPS; keep false for plain-http LAN access.
       OMNI_COOKIES_SECURE: ${OMNI_COOKIES_SECURE:-false}
+      # Optional LDAP / Active Directory backend. Off unless OMNI_LDAP_ENABLED=true.
+      # Real values (incl. the bind password) belong in a host .env file (gitignored,
+      # never committed); the repo only carries safe, disabled-by-default defaults.
+      OMNI_LDAP_ENABLED: ${OMNI_LDAP_ENABLED:-false}
+      OMNI_LDAP_PRESET: ${OMNI_LDAP_PRESET:-openldap}
+      OMNI_LDAP_URL: ${OMNI_LDAP_URL:-}
+      OMNI_LDAP_START_TLS: ${OMNI_LDAP_START_TLS:-false}
+      OMNI_LDAP_BIND_DN: ${OMNI_LDAP_BIND_DN:-}
+      OMNI_LDAP_BIND_PASSWORD: ${OMNI_LDAP_BIND_PASSWORD:-}
+      OMNI_LDAP_BASE_DN: ${OMNI_LDAP_BASE_DN:-}
+      OMNI_LDAP_ADMIN_GROUP_DN: ${OMNI_LDAP_ADMIN_GROUP_DN:-}
     volumes:
       - omni-identity-data:/data
     tmpfs:
