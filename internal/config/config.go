@@ -22,6 +22,17 @@ type Config struct {
 	Cookies  CookieConfig
 	SMTP     SMTPConfig
 	LDAP     LDAPConfig
+	Logging  LoggingConfig
+}
+
+// LoggingConfig configures optional shipping of structured logs to an external
+// omnilog server (in addition to stdout). The API key is a secret and lives in
+// config/env only. Validated only when Enabled is true.
+type LoggingConfig struct {
+	Enabled bool
+	URL     string // omnilog base URL, e.g. http://host:8080
+	APIKey  string
+	Service string // source name reported to omnilog
 }
 
 // LDAPConfig configures the optional LDAP / Active Directory authentication
@@ -160,6 +171,12 @@ type fileConfig struct {
 		InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
 		Timeout            string `yaml:"timeout"`
 	} `yaml:"ldap"`
+	Logging struct {
+		Enabled bool   `yaml:"enabled"`
+		URL     string `yaml:"url"`
+		APIKey  string `yaml:"api_key"`
+		Service string `yaml:"service"`
+	} `yaml:"logging"`
 }
 
 const (
@@ -255,6 +272,11 @@ func Load(path string) (*Config, error) {
 	}
 	applyLDAPPreset(&cfg.LDAP)
 
+	cfg.Logging.Enabled = fc.Logging.Enabled
+	cfg.Logging.URL = fc.Logging.URL
+	cfg.Logging.APIKey = fc.Logging.APIKey
+	cfg.Logging.Service = orDefault(fc.Logging.Service, "omni-identity")
+
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -325,6 +347,14 @@ func (c *Config) validate() error {
 		}
 		if !strings.Contains(c.LDAP.UserFilter, "%s") {
 			return fmt.Errorf("ldap.user_filter must contain %%s (the username placeholder)")
+		}
+	}
+	if c.Logging.Enabled {
+		if c.Logging.URL == "" {
+			return fmt.Errorf("logging.url is required when logging.enabled")
+		}
+		if c.Logging.APIKey == "" {
+			return fmt.Errorf("logging.api_key is required when logging.enabled")
 		}
 	}
 	return nil
@@ -448,6 +478,18 @@ func applyEnvOverrides(fc *fileConfig) {
 	}
 	if v := os.Getenv("OMNI_LDAP_TIMEOUT"); v != "" {
 		fc.LDAP.Timeout = v
+	}
+	if v := os.Getenv("OMNI_LOGGING_ENABLED"); v != "" {
+		fc.Logging.Enabled = v == "true" || v == "1"
+	}
+	if v := os.Getenv("OMNI_LOGGING_URL"); v != "" {
+		fc.Logging.URL = v
+	}
+	if v := os.Getenv("OMNI_LOGGING_API_KEY"); v != "" {
+		fc.Logging.APIKey = v
+	}
+	if v := os.Getenv("OMNI_LOGGING_SERVICE"); v != "" {
+		fc.Logging.Service = v
 	}
 }
 

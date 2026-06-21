@@ -42,6 +42,7 @@ func (s *Server) startMFAChallenge(w http.ResponseWriter, r *http.Request, user 
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(mfaChallengeTTL.Seconds()),
 	})
+	s.metrics.recordMFA("challenge")
 	s.audit(r, evtMFAChallenge, auditEntry{actorUserID: user.ID, username: user.Username})
 	http.Redirect(w, r, "/login/mfa", http.StatusSeeOther)
 }
@@ -111,6 +112,7 @@ func (s *Server) handleMFASubmit(w http.ResponseWriter, r *http.Request) {
 	code := strings.TrimSpace(r.PostFormValue("code"))
 	if !s.verifySecondFactor(r, user, code) {
 		s.mfaRate.Fail(rlKey)
+		s.metrics.recordMFA("failure")
 		s.audit(r, evtMFAFailed, auditEntry{actorUserID: user.ID, username: user.Username})
 		s.renderMFA(w, r, http.StatusUnauthorized, "Invalid verification code.")
 		return
@@ -123,6 +125,7 @@ func (s *Server) handleMFASubmit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not create session", http.StatusInternalServerError)
 		return
 	}
+	s.metrics.recordMFA("success")
 	s.audit(r, evtMFASuccess, auditEntry{actorUserID: user.ID, username: user.Username, success: true})
 
 	if ch.Req != "" {

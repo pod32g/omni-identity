@@ -61,6 +61,14 @@ func (d *DB) DeleteSessionsForUser(ctx context.Context, userID, keepID string) (
 	return res.RowsAffected()
 }
 
+// CountActiveSessions returns the number of non-expired browser sessions.
+func (d *DB) CountActiveSessions(ctx context.Context) (int64, error) {
+	var n int64
+	err := d.sql.QueryRowContext(ctx,
+		`SELECT count(*) FROM sessions WHERE expires_at > ?`, time.Now().UTC()).Scan(&n)
+	return n, err
+}
+
 // GetSession returns the session, or ErrNotFound if it is missing or expired.
 func (d *DB) GetSession(ctx context.Context, id string) (*model.Session, error) {
 	row := d.sql.QueryRowContext(ctx,

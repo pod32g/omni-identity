@@ -151,6 +151,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		// Local account: the existing hardened path (lockout + Argon2id verify +
 		// failure bookkeeping).
 		if user.IsLocked(now) {
+			s.metrics.recordLogin("local", "failure")
 			s.audit(r, evtLoginLocked, auditEntry{actorUserID: user.ID, username: username, detail: "attempt while locked"})
 			s.renderLogin(w, r, http.StatusTooManyRequests,
 				"Your account is temporarily locked due to too many failed sign-in attempts. Please try again later.",
@@ -171,30 +172,36 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 			} else {
 				s.audit(r, evtLoginFailed, auditEntry{actorUserID: user.ID, username: username, detail: "disabled account"})
 			}
+			s.metrics.recordLogin("local", "failure")
 			invalid()
 			return
 		}
 		_ = s.db.ResetFailedLogins(r.Context(), user.ID)
+		s.metrics.recordLogin("local", "success")
 
 	case len(s.connectors) > 0:
 		// Directory-sourced (or unknown-local) account: verify via connectors and
 		// just-in-time provision the local mirror.
 		authed, ok := s.authViaConnectors(r, username, password)
 		if !ok {
+			s.metrics.recordLogin("ldap", "failure")
 			s.audit(r, evtLoginFailed, auditEntry{username: username, detail: "external: invalid"})
 			invalid()
 			return
 		}
 		if authed.Disabled {
+			s.metrics.recordLogin(authed.AuthSource, "failure")
 			s.audit(r, evtLoginFailed, auditEntry{actorUserID: authed.ID, username: username, detail: "disabled account"})
 			invalid()
 			return
 		}
+		s.metrics.recordLogin(authed.AuthSource, "success")
 		user = authed
 
 	default:
 		// Unknown user and no external connectors: constant-time reject.
 		auth.DummyVerify(password)
+		s.metrics.recordLogin("unknown", "failure")
 		s.audit(r, evtLoginFailed, auditEntry{username: username, detail: "unknown user"})
 		invalid()
 		return

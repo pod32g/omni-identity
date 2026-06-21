@@ -76,6 +76,41 @@ func TestLDAPEnabledRequiresURL(t *testing.T) {
 	}
 }
 
+func TestLoggingDisabledByDefaultWithServiceDefault(t *testing.T) {
+	cfg, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Logging.Enabled {
+		t.Fatal("logging should be off by default")
+	}
+	if cfg.Logging.Service != "omni-identity" {
+		t.Errorf("default service = %q", cfg.Logging.Service)
+	}
+}
+
+func TestLoggingEnabledRequiresURLAndKey(t *testing.T) {
+	_, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"+
+		"logging:\n  enabled: true\n  url: http://omnilog:8080\n"))
+	if err == nil {
+		t.Fatal("expected error for missing logging.api_key")
+	}
+}
+
+func TestLoggingEnvOverride(t *testing.T) {
+	t.Setenv("OMNI_LOGGING_ENABLED", "true")
+	t.Setenv("OMNI_LOGGING_URL", "http://omnilog:8080")
+	t.Setenv("OMNI_LOGGING_API_KEY", "k-secret")
+	t.Setenv("OMNI_LOGGING_SERVICE", "omni-identity")
+	cfg, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Logging.Enabled || cfg.Logging.URL != "http://omnilog:8080" || cfg.Logging.APIKey != "k-secret" {
+		t.Fatalf("logging env override failed: %+v", cfg.Logging)
+	}
+}
+
 func TestLDAPEnvOverride(t *testing.T) {
 	t.Setenv("OMNI_LDAP_ENABLED", "true")
 	t.Setenv("OMNI_LDAP_URL", "ldap://env-host:389")

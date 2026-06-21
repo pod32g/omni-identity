@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/pod32g/omni-identity/internal/config"
+	"github.com/pod32g/omni-identity/internal/logship"
 	"github.com/pod32g/omni-identity/internal/store"
 	"github.com/pod32g/omni-identity/internal/web"
 )
@@ -101,6 +102,27 @@ func runServe(args []string) error {
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
+	}
+
+	// Expose the build version on /metrics (omni_identity_build_info).
+	web.BuildVersion = version
+
+	// Optionally ship structured logs to omnilog (in addition to stdout).
+	if cfg.Logging.Enabled {
+		shipper, lerr := logship.NewHandler(logship.Config{
+			URL: cfg.Logging.URL, APIKey: cfg.Logging.APIKey, Service: cfg.Logging.Service,
+		})
+		if lerr != nil {
+			return fmt.Errorf("init log shipper: %w", lerr)
+		}
+		stdout := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
+		slog.SetDefault(slog.New(logship.Fanout(stdout, shipper)))
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = shipper.Close(ctx)
+		}()
+		slog.Info("log shipping enabled", "omnilog", cfg.Logging.URL, "service", cfg.Logging.Service)
 	}
 
 	db, err := store.OpenWith(cfg.Database.Driver, cfg.Database.DSN())

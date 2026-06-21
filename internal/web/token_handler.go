@@ -100,8 +100,22 @@ func (s *Server) grantAuthorizationCode(w http.ResponseWriter, r *http.Request) 
 		}
 		resp.RefreshToken = raw
 	}
+	s.recordTokenMetrics(resp)
 	s.audit(r, evtTokenIssued, auditEntry{actorUserID: user.ID, username: user.Username, clientID: client.ClientID, success: true, detail: "authorization_code"})
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// recordTokenMetrics counts the tokens present in a successful token response.
+func (s *Server) recordTokenMetrics(resp tokenResponse) {
+	if resp.AccessToken != "" {
+		s.metrics.recordToken("access")
+	}
+	if resp.IDToken != "" {
+		s.metrics.recordToken("id")
+	}
+	if resp.RefreshToken != "" {
+		s.metrics.recordToken("refresh")
+	}
 }
 
 func (s *Server) grantRefreshToken(w http.ResponseWriter, r *http.Request) {
@@ -184,6 +198,7 @@ func (s *Server) grantRefreshToken(w http.ResponseWriter, r *http.Request) {
 	if newRT != nil {
 		resp.RefreshToken = rawRefresh
 	}
+	s.recordTokenMetrics(resp)
 	s.audit(r, evtTokenIssued, auditEntry{actorUserID: user.ID, username: user.Username, clientID: client.ClientID, success: true, detail: "refresh_token"})
 	writeJSON(w, http.StatusOK, resp)
 }
