@@ -74,3 +74,13 @@ ldap:
   ca_cert_file: ""                        # PEM bundle for a private CA
   insecure_skip_verify: false             # labs only — never in production
   timeout: 10s
+
+logging:
+  # Optional: ship structured logs to an omnilog server (in addition to stdout).
+  # Non-blocking and best-effort — log delivery never slows or fails requests.
+  # The api_key is a secret: config/env only, never the web-editable settings.
+  # Also OMNI_LOGGING_ENABLED / _URL / _API_KEY / _SERVICE.
+  enabled: false
+  url: ""                                 # omnilog base URL, e.g. http://host:8080
+  api_key: ""                             # SECRET
+  service: omni-identity                  # source name reported to omnilog

@@ -165,6 +165,20 @@ Pure-Go (`go-ldap/ldap/v3`), so the single-binary, no-extra-CGO story holds. To
 run the gated LDAP integration test, set `OMNI_TEST_LDAP_URL` (plus the
 `OMNI_TEST_LDAP_*` bind/base/user vars) and run `go test ./internal/ldap/`.
 
+### Observability (logs & metrics)
+
+- **Metrics** — `GET /metrics` exposes Prometheus text: HTTP request counts by
+  status, plus identity series `omni_identity_logins_total{source,result}`,
+  `omni_identity_mfa_total{result}`, `omni_identity_tokens_issued_total{type}`,
+  the `omni_identity_active_sessions` gauge, and `omni_identity_build_info`. Point
+  any Prometheus-compatible scraper (e.g. omni-metrics) at it.
+- **Log shipping** — by default logs go to stdout as JSON. Set the `logging`
+  block (`OMNI_LOGGING_*`) to *also* ship them to an [omnilog](https://github.com/pod32g/omni-logging)
+  server: records are batched and POSTed to `/api/v1/ingest` (NDJSON, `X-Api-Key`)
+  by a background worker. It is **best-effort and non-blocking** — if omnilog is
+  slow or down, records are dropped rather than ever delaying or failing a
+  request. The API key is a secret (config/env only).
+
 ## Run
 
 ```sh

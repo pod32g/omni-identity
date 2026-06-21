@@ -44,6 +44,12 @@ services:
       OMNI_LDAP_BIND_PASSWORD: ${OMNI_LDAP_BIND_PASSWORD:-}
       OMNI_LDAP_BASE_DN: ${OMNI_LDAP_BASE_DN:-}
       OMNI_LDAP_ADMIN_GROUP_DN: ${OMNI_LDAP_ADMIN_GROUP_DN:-}
+      # Optional log shipping to omnilog. Off unless OMNI_LOGGING_ENABLED=true.
+      # The API key is a secret → host .env, never committed.
+      OMNI_LOGGING_ENABLED: ${OMNI_LOGGING_ENABLED:-false}
+      OMNI_LOGGING_URL: ${OMNI_LOGGING_URL:-}
+      OMNI_LOGGING_API_KEY: ${OMNI_LOGGING_API_KEY:-}
+      OMNI_LOGGING_SERVICE: ${OMNI_LOGGING_SERVICE:-omni-identity}
     volumes:
       - omni-identity-data:/data
     tmpfs:
