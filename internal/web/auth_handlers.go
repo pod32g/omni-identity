@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"crypto/subtle"
 	"log/slog"
 	"net"
 	"net/http"
@@ -50,10 +51,11 @@ func appViewFor(c *model.Client, redirectURI string) *appView {
 }
 
 type setupPage struct {
-	CSRFToken string
-	Error     string
-	Username  string
-	Email     string
+	CSRFToken     string
+	Error         string
+	Username      string
+	Email         string
+	TokenRequired bool
 }
 
 // needsSetup reports whether no enabled admin exists yet.
@@ -110,7 +112,17 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 
 	reqID := r.PostFormValue("req")
 	next := safeNext(r.PostFormValue("next"))
-	username := r.PostFormValue("username")
+	username := strings.TrimSpace(r.PostFormValue("username"))
+	password := r.PostFormValue("password")
+	ipKey := clientIP(r)
+	policy := s.settings.Current()
+
+	if !s.loginIPRate.Allowed(ipKey, policy.LoginIPMaxAttempts, policy.RateLimitWindow) {
+		s.renderLogin(w, r, http.StatusTooManyRequests,
+			"Too many sign-in attempts. Please wait a few minutes and try again.",
+			reqID, next, nil)
+		return
+	}
 
 	// Re-resolve the requesting app for re-rendering on failure.
 	var app *appView
@@ -126,12 +138,11 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		haveReq = true
 	}
 
-	password := r.PostFormValue("password")
 	now := time.Now().UTC()
 
 	// Rate-limit by client IP + submitted username to blunt credential stuffing.
-	rlKey := clientIP(r) + "|" + username
-	if !s.loginRate.Allowed(rlKey) {
+	rlKey := ipKey + "|" + username
+	if !s.loginRate.Allowed(rlKey, policy.MaxFailedLogins, policy.RateLimitWindow) {
 		s.renderLogin(w, r, http.StatusTooManyRequests,
 			"Too many sign-in attempts. Please wait a few minutes and try again.",
 			reqID, next, app)
@@ -139,8 +150,14 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	invalid := func() {
-		s.loginRate.Fail(rlKey)
+		s.loginIPRate.Fail(ipKey, policy.RateLimitWindow)
+		s.loginRate.Fail(rlKey, policy.RateLimitWindow)
 		s.renderLogin(w, r, http.StatusUnauthorized, "Invalid username or password.", reqID, next, app)
+	}
+
+	if len(username) > policy.MaxLoginUsernameBytes || len(password) > policy.MaxLoginPasswordBytes {
+		invalid()
+		return
 	}
 
 	// Resolve the credential against the local password store first; fall back to
@@ -148,8 +165,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	user, lookupErr := s.db.GetUserByUsername(r.Context(), username)
 	switch {
 	case lookupErr == nil && user.IsLocal():
-		// Local account: the existing hardened path (lockout + Argon2id verify +
-		// failure bookkeeping).
+		// Account lockout: refuse before checking the password.
 		if user.IsLocked(now) {
 			s.metrics.recordLogin("local", "failure")
 			s.audit(r, evtLoginLocked, auditEntry{actorUserID: user.ID, username: username, detail: "attempt while locked"})
@@ -158,7 +174,16 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 				reqID, next, app)
 			return
 		}
+
+		release, acquired := s.acquirePasswordVerify()
+		if !acquired {
+			s.renderLogin(w, r, http.StatusTooManyRequests,
+				"Too many sign-in attempts. Please wait a few minutes and try again.",
+				reqID, next, app)
+			return
+		}
 		ok, _ := auth.VerifyPassword(password, user.PasswordHash)
+		release()
 		if !ok || user.Disabled {
 			if !user.Disabled {
 				sv := s.settings.Current()
@@ -180,8 +205,8 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		s.metrics.recordLogin("local", "success")
 
 	case len(s.connectors) > 0:
-		// Directory-sourced (or unknown-local) account: verify via connectors and
-		// just-in-time provision the local mirror.
+		// Directory-sourced or unknown-local accounts are verified by external
+		// connectors and just-in-time provisioned into a local mirror account.
 		authed, ok := s.authViaConnectors(r, username, password)
 		if !ok {
 			s.metrics.recordLogin("ldap", "failure")
@@ -199,15 +224,24 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		user = authed
 
 	default:
-		// Unknown user and no external connectors: constant-time reject.
-		auth.DummyVerify(password)
-		s.metrics.recordLogin("unknown", "failure")
+		// Unknown user and no external connectors: bounded dummy Argon2id check to
+		// equalize timing without allowing unlimited CPU work.
+		release, ok := s.acquirePasswordVerify()
+		if !ok {
+			s.renderLogin(w, r, http.StatusTooManyRequests,
+				"Too many sign-in attempts. Please wait a few minutes and try again.",
+				reqID, next, app)
+			return
+		}
+		auth.DummyVerify(password) // equalize timing for unknown users
+		release()
 		s.audit(r, evtLoginFailed, auditEntry{username: username, detail: "unknown user"})
+		s.metrics.recordLogin("unknown", "failure")
 		invalid()
 		return
 	}
-
 	s.loginRate.Reset(rlKey)
+	s.loginIPRate.Reset(ipKey)
 
 	// Second factor required? Park a challenge and divert to the MFA step.
 	if user.MFAEnabled {
@@ -258,6 +292,24 @@ func (s *Server) authViaConnectors(r *http.Request, username, password string) (
 		return u, true
 	}
 	return nil, false
+}
+
+func (s *Server) acquirePasswordVerify() (func(), bool) {
+	limit := s.settings.Current().PasswordVerifyConcurrency
+	if limit < 1 {
+		limit = defaultPasswordVerifyConcurrency
+	}
+	s.verifyMu.Lock()
+	defer s.verifyMu.Unlock()
+	if s.verifyActive >= limit {
+		return nil, false
+	}
+	s.verifyActive++
+	return func() {
+		s.verifyMu.Lock()
+		s.verifyActive--
+		s.verifyMu.Unlock()
+	}, true
 }
 
 // redirectAfterLogin sends admins to the console and everyone else to their
@@ -324,7 +376,7 @@ func (s *Server) handleSetupForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	token := auth.CSRFToken(w, r, s.cookieSecure())
-	s.tmpl.render(w, http.StatusOK, "setup", setupPage{CSRFToken: token})
+	s.tmpl.render(w, http.StatusOK, "setup", setupPage{CSRFToken: token, TokenRequired: s.setupTokenRequired()})
 }
 
 func (s *Server) handleSetupSubmit(w http.ResponseWriter, r *http.Request) {
@@ -341,6 +393,10 @@ func (s *Server) handleSetupSubmit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid CSRF token", http.StatusForbidden)
 		return
 	}
+	if !s.validSetupToken(r.PostFormValue("setup_token")) {
+		http.Error(w, "invalid setup token", http.StatusForbidden)
+		return
+	}
 
 	username := strings.TrimSpace(r.PostFormValue("username"))
 	email := strings.TrimSpace(r.PostFormValue("email"))
@@ -349,7 +405,7 @@ func (s *Server) handleSetupSubmit(w http.ResponseWriter, r *http.Request) {
 	reRender := func(msg string) {
 		token := auth.CSRFToken(w, r, s.cookieSecure())
 		s.tmpl.render(w, http.StatusBadRequest, "setup", setupPage{
-			CSRFToken: token, Error: msg, Username: username, Email: email,
+			CSRFToken: token, Error: msg, Username: username, Email: email, TokenRequired: s.setupTokenRequired(),
 		})
 	}
 
@@ -388,6 +444,38 @@ func (s *Server) handleSetupSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, evtLoginSuccess, auditEntry{actorUserID: user.ID, username: username, success: true, detail: "first-run admin"})
 	http.Redirect(w, r, "/admin", http.StatusSeeOther)
+}
+
+func (s *Server) setupTokenRequired() bool {
+	if strings.TrimSpace(s.cfg.Security.SetupToken) != "" {
+		return true
+	}
+	u, err := url.Parse(s.settings.Current().PublicURL)
+	if err != nil {
+		return true
+	}
+	return !isLoopbackHost(u.Hostname())
+}
+
+func (s *Server) validSetupToken(got string) bool {
+	want := strings.TrimSpace(s.cfg.Security.SetupToken)
+	if want == "" {
+		return !s.setupTokenRequired()
+	}
+	got = strings.TrimSpace(got)
+	if len(got) != len(want) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
+func isLoopbackHost(host string) bool {
+	host = strings.ToLower(host)
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // safeNext returns next only if it is a safe, local, same-origin path. It

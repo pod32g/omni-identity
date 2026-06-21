@@ -11,17 +11,27 @@ import (
 	"github.com/pod32g/omni-identity/internal/oidc"
 )
 
-// httpsOrLocalURLs reports whether every entry is an absolute http(s) URL with a
-// host and no wildcard — the shape required for exact redirect matching.
-func httpsOrLocalURLs(uris []string) bool {
+// httpsOrLocalURLs reports whether every entry is an absolute URL suitable for
+// OAuth redirects: https in production, with http allowed only for loopback
+// native/local development clients.
+func httpsOrLocalURLs(uris []string, allowLoopbackHTTP bool) bool {
 	for _, raw := range uris {
 		u, err := url.Parse(raw)
 		if err != nil || u.Host == "" || strings.Contains(raw, "*") {
 			return false
 		}
-		if u.Scheme != "http" && u.Scheme != "https" {
+		if u.User != nil || u.Fragment != "" {
 			return false
 		}
+		switch u.Scheme {
+		case "https":
+			continue
+		case "http":
+			if allowLoopbackHTTP && isLoopbackHost(u.Hostname()) {
+				continue
+			}
+		}
+		return false
 	}
 	return true
 }
@@ -99,7 +109,7 @@ type clientForm struct {
 	skipConsent    bool
 }
 
-func parseClientForm(r *http.Request) (clientForm, string) {
+func parseClientForm(r *http.Request, allowLoopbackHTTP bool) (clientForm, string) {
 	f := clientForm{
 		clientID:       strings.TrimSpace(r.PostFormValue("client_id")),
 		name:           strings.TrimSpace(r.PostFormValue("name")),
@@ -127,20 +137,27 @@ func parseClientForm(r *http.Request) (clientForm, string) {
 	if !oidc.ScopesSubset(f.scopes, oidc.SupportedScopes) {
 		return f, "Unknown scope requested."
 	}
-	if !httpsOrLocalURLs(f.redirectURIs) {
-		return f, "Redirect URIs must be absolute http(s) URLs."
+	if !httpsOrLocalURLs(f.redirectURIs, allowLoopbackHTTP) {
+		return f, redirectURIMessage("Redirect", allowLoopbackHTTP)
 	}
-	if !httpsOrLocalURLs(f.postLogoutURIs) {
-		return f, "Post-logout redirect URIs must be absolute http(s) URLs."
+	if !httpsOrLocalURLs(f.postLogoutURIs, allowLoopbackHTTP) {
+		return f, redirectURIMessage("Post-logout redirect", allowLoopbackHTTP)
 	}
 	return f, ""
+}
+
+func redirectURIMessage(kind string, allowLoopbackHTTP bool) string {
+	if allowLoopbackHTTP {
+		return kind + " URIs must use HTTPS, except http://localhost or loopback addresses for local development."
+	}
+	return kind + " URIs must use HTTPS."
 }
 
 func (s *Server) handleAdminCreateClient(w http.ResponseWriter, r *http.Request) {
 	if !s.csrfOK(w, r) {
 		return
 	}
-	form, errMsg := parseClientForm(r)
+	form, errMsg := parseClientForm(r, s.settings.Current().AllowLoopbackHTTPRedirect)
 	if errMsg != "" {
 		s.renderClients(w, r, http.StatusBadRequest, errMsg)
 		return
@@ -195,7 +212,7 @@ func (s *Server) handleAdminUpdateClient(w http.ResponseWriter, r *http.Request)
 		s.renderError(w, http.StatusNotFound, "Client not found.")
 		return
 	}
-	form, errMsg := parseClientForm(r)
+	form, errMsg := parseClientForm(r, s.settings.Current().AllowLoopbackHTTPRedirect)
 	if errMsg != "" {
 		s.renderClientDetail(w, r, http.StatusBadRequest, existing, "", errMsg)
 		return

@@ -358,3 +358,27 @@ func TestUserinfoRejectsInvalidToken(t *testing.T) {
 		t.Errorf("code = %d, want 401", rr.Code)
 	}
 }
+
+func TestUserinfoIgnoresQueryAndFormAccessTokens(t *testing.T) {
+	srv := testServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/userinfo?access_token=not-a-real-token", nil)
+	rr := do(srv, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("query token code = %d, want 401", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "missing bearer token") {
+		t.Fatalf("query token should be ignored; body: %s", rr.Body.String())
+	}
+
+	form := url.Values{"access_token": {"not-a-real-token"}}
+	req = httptest.NewRequest(http.MethodPost, "/userinfo", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rr = do(srv, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("form token code = %d, want 401", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "missing bearer token") {
+		t.Fatalf("form token should be ignored; body: %s", rr.Body.String())
+	}
+}

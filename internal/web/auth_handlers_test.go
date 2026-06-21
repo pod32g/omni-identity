@@ -205,6 +205,33 @@ func TestPostSetupCreatesFirstAdmin(t *testing.T) {
 	}
 }
 
+func TestPostSetupRequiresBootstrapTokenWhenConfigured(t *testing.T) {
+	srv := testServer(t)
+	srv.cfg.Security.SetupToken = "setup-secret"
+
+	form := url.Values{
+		"username":   {"root"},
+		"email":      {"root@example.com"},
+		"password":   {"supersecret123"},
+		"csrf_token": {"tok"},
+	}
+	if rr := do(srv, postForm("/setup", form, "tok")); rr.Code != http.StatusForbidden {
+		t.Fatalf("setup without token code = %d, want 403", rr.Code)
+	}
+	if n, _ := srv.db.CountAdmins(context.Background()); n != 0 {
+		t.Fatalf("admin count after rejected setup = %d, want 0", n)
+	}
+
+	form.Set("setup_token", "setup-secret")
+	rr := do(srv, postForm("/setup", form, "tok"))
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("setup with token code = %d, want 303 (body: %s)", rr.Code, rr.Body.String())
+	}
+	if n, _ := srv.db.CountAdmins(context.Background()); n != 1 {
+		t.Fatalf("admin count = %d, want 1", n)
+	}
+}
+
 func TestPostSetupBlockedWhenAdminExists(t *testing.T) {
 	srv := testServer(t)
 	createUser(t, srv, "admin", "pw", true)

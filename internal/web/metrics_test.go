@@ -9,6 +9,7 @@ import (
 
 func TestMetricsEndpointExposesEnrichedSeries(t *testing.T) {
 	srv := testServer(t)
+	srv.cfg.Metrics.BearerToken = "test-metrics-token"
 	srv.metrics.recordLogin("ldap", "success")
 	srv.metrics.recordLogin("local", "failure")
 	srv.metrics.recordMFA("challenge")
@@ -16,7 +17,9 @@ func TestMetricsEndpointExposesEnrichedSeries(t *testing.T) {
 	srv.metrics.recordToken("access")
 	srv.metrics.recordToken("refresh")
 
-	rr := do(srv, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer test-metrics-token")
+	rr := do(srv, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("code = %d", rr.Code)
 	}

@@ -26,7 +26,16 @@ func testServer(t *testing.T) *Server {
 	cfg.Security.RefreshTokenTTL = 720 * time.Hour
 	cfg.Security.MaxFailedLogins = 5
 	cfg.Security.LockoutDuration = 15 * time.Minute
+	cfg.Security.RateLimitWindow = 15 * time.Minute
+	cfg.Security.LoginIPMaxAttempts = 20
+	cfg.Security.PasswordVerifyConcurrency = 4
+	cfg.Security.MaxLoginUsernameBytes = 320
+	cfg.Security.MaxLoginPasswordBytes = 1024
+	cfg.Security.AllowLoopbackHTTPRedirect = true
 	cfg.Security.PasswordMinLength = 12
+	cfg.Security.RequireNumber = true
+	cfg.Security.SessionLifetime = 12 * time.Hour
+	cfg.Uploads.MaxLogoBytes = 512 * 1024
 	srv, err := NewServer(cfg, db)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)

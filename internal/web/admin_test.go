@@ -1,9 +1,12 @@
 package web
 
 import (
+	"bytes"
 	"context"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"net/url"
 	"strings"
 	"testing"
@@ -34,6 +37,26 @@ func adminPost(srv *Server, path string, form url.Values, sid string) *httptest.
 	if sid != "" {
 		req.AddCookie(&http.Cookie{Name: "omni_session", Value: sid})
 	}
+	return do(srv, req)
+}
+
+func adminUploadLogo(srv *Server, sid, filename, contentType string, data []byte) *httptest.ResponseRecorder {
+	var body bytes.Buffer
+	mw := multipart.NewWriter(&body)
+	_ = mw.WriteField("csrf_token", "tok")
+	h := make(textproto.MIMEHeader)
+	h.Set("Content-Disposition", `form-data; name="logo"; filename="`+filename+`"`)
+	if contentType != "" {
+		h.Set("Content-Type", contentType)
+	}
+	part, _ := mw.CreatePart(h)
+	_, _ = part.Write(data)
+	_ = mw.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/settings/logo", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: "omni_csrf", Value: "tok"})
+	req.AddCookie(&http.Cookie{Name: "omni_session", Value: sid})
 	return do(srv, req)
 }
 
@@ -160,6 +183,36 @@ func TestAdminCreatePublicClientHasNoSecret(t *testing.T) {
 	}
 }
 
+func TestAdminClientRejectsNonLoopbackHTTPRedirects(t *testing.T) {
+	srv := testServer(t)
+	sid := adminSession(t, srv)
+	rr := adminPost(srv, "/admin/clients", url.Values{
+		"name":          {"Insecure"},
+		"client_id":     {"insecure"},
+		"type":          {"confidential"},
+		"redirect_uris": {"http://app.example.com/cb"},
+		"scopes":        {"openid"},
+	}, sid)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("code = %d, want 400 for non-loopback http redirect", rr.Code)
+	}
+}
+
+func TestAdminClientAllowsLoopbackHTTPRedirects(t *testing.T) {
+	srv := testServer(t)
+	sid := adminSession(t, srv)
+	rr := adminPost(srv, "/admin/clients", url.Values{
+		"name":          {"Native"},
+		"client_id":     {"native"},
+		"type":          {"public"},
+		"redirect_uris": {"http://127.0.0.1:53682/callback http://localhost:3000/cb"},
+		"scopes":        {"openid"},
+	}, sid)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code = %d, want 200 for loopback http redirect (body: %s)", rr.Code, rr.Body.String())
+	}
+}
+
 func TestAdminUpdateClientRedirectURIs(t *testing.T) {
 	srv := testServer(t)
 	sid := adminSession(t, srv)
@@ -228,6 +281,36 @@ func TestAdminSettingsRenders(t *testing.T) {
 	}
 	if !strings.Contains(rr.Body.String(), "localhost:8080") {
 		t.Error("settings should show the issuer")
+	}
+}
+
+func TestAdminUploadLogoRejectsSVG(t *testing.T) {
+	srv := testServer(t)
+	sid := adminSession(t, srv)
+	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)
+	rr := adminUploadLogo(srv, sid, "logo.svg", "image/svg+xml", svg)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("code = %d, want 400 for SVG logo upload", rr.Code)
+	}
+}
+
+func TestAdminUploadLogoRejectsOversizeFile(t *testing.T) {
+	srv := testServer(t)
+	sid := adminSession(t, srv)
+	oversize := bytes.Repeat([]byte{'x'}, defaultMaxLogoBytes+1)
+	rr := adminUploadLogo(srv, sid, "logo.png", "image/png", oversize)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("code = %d, want 400 for oversized logo upload", rr.Code)
+	}
+}
+
+func TestAdminUploadLogoAcceptsRasterImage(t *testing.T) {
+	srv := testServer(t)
+	sid := adminSession(t, srv)
+	png := []byte("\x89PNG\r\n\x1a\nfakepng")
+	rr := adminUploadLogo(srv, sid, "logo.png", "image/png", png)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("code = %d, want 303 for PNG logo upload (body: %s)", rr.Code, rr.Body.String())
 	}
 }
 

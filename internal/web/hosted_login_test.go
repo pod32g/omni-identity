@@ -185,12 +185,32 @@ func TestLoginRateLimited(t *testing.T) {
 	createUser(t, srv, "alice", "pw", false)
 
 	var last int
-	for i := 0; i < loginMaxAttempts+1; i++ {
+	for i := 0; i < defaultLoginMaxAttempts+1; i++ {
 		form := url.Values{"username": {"alice"}, "password": {"wrong"}, "csrf_token": {"tok"}}
 		last = do(srv, postForm("/login", form, "tok")).Code
 	}
 	if last != http.StatusTooManyRequests {
-		t.Fatalf("after %d failed attempts, code = %d, want 429", loginMaxAttempts+1, last)
+		t.Fatalf("after %d failed attempts, code = %d, want 429", defaultLoginMaxAttempts+1, last)
+	}
+}
+
+func TestLoginIPRateLimitBlocksUsernameRotation(t *testing.T) {
+	srv := testServer(t)
+	createUser(t, srv, "admin", "pw", true)
+
+	var last int
+	for i := 0; i < defaultLoginIPMaxAttempts+1; i++ {
+		form := url.Values{
+			"username":   {"rotated-" + string(rune('a'+i))},
+			"password":   {"wrong"},
+			"csrf_token": {"tok"},
+		}
+		req := postForm("/login", form, "tok")
+		req.RemoteAddr = "203.0.113.10:1234"
+		last = do(srv, req).Code
+	}
+	if last != http.StatusTooManyRequests {
+		t.Fatalf("after username rotation, code = %d, want 429", last)
 	}
 }
 

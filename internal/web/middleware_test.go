@@ -19,14 +19,44 @@ func TestSecurityHeadersPresent(t *testing.T) {
 	if rr.Header().Get("Content-Security-Policy") == "" {
 		t.Error("missing Content-Security-Policy")
 	}
+	if rr.Header().Get("Permissions-Policy") == "" {
+		t.Error("missing Permissions-Policy")
+	}
+	csp := rr.Header().Get("Content-Security-Policy")
+	for _, want := range []string{"script-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'self'"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("CSP missing %q: %s", want, csp)
+		}
+	}
 }
 
-func TestMetricsEndpointReportsCounts(t *testing.T) {
+func TestAuthPagesUseNoStore(t *testing.T) {
+	srv := testServer(t)
+	rr := do(srv, httptest.NewRequest(http.MethodGet, "/login", nil))
+	if rr.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", rr.Header().Get("Cache-Control"))
+	}
+}
+
+func TestMetricsEndpointRequiresToken(t *testing.T) {
 	srv := testServer(t)
 	do(srv, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	do(srv, httptest.NewRequest(http.MethodGet, "/jwks.json", nil))
 
 	rr := do(srv, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("code without configured token = %d, want 404", rr.Code)
+	}
+
+	srv.cfg.Metrics.BearerToken = "test-metrics-token"
+	rr = do(srv, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("code without bearer token = %d, want 401", rr.Code)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.Header.Set("Authorization", "Bearer test-metrics-token")
+	rr = do(srv, req)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("code = %d, want 200", rr.Code)
 	}

@@ -3,10 +3,13 @@ name: CI/CD
 on:
   push:
     branches: ['**']
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE', 'design-system/**', '.design-sync/**']   # docs-only changes don't build/deploy
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']   # docs-only changes don't build/deploy
   pull_request:
-    paths-ignore: ['**.md', 'docs/**', 'LICENSE', 'design-system/**', '.design-sync/**']
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
   workflow_dispatch:   # allow manual build+deploy from the Actions tab
+
+permissions:
+  contents: read
 
 # Cancel superseded runs per ref, except on main (never cancel a main deploy).
 concurrency:
@@ -15,19 +18,33 @@ concurrency:
 
 jobs:
   build:
-    runs-on: [self-hosted, omni-identity]   # MUST match the runner's labels
-    # SECURITY: never run untrusted fork-PR code on a self-hosted runner.
-    if: >-
-      github.event_name == 'push' ||
-      github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+    # SECURITY: pull-request code, including fork PRs, runs only on a GitHub-hosted runner.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - name: Build image (gate — must pass before deploy)
         run: docker compose build
 
+  design-system:
+    # SECURITY: dev-tool dependency audit and tests must run when design-system files change.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: design-system
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: design-system/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=moderate
+      - run: npm run typecheck
+      - run: npm test
+
   deploy:
-    needs: [build]
+    needs: [build, design-system]
     if: github.ref == 'refs/heads/main'   # only main deploys
     runs-on: [self-hosted, omni-identity]
     concurrency:

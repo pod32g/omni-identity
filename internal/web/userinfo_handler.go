@@ -48,5 +48,5 @@ func bearerToken(r *http.Request) string {
 	if after, ok := strings.CutPrefix(h, "Bearer "); ok {
 		return strings.TrimSpace(after)
 	}
-	return r.FormValue("access_token")
+	return ""
 }

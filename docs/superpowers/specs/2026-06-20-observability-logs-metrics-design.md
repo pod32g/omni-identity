@@ -11,7 +11,7 @@
    `/metrics` with identity-meaningful series, and configure omni-metrics to
    scrape it.
 
-## Environment (all on 192.168.68.34, separate compose networks → talk via host IP)
+## Environment (separate compose networks talking through a configured host/IP)
 
 - omni-identity: host `:8081` → container `:8080`.
 - omnilog: host `:8080`; ingest `POST /api/v1/ingest`, header `X-Api-Key`,
@@ -45,7 +45,7 @@ Config (`internal/config`, `OMNI_LOGGING_*`):
 ```yaml
 logging:
   enabled: false
-  url: ""              # omnilog base, e.g. http://192.168.68.34:8080
+  url: ""              # omnilog base, e.g. http://omnilog.example.local:8080
   api_key: ""          # SECRET — config/env only
   service: omni-identity
 ```
@@ -79,7 +79,7 @@ The `metrics` type gains labeled counter maps (mutex-guarded) + increment helper
   already interpolates it) and restart. The same key goes in omni-identity's
   `.env` as `OMNI_LOGGING_API_KEY`. No omnilog code/repo change.
 - **omni-metrics**: add a config file with a `omni-identity` scrape job
-  (`targets: [192.168.68.34:8081]`) plus the existing self-scrape; mount it and
+  (`targets: [identity.example.local:8081]`) plus the existing self-scrape; mount it and
   add `-config` to the compose command. Commit to the omni-metrics repo (durable)
   and apply on host.
 

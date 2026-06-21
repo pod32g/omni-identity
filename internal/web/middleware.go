@@ -1,6 +1,7 @@
 package web
 
 import (
+	"crypto/subtle"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -194,10 +195,14 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
 		// img-src allows https so the hosted login can show a registered client's
 		// externally hosted logo; the uploaded Omni logo is served from 'self'.
 		h.Set("Content-Security-Policy",
-			"default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; frame-ancestors 'none'")
+			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+		if noStorePath(r.URL.Path) {
+			h.Set("Cache-Control", "no-store")
+		}
 		// HSTS only when serving over HTTPS (secure cookies imply TLS).
 		if s.cookieSecure() {
 			h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
@@ -206,7 +211,34 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
+func noStorePath(path string) bool {
+	switch {
+	case path == "/login", path == "/login/mfa", path == "/consent", path == "/logout",
+		path == "/setup", path == "/set-password", path == "/forgot":
+		return true
+	case path == "/oauth2/authorize":
+		return true
+	case path == "/account" || strings.HasPrefix(path, "/account/"):
+		return true
+	case path == "/admin" || strings.HasPrefix(path, "/admin/"):
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	token := strings.TrimSpace(s.cfg.Metrics.BearerToken)
+	if token == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if !bearerTokenEqual(r, token) {
+		w.Header().Set("WWW-Authenticate", "Bearer")
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	var b strings.Builder
 	b.WriteString(s.metrics.render())
 
@@ -222,4 +254,16 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	_, _ = w.Write([]byte(b.String()))
+}
+
+func bearerTokenEqual(r *http.Request, want string) bool {
+	raw, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if !ok {
+		return false
+	}
+	got := strings.TrimSpace(raw)
+	if len(got) != len(want) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
 }

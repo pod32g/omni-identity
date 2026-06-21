@@ -45,8 +45,9 @@ func (s *Server) handleForgotSubmit(w http.ResponseWriter, r *http.Request) {
 
 	identifier := strings.TrimSpace(r.PostFormValue("identifier"))
 	// Rate-limit by IP to blunt enumeration/spam; always show the same result.
-	if s.forgotRate.Allowed(clientIP(r)) {
-		s.forgotRate.Fail(clientIP(r))
+	policy := s.settings.Current()
+	if s.forgotRate.Allowed(clientIP(r), policy.MaxFailedLogins, policy.RateLimitWindow) {
+		s.forgotRate.Fail(clientIP(r), policy.RateLimitWindow)
 		go s.dispatchReset(identifier, clientIP(r), r.UserAgent())
 	}
 	s.audit(r, evtResetRequested, auditEntry{detail: "self-service forgot-password"})

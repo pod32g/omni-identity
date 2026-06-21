@@ -1,96 +1,219 @@
 # Deployment
 
-Omni Identity deploys to **192.168.68.34** via a **self-hosted GitHub Actions
-runner on that same host** — mirroring the omni-logging pipeline. The runner
-builds the image and runs `docker compose` locally on the target.
+This guide describes how to deploy Omni Identity from this repository. Docker
+Compose is the recommended path because the provided compose file already sets
+up persistence, container hardening, health checks, and environment-based
+configuration.
 
-## Pipeline overview
+## Requirements
 
-[`.github/workflows/cicd.yml`](../.github/workflows/cicd.yml):
+- A host with Docker and the Docker Compose plugin.
+- A stable DNS name for production, for example `identity.example.com`.
+- HTTPS termination through a reverse proxy, load balancer, or ingress.
+- Persistent storage for the database volume and backups.
+- A high-entropy one-time setup token for the first administrator.
 
-- **build** (every branch / same-repo PR): `docker compose build` — a gate that
-  also runs `go test ./...` and `govulncheck` inside the image build. Fork PRs
-  are never run on the self-hosted runner.
-- **deploy** (`main` only): on the target host it
-  1. backs up the live DB first (`omni-identity backup`, online `VACUUM INTO`),
-     copying the snapshot to `~/omni-identity/backups`;
-  2. stop-first recreates the container (`docker compose up --build -d`);
-  3. waits for readiness via the in-container `healthcheck` subcommand;
-  4. smoke-tests the published port (`http://localhost:8081/healthz`);
-  5. runs `integrity` and **auto-heals from the latest backup** if it fails;
-  6. retains the 10 most recent backups.
+For local-only testing, you can use loopback HTTP. For production, use HTTPS and
+keep secure cookies enabled.
 
-Deploys are serialized (`concurrency: deploy-omni-identity`) and never overlap.
+## Quick Start With Docker Compose
 
-## One-time prerequisite: register a runner for this repo
-
-The existing `omnilog-34` runner is **scoped to the omni-logging repo** and
-cannot be shared (personal-account runners are per-repo). Register a **second
-runner instance** for omni-identity on the same machine. It must carry the
-label **`omni-identity`** (matched by the workflow's `runs-on`).
-
-On 192.168.68.34:
+Clone the repository on the deployment host:
 
 ```sh
-# 1. Get a registration token (valid ~1h). From your workstation:
-#    gh api -X POST repos/pod32g/omni-identity/actions/runners/registration-token --jq .token
-#    ...or copy the command shown in: GitHub → omni-identity → Settings → Actions → Runners → New self-hosted runner
-
-# 2. On the host, in a NEW directory (do not reuse the omnilog runner dir):
-mkdir -p ~/actions-runner-omni-identity && cd ~/actions-runner-omni-identity
-
-# Reuse the same runner version already installed for omni-logging, e.g.:
-RUNNER_VERSION=2.XXX.X   # match the existing omnilog runner
-curl -o actions-runner.tar.gz -L \
-  "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-x64-${RUNNER_VERSION}.tar.gz"
-tar xzf actions-runner.tar.gz
-
-# 3. Configure against THIS repo with the omni-identity label:
-./config.sh \
-  --url https://github.com/pod32g/omni-identity \
-  --token <REGISTRATION_TOKEN> \
-  --labels omni-identity \
-  --name omni-identity-34 \
-  --unattended
-
-# 4. Install + start as a service:
-sudo ./svc.sh install
-sudo ./svc.sh start
+git clone https://github.com/pod32g/omni-identity.git
+cd omni-identity
+cp .env.example .env
 ```
 
-The runner's user needs the same tooling the omnilog runner already has on this
-box: Docker + the compose plugin, plus `rsync` and `curl`, and membership in the
-`docker` group.
+Edit `.env` before the first start:
 
-## Configuration
+```sh
+OMNI_IDENTITY_BIND_ADDR=127.0.0.1
+OMNI_IDENTITY_HOST_PORT=8081
+OMNI_SERVER_PUBLIC_URL=https://identity.example.com
+OMNI_COOKIES_SECURE=true
+OMNI_SETUP_TOKEN=<generate-a-long-random-value>
+```
 
-Runtime config is provided via environment variables (no config file needed in
-the container — see [`docker-compose.yml`](../docker-compose.yml)). Copy
-[`.env.example`](../.env.example) to `.env` next to the compose file on the host:
+Generate the setup token with a local secret generator, for example:
 
-| Variable | Default | Notes |
-|----------|---------|-------|
-| `OMNI_IDENTITY_HOST_PORT` | `8081` | Published host port (omni-logging owns 8080). |
-| `OMNI_SERVER_PUBLIC_URL` | `http://192.168.68.34:8081` | Public base URL **and** OIDC issuer; must be stable. |
-| `OMNI_SECURITY_ISSUER` | _(empty)_ | Defaults to the public URL. |
-| `OMNI_COOKIES_SECURE` | `false` | Set `true` behind an HTTPS-terminating proxy. |
+```sh
+openssl rand -base64 32
+```
 
-Persistent state (users, clients, sessions, signing keys) lives in the
-`omni-identity-data` named volume and survives container recreation.
+Build and start the service:
 
-> Production note: serve over HTTPS with a real hostname and set
-> `OMNI_COOKIES_SECURE=true`. The plain-http IP issuer is fine for a private LAN.
+```sh
+docker compose up -d --build
+docker compose ps
+curl -fsS http://127.0.0.1:8081/healthz
+```
 
-## First deploy
+Open the configured public URL and complete the first-run setup wizard. If the
+public URL is not loopback, the wizard requires the `OMNI_SETUP_TOKEN` value.
+After the first administrator exists, setup disables itself.
 
-1. Register the runner (above).
-2. Create `~/omni-identity/.env` on the host (or let the workflow rsync your
-   committed defaults and rely on compose env defaults).
-3. Push to `main` — the build gate runs, then the deploy creates the container.
-4. Browse to `http://192.168.68.34:8081/` and complete the first-run admin wizard.
+## Public URL And HTTPS
 
-## Coexistence with omni-logging
+`OMNI_SERVER_PUBLIC_URL` is the canonical external origin for the identity
+provider. It is also the default OIDC issuer, so it must be stable before
+clients are registered.
 
-Both stacks run on the same host without conflict: distinct compose project dirs
-(`~/omnilog` vs `~/omni-identity`), container names, named volumes, and host
-ports (8080 vs 8081).
+For production:
+
+- Set `OMNI_SERVER_PUBLIC_URL=https://identity.example.com`.
+- Keep `OMNI_COOKIES_SECURE=true`.
+- Keep `OMNI_IDENTITY_BIND_ADDR=127.0.0.1` when a local reverse proxy forwards
+  traffic to the container.
+- Terminate HTTPS at the proxy and forward traffic to the published local port.
+
+Example Caddy reverse proxy:
+
+```caddyfile
+identity.example.com {
+	reverse_proxy 127.0.0.1:8081
+}
+```
+
+Example nginx reverse proxy:
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name identity.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/identity.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/identity.example.com/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+```
+
+For short-lived private testing with direct HTTP on a non-loopback host, set all
+of the following intentionally:
+
+```sh
+OMNI_IDENTITY_BIND_ADDR=0.0.0.0
+OMNI_SERVER_PUBLIC_URL=http://your-test-host:8081
+OMNI_ALLOW_INSECURE_HTTP=true
+OMNI_COOKIES_SECURE=false
+```
+
+Do not use that configuration for production.
+
+## Important Configuration
+
+Runtime configuration is supplied through `.env` when using Docker Compose. The
+full set of options is documented in [`.env.example`](../.env.example) and
+[`config.example.yaml`](../config.example.yaml).
+
+| Variable | Purpose |
+|----------|---------|
+| `OMNI_IDENTITY_BIND_ADDR` | Host interface for the published port. Use `127.0.0.1` behind a local reverse proxy. |
+| `OMNI_IDENTITY_HOST_PORT` | Host port forwarded to the container's internal `8080`. |
+| `OMNI_SERVER_PUBLIC_URL` | Canonical public base URL and default OIDC issuer. |
+| `OMNI_SECURITY_ISSUER` | Optional issuer override. Leave empty unless it must differ from the public URL. |
+| `OMNI_SETUP_TOKEN` | One-time bootstrap token required for first setup on non-loopback public URLs. |
+| `OMNI_ALLOW_INSECURE_HTTP` | Explicit opt-in for non-loopback `http://` public URLs. |
+| `OMNI_COOKIES_SECURE` | Enables Secure cookies. Required with HTTPS public URLs. |
+| `OMNI_METRICS_TOKEN` | Enables `/metrics` when set; scrape with `Authorization: Bearer`. |
+
+The `security`, `cookies`, `uploads`, and identity values are seeded from config
+on first start and then become editable from Admin Settings. Listener,
+database, setup token, metrics token, and HTTP server resource limits stay
+config/env-controlled and require a restart to change.
+
+## Persistent Data
+
+The compose file stores application data in the `omni-identity-data` named
+volume. This volume contains users, clients, sessions, signing keys, and the
+SQLite database by default. Protect it like production credential material.
+
+Inspect the volume:
+
+```sh
+docker volume inspect omni-identity-data
+```
+
+Back up the SQLite database while the service is running:
+
+```sh
+mkdir -p ./backups
+docker compose exec omni-identity /omni-identity backup \
+  --db /data/omni-identity.db \
+  --out /tmp/omni-identity.db
+docker cp omni-identity:/tmp/omni-identity.db ./backups/omni-identity-$(date +%Y%m%d%H%M%S).db
+```
+
+Check database integrity:
+
+```sh
+docker compose exec omni-identity /omni-identity integrity --db /data/omni-identity.db
+```
+
+## Upgrades
+
+Back up the database before upgrading. Then update the source tree and recreate
+the container:
+
+```sh
+git pull --ff-only
+docker compose up -d --build
+docker compose ps
+curl -fsS http://127.0.0.1:8081/healthz
+```
+
+Database migrations run at application startup. Keep a recent backup before
+running a new version.
+
+## Metrics
+
+`/metrics` is disabled by default. To enable it, set a strong token:
+
+```sh
+OMNI_METRICS_TOKEN=<long-random-token>
+```
+
+Scrape with:
+
+```sh
+curl -H "Authorization: Bearer $OMNI_METRICS_TOKEN" \
+  https://identity.example.com/metrics
+```
+
+Keep metrics behind trusted monitoring infrastructure.
+
+## Running Without Docker
+
+You can also run the binary directly:
+
+```sh
+go build -o omni-identity ./cmd/omni-identity
+./omni-identity serve -config config.yaml
+```
+
+Use [config.example.yaml](../config.example.yaml) as the starting point. The same
+production rules apply: use HTTPS for the public URL, enable secure cookies, set
+a setup token before first run, and keep the database and backups protected.
+
+## Optional CI/CD
+
+The repository includes a GitHub Actions workflow that builds and tests the
+project. If you want automated deployment from your own fork, adapt the deploy
+job to your infrastructure and provide a self-hosted runner or deployment
+target with Docker Compose access.
+
+Recommended deployment job shape:
+
+1. Run tests and vulnerability checks on GitHub-hosted runners.
+2. Deploy only from protected branches or tags.
+3. Back up the database before recreating the container.
+4. Run `docker compose up -d --build`.
+5. Wait for `/healthz` and run `omni-identity integrity`.
+6. Keep deployment secrets out of pull request jobs.

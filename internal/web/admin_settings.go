@@ -6,16 +6,28 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pod32g/omni-identity/internal/config"
 )
 
 // settingBounds caps the editable durations to sane ranges.
 const (
-	minTokenTTL   = 1 * time.Minute
-	maxTokenTTL   = 24 * time.Hour
-	minRefreshTTL = 5 * time.Minute
-	maxRefreshTTL = 365 * 24 * time.Hour
-	maxSessionTTL = 90 * 24 * time.Hour
-	minPwLen      = 8
+	minTokenTTL                 = 1 * time.Minute
+	maxTokenTTL                 = 24 * time.Hour
+	minRefreshTTL               = 5 * time.Minute
+	maxRefreshTTL               = 365 * 24 * time.Hour
+	maxSessionTTL               = 90 * 24 * time.Hour
+	minRateLimitWindow          = time.Second
+	maxRateLimitWindow          = 24 * time.Hour
+	minPwLen                    = 8
+	minLoginUsernameBytes       = 64
+	maxLoginUsernameBytesLimit  = 4096
+	minLoginPasswordBytes       = 64
+	maxLoginPasswordBytesLimit  = 1024 * 1024
+	minPasswordVerifyConcurrent = 1
+	maxPasswordVerifyConcurrent = 64
+	minLogoKiB                  = 16
+	maxLogoKiB                  = 5 * 1024
 )
 
 // handleAdminUpdateSettings validates and persists the editable system
@@ -36,6 +48,7 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 	next.RequireLower = form.Get("require_lower") == "on"
 	next.RequireNumber = form.Get("require_number") == "on"
 	next.RequireSymbol = form.Get("require_symbol") == "on"
+	next.AllowLoopbackHTTPRedirect = form.Get("allow_loopback_http_redirects") == "on"
 
 	// Durations.
 	var perr error
@@ -57,6 +70,7 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 	parse("token_ttl", minTokenTTL, maxTokenTTL, &next.TokenTTL)
 	parse("refresh_token_ttl", minRefreshTTL, maxRefreshTTL, &next.RefreshTokenTTL)
 	parse("lockout_duration", time.Second, 30*24*time.Hour, &next.LockoutDuration)
+	parse("rate_limit_window", minRateLimitWindow, maxRateLimitWindow, &next.RateLimitWindow)
 	parseSessionIdle("session_idle_timeout", form.Get("session_idle_timeout"), &next.SessionIdleTimeout, &perr)
 	parse("session_lifetime", time.Minute, maxSessionTTL, &next.SessionLifetime)
 	if perr != nil {
@@ -71,6 +85,36 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 		s.renderSettings(w, r, http.StatusBadRequest, "Max failed logins must be a whole number ≥ 1.", "")
 		return
 	}
+	if v, ok := parseIntRange(form.Get("login_ip_max_attempts"), 1, 100000); ok {
+		next.LoginIPMaxAttempts = v
+	} else {
+		s.renderSettings(w, r, http.StatusBadRequest, "IP max failed logins must be a whole number ≥ 1.", "")
+		return
+	}
+	if v, ok := parseIntRange(form.Get("password_verify_concurrency"), minPasswordVerifyConcurrent, maxPasswordVerifyConcurrent); ok {
+		next.PasswordVerifyConcurrency = v
+	} else {
+		s.renderSettings(w, r, http.StatusBadRequest, fmt.Sprintf("Password verification concurrency must be between %d and %d.", minPasswordVerifyConcurrent, maxPasswordVerifyConcurrent), "")
+		return
+	}
+	if v, ok := parseIntRange(form.Get("max_login_username_bytes"), minLoginUsernameBytes, maxLoginUsernameBytesLimit); ok {
+		next.MaxLoginUsernameBytes = v
+	} else {
+		s.renderSettings(w, r, http.StatusBadRequest, fmt.Sprintf("Username byte cap must be between %d and %d.", minLoginUsernameBytes, maxLoginUsernameBytesLimit), "")
+		return
+	}
+	if v, ok := parseIntRange(form.Get("max_login_password_bytes"), minLoginPasswordBytes, maxLoginPasswordBytesLimit); ok {
+		next.MaxLoginPasswordBytes = v
+	} else {
+		s.renderSettings(w, r, http.StatusBadRequest, fmt.Sprintf("Password byte cap must be between %d and %d.", minLoginPasswordBytes, maxLoginPasswordBytesLimit), "")
+		return
+	}
+	if v, ok := parseIntRange(form.Get("max_logo_kib"), minLogoKiB, maxLogoKiB); ok {
+		next.MaxLogoBytes = v * 1024
+	} else {
+		s.renderSettings(w, r, http.StatusBadRequest, fmt.Sprintf("Logo upload size must be between %d and %d KiB.", minLogoKiB, maxLogoKiB), "")
+		return
+	}
 	if v, err := strconv.Atoi(strings.TrimSpace(form.Get("password_min_length"))); err == nil && v >= minPwLen {
 		next.PasswordMinLength = v
 	} else {
@@ -83,8 +127,24 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 		s.renderSettings(w, r, http.StatusBadRequest, "Refresh token TTL must be ≥ the access token TTL.", "")
 		return
 	}
-	if next.Issuer == "" || next.PublicURL == "" {
-		s.renderSettings(w, r, http.StatusBadRequest, "Issuer and public URL are required.", "")
+	issuer, _, err := config.NormalizePublicURL("issuer", next.Issuer, s.cfg.Server.AllowInsecureHTTP)
+	if err != nil {
+		s.renderSettings(w, r, http.StatusBadRequest, err.Error(), "")
+		return
+	}
+	publicURL, parsedPublicURL, err := config.NormalizePublicURL("public URL", next.PublicURL, s.cfg.Server.AllowInsecureHTTP)
+	if err != nil {
+		s.renderSettings(w, r, http.StatusBadRequest, err.Error(), "")
+		return
+	}
+	next.Issuer = issuer
+	next.PublicURL = publicURL
+	if parsedPublicURL.Scheme == "https" && !next.CookieSecure {
+		s.renderSettings(w, r, http.StatusBadRequest, "Cookie Secure must be enabled when the public URL uses HTTPS.", "")
+		return
+	}
+	if parsedPublicURL.Scheme == "http" && next.CookieSecure {
+		s.renderSettings(w, r, http.StatusBadRequest, "Cookie Secure must be disabled when the public URL uses HTTP.", "")
 		return
 	}
 
@@ -95,6 +155,14 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 	s.settings.Reload(r.Context())
 	s.audit(r, evtSettingsUpdated, auditEntry{actorUserID: actorID(r), success: true})
 	http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
+}
+
+func parseIntRange(raw string, lo, hi int) (int, bool) {
+	v, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || v < lo || v > hi {
+		return 0, false
+	}
+	return v, true
 }
 
 // handleAdminResetSettings restores the config-derived defaults.

@@ -1,7 +1,7 @@
 package web
 
 import (
-	"bytes"
+	"fmt"
 	"io"
 	"net/http"
 	"regexp"
@@ -12,15 +12,14 @@ import (
 	"github.com/pod32g/omni-identity/internal/model"
 )
 
-// maxLogoBytes caps an uploaded branding logo.
-const maxLogoBytes = 512 * 1024
+// defaultMaxLogoBytes caps uploaded branding logos unless changed in settings.
+const defaultMaxLogoBytes = 512 * 1024
 
 // allowedLogoTypes are the content types accepted for an uploaded logo.
 var allowedLogoTypes = map[string]bool{
-	"image/png":     true,
-	"image/jpeg":    true,
-	"image/webp":    true,
-	"image/svg+xml": true,
+	"image/png":  true,
+	"image/jpeg": true,
+	"image/webp": true,
 }
 
 // handleBrandingLogo serves the uploaded branding logo blob, or 404 if none.
@@ -82,7 +81,12 @@ func (s *Server) handleAdminUpdateBranding(w http.ResponseWriter, r *http.Reques
 
 // handleAdminUploadLogo stores (or clears) the uploaded branding logo.
 func (s *Server) handleAdminUploadLogo(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(maxLogoBytes + 4096); err != nil {
+	maxLogoBytes := s.settings.Current().MaxLogoBytes
+	if maxLogoBytes < 1 {
+		maxLogoBytes = defaultMaxLogoBytes
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, int64(maxLogoBytes)+32*1024)
+	if err := r.ParseMultipartForm(int64(maxLogoBytes) + 4096); err != nil {
 		s.renderSettings(w, r, http.StatusBadRequest, "Upload was too large or malformed.", "")
 		return
 	}
@@ -107,19 +111,23 @@ func (s *Server) handleAdminUploadLogo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	if hdr.Size > maxLogoBytes {
-		s.renderSettings(w, r, http.StatusBadRequest, "Logo must be 512 KB or smaller.", "")
+	if hdr.Size > int64(maxLogoBytes) {
+		s.renderSettings(w, r, http.StatusBadRequest, "Logo must be "+formatBytes(maxLogoBytes)+" or smaller.", "")
 		return
 	}
 
-	buf := make([]byte, hdr.Size)
-	if _, err := readFull(file, buf); err != nil {
+	buf, err := io.ReadAll(io.LimitReader(file, int64(maxLogoBytes)+1))
+	if err != nil {
 		s.renderSettings(w, r, http.StatusBadRequest, "Could not read the uploaded file.", "")
+		return
+	}
+	if len(buf) > maxLogoBytes {
+		s.renderSettings(w, r, http.StatusBadRequest, "Logo must be "+formatBytes(maxLogoBytes)+" or smaller.", "")
 		return
 	}
 	ct := detectLogoType(hdr.Header.Get("Content-Type"), buf)
 	if !allowedLogoTypes[ct] {
-		s.renderSettings(w, r, http.StatusBadRequest, "Logo must be a PNG, JPEG, WebP, or SVG image.", "")
+		s.renderSettings(w, r, http.StatusBadRequest, "Logo must be a PNG, JPEG, or WebP image.", "")
 		return
 	}
 
@@ -140,22 +148,19 @@ func validCSSColor(v string) bool {
 	return cssColorRe.MatchString(v)
 }
 
-// readFull fills buf from r, erroring unless exactly len(buf) bytes are read.
-func readFull(r io.Reader, buf []byte) (int, error) {
-	return io.ReadFull(r, buf)
-}
-
-// detectLogoType resolves the stored content type: trust the browser-declared
-// type when it is one we accept, otherwise sniff the bytes (handling SVG, which
-// the stdlib sniffer does not recognize).
+// detectLogoType resolves the stored content type: trust an accepted
+// browser-declared raster type, otherwise sniff the bytes.
 func detectLogoType(declared string, data []byte) string {
 	declared = strings.TrimSpace(strings.SplitN(declared, ";", 2)[0])
 	if allowedLogoTypes[declared] {
 		return declared
 	}
-	trimmed := bytes.TrimSpace(data)
-	if bytes.HasPrefix(trimmed, []byte("<svg")) || bytes.HasPrefix(trimmed, []byte("<?xml")) {
-		return "image/svg+xml"
-	}
 	return http.DetectContentType(data)
+}
+
+func formatBytes(n int) string {
+	if n%1024 == 0 {
+		return fmt.Sprintf("%d KiB", n/1024)
+	}
+	return fmt.Sprintf("%d bytes", n)
 }

@@ -4,7 +4,7 @@
 <div class="page-hd">
   <div class="titles">
     <h1>Settings</h1>
-    <p class="desc">Changes apply live — no restart. Infrastructure settings (host, port, database) are set via config/env.</p>
+    <p class="desc">Most policy changes apply live. Listener, database, and secret settings are set via config/env.</p>
   </div>
   <div class="actions">
     <form method="post" action="/admin/settings/reset" onsubmit="return confirm('Reset all settings to the config defaults?')">
@@ -17,7 +17,7 @@
   {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
   {{if .Saved}}<div class="alert success">{{.Saved}}</div>{{end}}
 
-  <form class="stack" method="post" action="/admin/settings/system" style="margin-top:0">
+  <form id="security-settings-form" class="stack" method="post" action="/admin/settings/system" style="margin-top:0">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
     <div class="panel">
@@ -29,6 +29,16 @@
         </label>
         <label class="field">Public URL
           <input name="public_url" value="{{.Settings.PublicURL}}" required>
+        </label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-hd">OAuth client policy</div>
+      <div class="panel-bd">
+        <label class="field inline">
+          <input type="checkbox" name="allow_loopback_http_redirects" {{if .Settings.AllowLoopbackHTTPRedirect}}checked{{end}}>
+          Allow loopback HTTP redirect URIs <span class="muted">(localhost, 127.0.0.1, and ::1 only)</span>
         </label>
       </div>
     </div>
@@ -67,8 +77,23 @@
         <label class="field">Max failed logins before lockout <span class="muted">(≥ 1)</span>
           <input name="max_failed_logins" type="number" min="1" value="{{.Settings.MaxFailedLogins}}" required>
         </label>
+        <label class="field">Rate-limit window <span class="muted">(e.g. 15m — applies to login, MFA, and password reset)</span>
+          <input name="rate_limit_window" value="{{.Settings.RateLimitWindow}}" required>
+        </label>
+        <label class="field">IP failed-login budget <span class="muted">(pre-hash attempts per window)</span>
+          <input name="login_ip_max_attempts" type="number" min="1" value="{{.Settings.LoginIPMaxAttempts}}" required>
+        </label>
         <label class="field">Lockout duration <span class="muted">(e.g. 15m)</span>
           <input name="lockout_duration" value="{{.Settings.LockoutDuration}}" required>
+        </label>
+        <label class="field">Password verification concurrency <span class="muted">(1–64)</span>
+          <input name="password_verify_concurrency" type="number" min="1" max="64" value="{{.Settings.PasswordVerifyConcurrency}}" required>
+        </label>
+        <label class="field">Login username byte cap
+          <input name="max_login_username_bytes" type="number" min="64" max="4096" value="{{.Settings.MaxLoginUsernameBytes}}" required>
+        </label>
+        <label class="field">Login password byte cap
+          <input name="max_login_password_bytes" type="number" min="64" max="1048576" value="{{.Settings.MaxLoginPasswordBytes}}" required>
         </label>
         <label class="field">Password minimum length <span class="muted">(≥ 8)</span>
           <input name="password_min_length" type="number" min="8" value="{{.Settings.PasswordMinLength}}" required>
@@ -79,6 +104,15 @@
           <label class="inline"><input type="checkbox" name="require_number" {{if .Settings.RequireNumber}}checked{{end}}> a number</label>
           <label class="inline"><input type="checkbox" name="require_symbol" {{if .Settings.RequireSymbol}}checked{{end}}> a symbol</label>
         </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-hd">Uploads</div>
+      <div class="panel-bd">
+        <label class="field">Max logo upload size <span class="muted">(KiB, PNG/JPEG/WebP only)</span>
+          <input name="max_logo_kib" type="number" min="16" max="5120" value="{{.LogoMaxKiB}}" required>
+        </label>
       </div>
     </div>
 
@@ -117,8 +151,8 @@
       </div>
       <form class="stack" method="post" action="/admin/settings/logo" enctype="multipart/form-data">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-        <label class="field">Upload logo <span class="muted">(PNG, JPEG, WebP, or SVG · max 512 KB)</span>
-          <input type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/svg+xml">
+        <label class="field">Upload logo <span class="muted">(PNG, JPEG, or WebP · max {{.LogoMaxKiB}} KiB)</span>
+          <input type="file" name="logo" accept="image/png,image/jpeg,image/webp">
         </label>
         <div class="inline">
           <button class="btn primary" type="submit">Upload</button>
@@ -129,13 +163,21 @@
   </div>
 
   <div class="panel">
-    <div class="panel-hd">Infrastructure <span class="muted">(read-only — set via config/env, requires restart)</span></div>
+    <div class="panel-hd">Config/env status <span class="muted">(read-only — restart to change)</span></div>
     <div class="panel-bd">
       <table class="omni">
         <tbody>
           <tr><td class="t-tertiary" style="width:200px">Listen host</td><td><code>{{.Host}}</code></td></tr>
           <tr><td class="t-tertiary">Listen port</td><td><code>{{.Port}}</code></td></tr>
           <tr><td class="t-tertiary">Database driver</td><td><code>{{.DBDriver}}</code></td></tr>
+          <tr><td class="t-tertiary">Insecure HTTP public URLs</td><td>{{if .AllowInsecureHTTP}}Allowed by config{{else}}Rejected by config{{end}}</td></tr>
+          <tr><td class="t-tertiary">Setup token</td><td>{{if .SetupTokenConfigured}}Configured{{else}}Not configured{{end}}</td></tr>
+          <tr><td class="t-tertiary">Metrics endpoint</td><td>{{if .MetricsEnabled}}Bearer token required{{else}}Disabled{{end}}</td></tr>
+          <tr><td class="t-tertiary">Read header timeout</td><td><code>{{.ReadHeaderTimeout}}</code></td></tr>
+          <tr><td class="t-tertiary">Read timeout</td><td><code>{{.ReadTimeout}}</code></td></tr>
+          <tr><td class="t-tertiary">Write timeout</td><td><code>{{.WriteTimeout}}</code></td></tr>
+          <tr><td class="t-tertiary">Idle timeout</td><td><code>{{.IdleTimeout}}</code></td></tr>
+          <tr><td class="t-tertiary">Max header bytes</td><td><code>{{.MaxHeaderBytes}}</code></td></tr>
         </tbody>
       </table>
     </div>

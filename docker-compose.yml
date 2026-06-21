@@ -4,8 +4,8 @@
 # container recreation; the volume name is pinned so the deploy's backup/restore
 # can address it directly.
 #
-# This runs on the same host as omni-logging (which publishes :8080), so the
-# default published port here is 8081. Override via a .env file (see .env.example).
+# The default published port is 8081 so local port 8080 remains free. Override
+# via a .env file if another service already uses it (see .env.example).
 services:
   omni-identity:
     build: .
@@ -21,21 +21,51 @@ services:
     pids_limit: 256
     command: ["serve"]
     ports:
-      - "${OMNI_IDENTITY_HOST_PORT:-8081}:8080"
+      - "${OMNI_IDENTITY_BIND_ADDR:-127.0.0.1}:${OMNI_IDENTITY_HOST_PORT:-8081}:8080"
     environment:
-      # The app listens on :8080 inside the container; the host maps 8081->8080.
+      # The app listens on :8080 inside the container; the host port defaults to 8081.
       OMNI_SERVER_HOST: 0.0.0.0
       OMNI_SERVER_PORT: "8080"
       OMNI_DATABASE_PATH: /data/omni-identity.db
       # Public base URL clients use to reach this server (also the OIDC issuer).
-      OMNI_SERVER_PUBLIC_URL: ${OMNI_SERVER_PUBLIC_URL:-http://192.168.68.34:8081}
+      OMNI_SERVER_PUBLIC_URL: ${OMNI_SERVER_PUBLIC_URL:-https://identity.omni.local}
       # Empty => issuer defaults to public_url.
       OMNI_SECURITY_ISSUER: ${OMNI_SECURITY_ISSUER:-}
-      # Secure cookies require HTTPS; keep false for plain-http LAN access.
-      OMNI_COOKIES_SECURE: ${OMNI_COOKIES_SECURE:-false}
+      # Required for first-run setup when the public URL is not loopback.
+      OMNI_SETUP_TOKEN: ${OMNI_SETUP_TOKEN:-}
+      # Non-loopback http:// public URLs require an explicit dev/private-test opt-in.
+      OMNI_ALLOW_INSECURE_HTTP: ${OMNI_ALLOW_INSECURE_HTTP:-false}
+      # HTTP server resource limits.
+      OMNI_SERVER_READ_HEADER_TIMEOUT: ${OMNI_SERVER_READ_HEADER_TIMEOUT:-10s}
+      OMNI_SERVER_READ_TIMEOUT: ${OMNI_SERVER_READ_TIMEOUT:-30s}
+      OMNI_SERVER_WRITE_TIMEOUT: ${OMNI_SERVER_WRITE_TIMEOUT:-30s}
+      OMNI_SERVER_IDLE_TIMEOUT: ${OMNI_SERVER_IDLE_TIMEOUT:-120s}
+      OMNI_SERVER_MAX_HEADER_BYTES: ${OMNI_SERVER_MAX_HEADER_BYTES:-1048576}
+      # Secure cookies are required for HTTPS public URLs.
+      OMNI_COOKIES_SECURE: ${OMNI_COOKIES_SECURE:-true}
+      # Seeded into live Admin > Settings on first start.
+      OMNI_SECURITY_TOKEN_TTL: ${OMNI_SECURITY_TOKEN_TTL:-15m}
+      OMNI_SECURITY_REFRESH_TOKEN_TTL: ${OMNI_SECURITY_REFRESH_TOKEN_TTL:-720h}
+      OMNI_SECURITY_MAX_FAILED_LOGINS: ${OMNI_SECURITY_MAX_FAILED_LOGINS:-5}
+      OMNI_SECURITY_LOCKOUT_DURATION: ${OMNI_SECURITY_LOCKOUT_DURATION:-15m}
+      OMNI_SECURITY_RATE_LIMIT_WINDOW: ${OMNI_SECURITY_RATE_LIMIT_WINDOW:-15m}
+      OMNI_SECURITY_LOGIN_IP_MAX_ATTEMPTS: ${OMNI_SECURITY_LOGIN_IP_MAX_ATTEMPTS:-20}
+      OMNI_SECURITY_PASSWORD_VERIFY_CONCURRENCY: ${OMNI_SECURITY_PASSWORD_VERIFY_CONCURRENCY:-4}
+      OMNI_SECURITY_MAX_LOGIN_USERNAME_BYTES: ${OMNI_SECURITY_MAX_LOGIN_USERNAME_BYTES:-320}
+      OMNI_SECURITY_MAX_LOGIN_PASSWORD_BYTES: ${OMNI_SECURITY_MAX_LOGIN_PASSWORD_BYTES:-1024}
+      OMNI_SECURITY_ALLOW_LOOPBACK_HTTP_REDIRECTS: ${OMNI_SECURITY_ALLOW_LOOPBACK_HTTP_REDIRECTS:-true}
+      OMNI_SECURITY_PASSWORD_MIN_LENGTH: ${OMNI_SECURITY_PASSWORD_MIN_LENGTH:-12}
+      OMNI_SECURITY_REQUIRE_UPPER: ${OMNI_SECURITY_REQUIRE_UPPER:-false}
+      OMNI_SECURITY_REQUIRE_LOWER: ${OMNI_SECURITY_REQUIRE_LOWER:-false}
+      OMNI_SECURITY_REQUIRE_NUMBER: ${OMNI_SECURITY_REQUIRE_NUMBER:-true}
+      OMNI_SECURITY_REQUIRE_SYMBOL: ${OMNI_SECURITY_REQUIRE_SYMBOL:-false}
+      OMNI_SECURITY_SESSION_LIFETIME: ${OMNI_SECURITY_SESSION_LIFETIME:-12h}
+      OMNI_SECURITY_SESSION_IDLE_TIMEOUT: ${OMNI_SECURITY_SESSION_IDLE_TIMEOUT:-0}
+      OMNI_UPLOADS_MAX_LOGO_BYTES: ${OMNI_UPLOADS_MAX_LOGO_BYTES:-524288}
+      # Empty disables /metrics. Set a strong value and scrape with Authorization: Bearer.
+      OMNI_METRICS_TOKEN: ${OMNI_METRICS_TOKEN:-}
       # Optional LDAP / Active Directory backend. Off unless OMNI_LDAP_ENABLED=true.
-      # Real values (incl. the bind password) belong in a host .env file (gitignored,
-      # never committed); the repo only carries safe, disabled-by-default defaults.
+      # Real values, including the bind password, belong in a host .env file.
       OMNI_LDAP_ENABLED: ${OMNI_LDAP_ENABLED:-false}
       OMNI_LDAP_PRESET: ${OMNI_LDAP_PRESET:-openldap}
       OMNI_LDAP_URL: ${OMNI_LDAP_URL:-}
@@ -45,7 +75,7 @@ services:
       OMNI_LDAP_BASE_DN: ${OMNI_LDAP_BASE_DN:-}
       OMNI_LDAP_ADMIN_GROUP_DN: ${OMNI_LDAP_ADMIN_GROUP_DN:-}
       # Optional log shipping to omnilog. Off unless OMNI_LOGGING_ENABLED=true.
-      # The API key is a secret → host .env, never committed.
+      # The API key is a secret and should come from the host .env file.
       OMNI_LOGGING_ENABLED: ${OMNI_LOGGING_ENABLED:-false}
       OMNI_LOGGING_URL: ${OMNI_LOGGING_URL:-}
       OMNI_LOGGING_API_KEY: ${OMNI_LOGGING_API_KEY:-}

@@ -131,6 +131,8 @@ server:
   host: 127.0.0.1
   port: 9090
   public_url: https://identity.omni.local
+  read_header_timeout: 5s
+  max_header_bytes: 65536
 
 database:
   path: /tmp/omni.db
@@ -139,6 +141,18 @@ security:
   issuer: https://identity.omni.local
   token_ttl: 15m
   refresh_token_ttl: 720h
+  rate_limit_window: 10m
+  login_ip_max_attempts: 9
+  password_verify_concurrency: 3
+  max_login_username_bytes: 256
+  max_login_password_bytes: 2048
+  allow_loopback_http_redirects: false
+  require_upper: true
+  require_number: false
+  session_lifetime: 8h
+
+uploads:
+  max_logo_bytes: 65536
 `)
 
 	cfg, err := Load(path)
@@ -166,6 +180,36 @@ security:
 	}
 	if cfg.Security.RefreshTokenTTL != 720*time.Hour {
 		t.Errorf("refresh_token_ttl = %v, want 720h", cfg.Security.RefreshTokenTTL)
+	}
+	if cfg.Server.ReadHeaderTimeout != 5*time.Second {
+		t.Errorf("read_header_timeout = %v, want 5s", cfg.Server.ReadHeaderTimeout)
+	}
+	if cfg.Server.MaxHeaderBytes != 65536 {
+		t.Errorf("max_header_bytes = %d, want 65536", cfg.Server.MaxHeaderBytes)
+	}
+	if cfg.Security.RateLimitWindow != 10*time.Minute {
+		t.Errorf("rate_limit_window = %v, want 10m", cfg.Security.RateLimitWindow)
+	}
+	if cfg.Security.LoginIPMaxAttempts != 9 {
+		t.Errorf("login_ip_max_attempts = %d, want 9", cfg.Security.LoginIPMaxAttempts)
+	}
+	if cfg.Security.PasswordVerifyConcurrency != 3 {
+		t.Errorf("password_verify_concurrency = %d, want 3", cfg.Security.PasswordVerifyConcurrency)
+	}
+	if cfg.Security.MaxLoginUsernameBytes != 256 || cfg.Security.MaxLoginPasswordBytes != 2048 {
+		t.Errorf("login byte caps = %d/%d", cfg.Security.MaxLoginUsernameBytes, cfg.Security.MaxLoginPasswordBytes)
+	}
+	if cfg.Security.AllowLoopbackHTTPRedirect {
+		t.Error("allow_loopback_http_redirects should parse false")
+	}
+	if !cfg.Security.RequireUpper || cfg.Security.RequireNumber {
+		t.Errorf("password complexity flags = upper:%v number:%v", cfg.Security.RequireUpper, cfg.Security.RequireNumber)
+	}
+	if cfg.Security.SessionLifetime != 8*time.Hour {
+		t.Errorf("session_lifetime = %v, want 8h", cfg.Security.SessionLifetime)
+	}
+	if cfg.Uploads.MaxLogoBytes != 65536 {
+		t.Errorf("max_logo_bytes = %d, want 65536", cfg.Uploads.MaxLogoBytes)
 	}
 }
 
@@ -198,6 +242,25 @@ server:
 	if !cfg.Cookies.Secure {
 		t.Error("cookies.secure should default to true")
 	}
+	if cfg.Server.ReadHeaderTimeout != 10*time.Second || cfg.Server.MaxHeaderBytes != 1<<20 {
+		t.Errorf("server resource defaults = %v / %d", cfg.Server.ReadHeaderTimeout, cfg.Server.MaxHeaderBytes)
+	}
+	if cfg.Security.RateLimitWindow != 15*time.Minute || cfg.Security.LoginIPMaxAttempts != 20 {
+		t.Errorf("abuse defaults = %v / %d", cfg.Security.RateLimitWindow, cfg.Security.LoginIPMaxAttempts)
+	}
+	if !cfg.Security.AllowLoopbackHTTPRedirect {
+		t.Error("loopback HTTP redirects should default to allowed")
+	}
+	if !cfg.Security.RequireNumber || cfg.Security.RequireUpper || cfg.Security.RequireLower || cfg.Security.RequireSymbol {
+		t.Errorf("password complexity defaults = upper:%v lower:%v number:%v symbol:%v",
+			cfg.Security.RequireUpper, cfg.Security.RequireLower, cfg.Security.RequireNumber, cfg.Security.RequireSymbol)
+	}
+	if cfg.Security.SessionLifetime != 12*time.Hour {
+		t.Errorf("default session lifetime = %v, want 12h", cfg.Security.SessionLifetime)
+	}
+	if cfg.Uploads.MaxLogoBytes != 512*1024 {
+		t.Errorf("default max logo bytes = %d", cfg.Uploads.MaxLogoBytes)
+	}
 }
 
 func TestLoadIssuerDefaultsToPublicURL(t *testing.T) {
@@ -219,12 +282,18 @@ func TestLoadEnvOverrides(t *testing.T) {
 	path := writeTempConfig(t, `
 server:
   port: 8080
-  public_url: https://id.example.com
+  public_url: http://localhost:8080
 database:
   path: ./a.db
 `)
 	t.Setenv("OMNI_SERVER_PORT", "7000")
+	t.Setenv("OMNI_SERVER_MAX_HEADER_BYTES", "65536")
 	t.Setenv("OMNI_DATABASE_PATH", "/data/omni.db")
+	t.Setenv("OMNI_SECURITY_LOGIN_IP_MAX_ATTEMPTS", "11")
+	t.Setenv("OMNI_SECURITY_ALLOW_LOOPBACK_HTTP_REDIRECTS", "false")
+	t.Setenv("OMNI_SECURITY_REQUIRE_SYMBOL", "true")
+	t.Setenv("OMNI_SECURITY_SESSION_LIFETIME", "6h")
+	t.Setenv("OMNI_UPLOADS_MAX_LOGO_BYTES", "65536")
 	t.Setenv("OMNI_COOKIES_SECURE", "false")
 
 	cfg, err := Load(path)
@@ -239,6 +308,87 @@ database:
 	}
 	if cfg.Cookies.Secure {
 		t.Error("env should override cookies.secure to false")
+	}
+	if cfg.Server.MaxHeaderBytes != 65536 {
+		t.Errorf("env max header bytes = %d, want 65536", cfg.Server.MaxHeaderBytes)
+	}
+	if cfg.Security.LoginIPMaxAttempts != 11 {
+		t.Errorf("env login IP max attempts = %d, want 11", cfg.Security.LoginIPMaxAttempts)
+	}
+	if cfg.Security.AllowLoopbackHTTPRedirect {
+		t.Error("env should override loopback HTTP redirect policy to false")
+	}
+	if !cfg.Security.RequireSymbol {
+		t.Error("env should override require_symbol to true")
+	}
+	if cfg.Security.SessionLifetime != 6*time.Hour {
+		t.Errorf("env session lifetime = %v, want 6h", cfg.Security.SessionLifetime)
+	}
+	if cfg.Uploads.MaxLogoBytes != 65536 {
+		t.Errorf("env max logo bytes = %d, want 65536", cfg.Uploads.MaxLogoBytes)
+	}
+}
+
+func TestLoadRejectsNonLocalHTTPByDefault(t *testing.T) {
+	path := writeTempConfig(t, `
+server:
+  public_url: http://id.example.test:8081
+cookies:
+  secure: false
+`)
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected non-local http public_url to require an explicit insecure override")
+	}
+}
+
+func TestLoadAllowsLoopbackHTTPWithInsecureCookies(t *testing.T) {
+	path := writeTempConfig(t, `
+server:
+  public_url: http://localhost:8080/
+cookies:
+  secure: false
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Server.PublicURL != "http://localhost:8080" {
+		t.Errorf("normalized public_url = %q", cfg.Server.PublicURL)
+	}
+}
+
+func TestLoadAllowsExplicitInsecureHTTP(t *testing.T) {
+	path := writeTempConfig(t, `
+server:
+  public_url: http://id.example.test:8081
+  allow_insecure_http: true
+cookies:
+  secure: false
+`)
+	if _, err := Load(path); err != nil {
+		t.Fatalf("Load with explicit insecure override: %v", err)
+	}
+}
+
+func TestLoadRejectsHTTPSWithInsecureCookies(t *testing.T) {
+	path := writeTempConfig(t, `
+server:
+  public_url: https://id.example.com
+cookies:
+  secure: false
+`)
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected https public_url to require secure cookies")
+	}
+}
+
+func TestLoadRejectsPublicURLWithCredentials(t *testing.T) {
+	path := writeTempConfig(t, `
+server:
+  public_url: https://user:pass@id.example.com
+`)
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected public_url with credentials to be rejected")
 	}
 }
 

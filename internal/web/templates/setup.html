@@ -9,6 +9,11 @@
       {{if .Error}}<div class="alert error" style="margin-top:14px">{{.Error}}</div>{{end}}
       <form class="stack" method="post" action="/setup">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        {{if .TokenRequired}}
+        <label class="field">Setup token
+          <input name="setup_token" type="password" autocomplete="one-time-code" required>
+        </label>
+        {{end}}
         <label class="field">Username
           <input name="username" value="{{.Username}}" autocomplete="username" autofocus required>
         </label>

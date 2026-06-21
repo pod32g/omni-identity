@@ -104,14 +104,15 @@ func (s *Server) handleMFASubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rlKey := "mfa|" + user.ID
-	if !s.mfaRate.Allowed(rlKey) {
+	policy := s.settings.Current()
+	if !s.mfaRate.Allowed(rlKey, policy.MaxFailedLogins, policy.RateLimitWindow) {
 		s.renderMFA(w, r, http.StatusTooManyRequests, "Too many attempts. Please wait and try again.")
 		return
 	}
 
 	code := strings.TrimSpace(r.PostFormValue("code"))
 	if !s.verifySecondFactor(r, user, code) {
-		s.mfaRate.Fail(rlKey)
+		s.mfaRate.Fail(rlKey, policy.RateLimitWindow)
 		s.metrics.recordMFA("failure")
 		s.audit(r, evtMFAFailed, auditEntry{actorUserID: user.ID, username: user.Username})
 		s.renderMFA(w, r, http.StatusUnauthorized, "Invalid verification code.")

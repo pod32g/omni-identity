@@ -62,6 +62,12 @@ server:
   host: 0.0.0.0
   port: 8080
   public_url: https://identity.omni.local   # required; used as the issuer base
+  allow_insecure_http: false                 # true only for non-local http:// dev/private testing
+  read_header_timeout: 10s
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 120s
+  max_header_bytes: 1048576
 
 database:
   driver: sqlite                              # sqlite (default) or postgres
@@ -70,15 +76,39 @@ database:
 
 security:
   issuer: https://identity.omni.local        # defaults to public_url
+  setup_token: ""                            # required for first-run setup on non-loopback public URLs
   token_ttl: 15m
   refresh_token_ttl: 720h
+  rate_limit_window: 15m
+  login_ip_max_attempts: 20
+  password_verify_concurrency: 4
+  max_login_username_bytes: 320
+  max_login_password_bytes: 1024
+  allow_loopback_http_redirects: true
+  max_failed_logins: 5
+  lockout_duration: 15m
+  password_min_length: 12
+  require_upper: false
+  require_lower: false
+  require_number: true
+  require_symbol: false
+  session_lifetime: 12h
+  session_idle_timeout: 0
 
 cookies:
-  secure: true                                # set false for local http:// dev
+  secure: true                                # required for https:// public_url
+
+metrics:
+  bearer_token: ""                            # empty disables /metrics
+
+uploads:
+  max_logo_bytes: 524288                      # PNG/JPEG/WebP logos only
 ```
 
 Any value can be overridden by environment variables, e.g. `OMNI_SERVER_PORT`,
-`OMNI_DATABASE_PATH`, `OMNI_SECURITY_ISSUER`, `OMNI_COOKIES_SECURE`.
+`OMNI_DATABASE_PATH`, `OMNI_SECURITY_ISSUER`, `OMNI_COOKIES_SECURE`,
+`OMNI_ALLOW_INSECURE_HTTP`, `OMNI_SETUP_TOKEN`, `OMNI_METRICS_TOKEN`,
+`OMNI_SECURITY_RATE_LIMIT_WINDOW`, and `OMNI_UPLOADS_MAX_LOGO_BYTES`.
 
 ### Database backend
 
@@ -115,18 +145,24 @@ SQLite-specific maintenance (`backup`, `integrity`) is not available on Postgres
 
 ### Editable settings
 
-The `security`, `cookies`, and identity (`issuer`/`public_url`) values above are
+The `security`, `cookies`, `uploads`, and identity (`issuer`/`public_url`) values above are
 **seeded from config on first start**, then become editable from
 **Admin → Settings** and apply **live** (no restart): token/refresh TTLs, lockout
-threshold + duration, password minimum length, session lifetime + idle timeout,
-the cookie `Secure` flag, and the issuer/public URL. A "Reset to config defaults"
+threshold + duration, rate-limit window, pre-hash IP budget, password-verification
+concurrency, login field caps, redirect URI loopback policy, password minimum
+length, session lifetime + idle timeout, logo upload size, the cookie `Secure`
+flag, and the issuer/public URL. A "Reset to config defaults"
 action re-seeds from the current config. Infrastructure that binds at startup —
-listen host/port and the database driver/url — stays config/env and is shown
-read-only. Changing the issuer/public URL invalidates existing tokens and
+listen host/port, HTTP server timeouts/header limits, metrics/setup tokens, and
+the database driver/url — stays config/env and is shown read-only. Changing the issuer/public URL invalidates existing tokens and
 sessions; every settings change is written to the audit log.
+Uploaded branding logos are limited to PNG, JPEG, or WebP files up to 512 KiB;
+SVG is intentionally rejected because browsers treat it as active content.
 
 > The `issuer` must be the public base URL clients use to reach the server; all
-> discovery endpoint URLs are derived from it.
+> discovery endpoint URLs are derived from it. Non-loopback `http://` issuer and
+> public URLs are rejected unless `allow_insecure_http` / `OMNI_ALLOW_INSECURE_HTTP`
+> is explicitly enabled.
 
 ### Directory / LDAP
 
@@ -186,7 +222,9 @@ run the gated LDAP integration test, set `OMNI_TEST_LDAP_URL` (plus the
 ```
 
 On first launch, open the public URL — you'll be sent to `/setup` to create the
-first administrator. The wizard disables itself once an admin exists.
+first administrator. If the public URL is not loopback, set `OMNI_SETUP_TOKEN`
+or `security.setup_token` to a high-entropy one-time value and enter it on the
+setup form. The wizard disables itself once an admin exists.
 
 The binary also exposes operational subcommands used by the deploy pipeline:
 
@@ -218,6 +256,9 @@ omni-identity healthcheck --url http://localhost:8080/healthz          # 2xx = h
 | JWKS | `/jwks.json` |
 | Login / Logout | `/login`, `/logout` |
 | Health / Metrics | `/healthz`, `/metrics` |
+
+`/metrics` is disabled unless `metrics.bearer_token` or `OMNI_METRICS_TOKEN` is
+set. Scrape it with `Authorization: Bearer <token>`.
 
 ## Integrating Jellyfin
 

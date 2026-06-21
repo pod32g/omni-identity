@@ -215,18 +215,27 @@ func (s *Server) handleAdminUserPassword(w http.ResponseWriter, r *http.Request)
 // --- settings ---
 
 type adminSettingsPage struct {
-	CSRFToken string
-	Me        *model.User
-	Active    string
-	Settings  SettingsView // editable, applied live
-	Host      string       // read-only infra (boot-bound)
-	Port      int
-	DBDriver  string
-	LDAP      ldapStatusView // read-only directory status (config/env bound)
-	Branding  *model.Branding
-	HasLogo   bool
-	Error     string
-	Saved     string
+	CSRFToken            string
+	Me                   *model.User
+	Active               string
+	Settings             SettingsView // editable, applied live
+	Host                 string       // read-only infra (boot-bound)
+	Port                 int
+	DBDriver             string
+	AllowInsecureHTTP    bool
+	MetricsEnabled       bool
+	SetupTokenConfigured bool
+	ReadHeaderTimeout    time.Duration
+	ReadTimeout          time.Duration
+	WriteTimeout         time.Duration
+	IdleTimeout          time.Duration
+	MaxHeaderBytes       int
+	LogoMaxKiB           int
+	LDAP                 ldapStatusView // read-only directory status (config/env bound)
+	Branding             *model.Branding
+	HasLogo              bool
+	Error                string
+	Saved                string
 }
 
 // ldapStatusView is the read-only directory summary shown on the settings page.
@@ -251,13 +260,22 @@ func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status i
 		b = &model.Branding{ProductName: "Omni Identity"}
 	}
 	s.tmpl.render(w, status, "admin_settings", adminSettingsPage{
-		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
-		Me:        currentUser(r),
-		Active:    "settings",
-		Settings:  s.settings.Current(),
-		Host:      s.cfg.Server.Host,
-		Port:      s.cfg.Server.Port,
-		DBDriver:  s.cfg.Database.Driver,
+		CSRFToken:            auth.CSRFToken(w, r, s.cookieSecure()),
+		Me:                   currentUser(r),
+		Active:               "settings",
+		Settings:             s.settings.Current(),
+		Host:                 s.cfg.Server.Host,
+		Port:                 s.cfg.Server.Port,
+		DBDriver:             s.cfg.Database.Driver,
+		AllowInsecureHTTP:    s.cfg.Server.AllowInsecureHTTP,
+		MetricsEnabled:       strings.TrimSpace(s.cfg.Metrics.BearerToken) != "",
+		SetupTokenConfigured: strings.TrimSpace(s.cfg.Security.SetupToken) != "",
+		ReadHeaderTimeout:    s.cfg.Server.ReadHeaderTimeout,
+		ReadTimeout:          s.cfg.Server.ReadTimeout,
+		WriteTimeout:         s.cfg.Server.WriteTimeout,
+		IdleTimeout:          s.cfg.Server.IdleTimeout,
+		MaxHeaderBytes:       s.cfg.Server.MaxHeaderBytes,
+		LogoMaxKiB:           max(1, s.settings.Current().MaxLogoBytes/1024),
 		LDAP: ldapStatusView{
 			Enabled:      s.cfg.LDAP.Enabled,
 			Preset:       s.cfg.LDAP.Preset,

@@ -153,22 +153,29 @@ func (c *Client) Label() string {
 // Durations are stored as strings (Go duration syntax) and parsed by the web
 // layer, matching how the YAML config handles them.
 type Settings struct {
-	Issuer             string
-	PublicURL          string
-	TokenTTL           string
-	RefreshTokenTTL    string
-	MaxFailedLogins    int
-	LockoutDuration    string
-	PasswordMinLength  int
-	RequireUpper       bool
-	RequireLower       bool
-	RequireNumber      bool
-	RequireSymbol      bool
-	SessionIdleTimeout string
-	SessionLifetime    string
-	CookieSecure       bool
-	Seeded             bool
-	UpdatedAt          time.Time
+	Issuer                    string
+	PublicURL                 string
+	TokenTTL                  string
+	RefreshTokenTTL           string
+	MaxFailedLogins           int
+	LockoutDuration           string
+	RateLimitWindow           string
+	LoginIPMaxAttempts        int
+	PasswordVerifyConcurrency int
+	MaxLoginUsernameBytes     int
+	MaxLoginPasswordBytes     int
+	AllowLoopbackHTTPRedirect bool
+	PasswordMinLength         int
+	RequireUpper              bool
+	RequireLower              bool
+	RequireNumber             bool
+	RequireSymbol             bool
+	SessionIdleTimeout        string
+	SessionLifetime           string
+	CookieSecure              bool
+	MaxLogoBytes              int
+	Seeded                    bool
+	UpdatedAt                 time.Time
 }
 
 // Branding holds the configurable look of the hosted pages (single global row).
