@@ -142,6 +142,18 @@ func (d *DB) SetUserDisabled(ctx context.Context, id string, disabled bool) erro
 	return requireRow(res)
 }
 
+// DeleteUser permanently removes a user row. Callers should clear the user's
+// sessions first; audit rows reference the username/actor as plain strings (no
+// foreign key), so they survive deletion as a historical record. Returns
+// ErrNotFound when no row matched.
+func (d *DB) DeleteUser(ctx context.Context, id string) error {
+	res, err := d.sql.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res)
+}
+
 // CountAdmins returns the number of enabled admin users.
 func (d *DB) CountAdmins(ctx context.Context) (int, error) {
 	var n int

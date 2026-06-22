@@ -107,6 +107,17 @@ ldap:
   ca_cert_file: ""                        # PEM bundle for a private CA
   insecure_skip_verify: false             # labs only — never in production
   timeout: 10s
+  # Write management: let admins create, edit, delete, and set passwords for
+  # directory users from the Users page. The directory stays the source of truth
+  # (Omni issues LDAP Add/Modify/Delete/PasswordModify). Requires a bind_dn with
+  # write permission. This value only *seeds* the live toggle under Admin →
+  # Settings → Directory management (which can flip it without a restart). Off by
+  # default. Also OMNI_LDAP_MANAGE_ENABLED / _PEOPLE_BASE_DN / _RDN_ATTR /
+  # _USER_OBJECT_CLASSES (comma-separated).
+  manage_enabled: false
+  people_base_dn: ""                      # parent DN for new entries; empty => base_dn
+  rdn_attr: ""                            # naming attribute for new entries; empty => attr_username (uid)
+  user_object_classes: []                 # objectClasses on create; empty => [top, person, organizationalPerson, inetOrgPerson]
 
 logging:
   # Optional: ship structured logs to an omnilog server (in addition to stdout).

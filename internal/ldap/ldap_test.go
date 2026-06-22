@@ -3,6 +3,7 @@ package ldap
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/pod32g/omni-identity/internal/authn"
@@ -26,6 +27,26 @@ func TestNewValidates(t *testing.T) {
 	if _, err := New(Config{URL: "ldap://h", BaseDN: "dc=x", UserFilter: "(uid=%s)"}); err != nil {
 		t.Fatalf("valid config rejected: %v", err)
 	}
+}
+
+func TestUserDNDefaultsAndEscaping(t *testing.T) {
+	c, err := New(Config{URL: "ldap://h", BaseDN: "ou=people,dc=x", UserFilter: "(uid=%s)"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// RDNAttr defaults to AttrUsername (uid) and PeopleBaseDN to BaseDN.
+	if got := c.userDN("jane"); got != "uid=jane,ou=people,dc=x" {
+		t.Fatalf("userDN = %q", got)
+	}
+	// A value with DN metacharacters must be escaped, never injected raw.
+	got := c.userDN("ev,il+x")
+	if strings.Contains(got, "uid=ev,il") || !strings.HasSuffix(got, ",ou=people,dc=x") {
+		t.Fatalf("userDN did not escape the RDN value: %q", got)
+	}
+}
+
+func TestImplementsDirectoryManager(t *testing.T) {
+	var _ authn.DirectoryManager = (*Client)(nil)
 }
 
 func TestIDIsLDAP(t *testing.T) {

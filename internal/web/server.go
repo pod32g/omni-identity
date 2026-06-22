@@ -42,6 +42,7 @@ type Server struct {
 	mailer       email.Sender
 	enc          *crypto.Encryptor
 	connectors   []authn.PasswordConnector // external auth sources (e.g. LDAP); empty by default
+	directory    authn.DirectoryManager    // write-capable directory client; nil unless LDAP+bind configured. Exposure gated live by the ldap_manage_enabled setting
 	metrics      *metrics
 	mux          *http.ServeMux
 	handler      http.Handler
@@ -72,6 +73,7 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 	// External authentication connectors (off unless configured). LDAP is the
 	// first; the login flow consults them after the local password store.
 	var connectors []authn.PasswordConnector
+	var directory authn.DirectoryManager
 	if cfg.LDAP.Enabled {
 		client, err := ldap.New(ldap.Config{
 			URL: cfg.LDAP.URL, StartTLS: cfg.LDAP.StartTLS,
@@ -81,12 +83,21 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 			AttrDisplayName: cfg.LDAP.AttrDisplayName,
 			AdminGroupDN:    cfg.LDAP.AdminGroupDN, GroupFilter: cfg.LDAP.GroupFilter,
 			CACertFile: cfg.LDAP.CACertFile, InsecureSkipVerify: cfg.LDAP.InsecureSkipVerify,
-			Timeout: cfg.LDAP.Timeout,
+			Timeout:      cfg.LDAP.Timeout,
+			PeopleBaseDN: cfg.LDAP.PeopleBaseDN, RDNAttr: cfg.LDAP.RDNAttr,
+			UserObjectClasses: cfg.LDAP.UserObjectClasses,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("init ldap connector: %w", err)
 		}
 		connectors = append(connectors, client)
+		// The client is write-capable whenever a privileged bind is configured.
+		// Whether management is actually *exposed* is gated live by the
+		// ldap_manage_enabled setting (see directoryManager); the directory stays
+		// the source of truth and the local row remains a thin mirror.
+		if cfg.LDAP.BindDN != "" {
+			directory = client
+		}
 	}
 
 	sessions := auth.NewSessionManager(db, cfg.Cookies.Secure, sessionTTL)
@@ -118,6 +129,7 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 		},
 		enc:        enc,
 		connectors: connectors,
+		directory:  directory,
 		metrics:    newMetrics(),
 		mux:        http.NewServeMux(),
 	}
@@ -177,6 +189,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /admin/users", s.requireAdmin(s.handleAdminCreateUser))
 	s.mux.HandleFunc("POST /admin/users/{id}/disable", s.requireAdmin(s.handleAdminToggleUser))
 	s.mux.HandleFunc("POST /admin/users/{id}/password", s.requireAdmin(s.handleAdminUserPassword))
+	s.mux.HandleFunc("POST /admin/users/{id}/profile", s.requireAdmin(s.handleAdminUpdateDirectoryUser))
+	s.mux.HandleFunc("POST /admin/users/{id}/delete", s.requireAdmin(s.handleAdminDeleteUser))
 	s.mux.HandleFunc("GET /admin/clients", s.requireAdmin(s.handleAdminClients))
 	s.mux.HandleFunc("POST /admin/clients", s.requireAdmin(s.handleAdminCreateClient))
 	s.mux.HandleFunc("GET /admin/clients/{id}", s.requireAdmin(s.handleAdminClientDetail))

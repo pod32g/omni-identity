@@ -180,6 +180,25 @@ func TestCountAdmins(t *testing.T) {
 	}
 }
 
+func TestDeleteUser(t *testing.T) {
+	db := tempDB(t)
+	ctx := context.Background()
+	u := newUser("gone")
+	if err := db.CreateUser(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DeleteUser(ctx, u.ID); err != nil {
+		t.Fatalf("DeleteUser: %v", err)
+	}
+	if _, err := db.GetUserByID(ctx, u.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("user still present after delete: %v", err)
+	}
+	// Deleting a non-existent row reports ErrNotFound.
+	if err := db.DeleteUser(ctx, u.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("second delete err = %v, want ErrNotFound", err)
+	}
+}
+
 func TestListUsers(t *testing.T) {
 	db := tempDB(t)
 	ctx := context.Background()

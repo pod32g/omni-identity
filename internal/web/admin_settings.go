@@ -49,6 +49,9 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 	next.RequireNumber = form.Get("require_number") == "on"
 	next.RequireSymbol = form.Get("require_symbol") == "on"
 	next.AllowLoopbackHTTPRedirect = form.Get("allow_loopback_http_redirects") == "on"
+	// Directory write management: only honored when a write-capable bind exists
+	// (the toggle is hidden otherwise, so this also defends against a forged post).
+	next.LDAPManageEnabled = form.Get("ldap_manage_enabled") == "on" && s.directoryWriteCapable()
 
 	// Durations.
 	var perr error

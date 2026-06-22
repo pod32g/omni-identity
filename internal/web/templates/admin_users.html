@@ -67,13 +67,25 @@
     <div class="panel-bd">
       <form class="stack" method="post" action="/admin/users" style="margin-top:0;max-width:420px">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        {{if .DirectoryEnabled}}
+        <label class="field">Account type
+          <select name="source">
+            <option value="local">Local account</option>
+            <option value="ldap">Directory user (LDAP)</option>
+          </select>
+          <span class="muted">Directory users are created in your LDAP directory; their admin role comes from directory groups.</span>
+        </label>
+        {{end}}
         <label class="field">Username <input name="username" required></label>
         <label class="field">Email <input name="email" type="email" required></label>
-        <label class="field">Password <span class="muted">(leave blank if sending a setup link)</span>
+        {{if .DirectoryEnabled}}
+        <label class="field">Display name <span class="muted">(directory users)</span><input name="display_name"></label>
+        {{end}}
+        <label class="field">Password <span class="muted">(leave blank if sending a setup link, or to set a directory password later)</span>
           <input name="password" type="password" minlength="8">
         </label>
-        <label class="field inline"><input type="checkbox" name="invite"> Let the user choose their own password (generate a one-time setup link)</label>
-        <label class="field inline"><input type="checkbox" name="is_admin"> Administrator</label>
+        <label class="field inline"><input type="checkbox" name="invite"> Let the user choose their own password (local accounts only)</label>
+        <label class="field inline"><input type="checkbox" name="is_admin"> Administrator <span class="muted">(local accounts only)</span></label>
         <button class="btn primary" type="submit" style="align-self:flex-start">Create user</button>
       </form>
     </div>

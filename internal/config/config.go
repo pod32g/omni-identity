@@ -63,6 +63,15 @@ type LDAPConfig struct {
 	CACertFile         string // PEM bundle for a private CA
 	InsecureSkipVerify bool   // labs only
 	Timeout            time.Duration
+
+	// Write management (Omni as a management UI over the canonical directory).
+	// ManageEnabled opts in; it requires a privileged BindDN. The remaining
+	// fields tune where and how new entries are created and default sensibly
+	// from the search settings when left empty (see internal/ldap).
+	ManageEnabled     bool
+	PeopleBaseDN      string   // parent DN for new entries; empty ⇒ BaseDN
+	RDNAttr           string   // naming attribute for new entries; empty ⇒ AttrUsername
+	UserObjectClasses []string // objectClasses on create; empty ⇒ standard person schema
 }
 
 // SMTPConfig holds outbound email settings. Self-service password reset is
@@ -217,22 +226,26 @@ type fileConfig struct {
 		StartTLS *bool  `yaml:"starttls"`
 	} `yaml:"smtp"`
 	LDAP struct {
-		Enabled            bool   `yaml:"enabled"`
-		Preset             string `yaml:"preset"`
-		URL                string `yaml:"url"`
-		StartTLS           bool   `yaml:"start_tls"`
-		BindDN             string `yaml:"bind_dn"`
-		BindPassword       string `yaml:"bind_password"`
-		BaseDN             string `yaml:"base_dn"`
-		UserFilter         string `yaml:"user_filter"`
-		AttrUsername       string `yaml:"attr_username"`
-		AttrEmail          string `yaml:"attr_email"`
-		AttrDisplayName    string `yaml:"attr_display_name"`
-		AdminGroupDN       string `yaml:"admin_group_dn"`
-		GroupFilter        string `yaml:"group_filter"`
-		CACertFile         string `yaml:"ca_cert_file"`
-		InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
-		Timeout            string `yaml:"timeout"`
+		Enabled            bool     `yaml:"enabled"`
+		Preset             string   `yaml:"preset"`
+		URL                string   `yaml:"url"`
+		StartTLS           bool     `yaml:"start_tls"`
+		BindDN             string   `yaml:"bind_dn"`
+		BindPassword       string   `yaml:"bind_password"`
+		BaseDN             string   `yaml:"base_dn"`
+		UserFilter         string   `yaml:"user_filter"`
+		AttrUsername       string   `yaml:"attr_username"`
+		AttrEmail          string   `yaml:"attr_email"`
+		AttrDisplayName    string   `yaml:"attr_display_name"`
+		AdminGroupDN       string   `yaml:"admin_group_dn"`
+		GroupFilter        string   `yaml:"group_filter"`
+		CACertFile         string   `yaml:"ca_cert_file"`
+		InsecureSkipVerify bool     `yaml:"insecure_skip_verify"`
+		Timeout            string   `yaml:"timeout"`
+		ManageEnabled      bool     `yaml:"manage_enabled"`
+		PeopleBaseDN       string   `yaml:"people_base_dn"`
+		RDNAttr            string   `yaml:"rdn_attr"`
+		UserObjectClasses  []string `yaml:"user_object_classes"`
 	} `yaml:"ldap"`
 	Logging struct {
 		Enabled bool   `yaml:"enabled"`
@@ -397,6 +410,10 @@ func Load(path string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ldap.timeout: %w", err)
 	}
+	cfg.LDAP.ManageEnabled = fc.LDAP.ManageEnabled
+	cfg.LDAP.PeopleBaseDN = fc.LDAP.PeopleBaseDN
+	cfg.LDAP.RDNAttr = fc.LDAP.RDNAttr
+	cfg.LDAP.UserObjectClasses = fc.LDAP.UserObjectClasses
 	applyLDAPPreset(&cfg.LDAP)
 
 	cfg.Logging.Enabled = fc.Logging.Enabled
@@ -535,6 +552,9 @@ func (c *Config) validate() error {
 		}
 		if !strings.Contains(c.LDAP.UserFilter, "%s") {
 			return fmt.Errorf("ldap.user_filter must contain %%s (the username placeholder)")
+		}
+		if c.LDAP.ManageEnabled && c.LDAP.BindDN == "" {
+			return fmt.Errorf("ldap.bind_dn is required when ldap.manage_enabled (writes need a privileged bind)")
 		}
 	}
 	if c.Logging.Enabled {
@@ -783,6 +803,18 @@ func applyEnvOverrides(fc *fileConfig) {
 	if v := os.Getenv("OMNI_LDAP_TIMEOUT"); v != "" {
 		fc.LDAP.Timeout = v
 	}
+	if v := os.Getenv("OMNI_LDAP_MANAGE_ENABLED"); v != "" {
+		fc.LDAP.ManageEnabled = v == "true" || v == "1"
+	}
+	if v := os.Getenv("OMNI_LDAP_PEOPLE_BASE_DN"); v != "" {
+		fc.LDAP.PeopleBaseDN = v
+	}
+	if v := os.Getenv("OMNI_LDAP_RDN_ATTR"); v != "" {
+		fc.LDAP.RDNAttr = v
+	}
+	if v := os.Getenv("OMNI_LDAP_USER_OBJECT_CLASSES"); v != "" {
+		fc.LDAP.UserObjectClasses = splitAndTrim(v)
+	}
 	if v := os.Getenv("OMNI_LOGGING_ENABLED"); v != "" {
 		fc.Logging.Enabled = v == "true" || v == "1"
 	}
@@ -802,6 +834,19 @@ func orDefault(v, def string) string {
 		return def
 	}
 	return v
+}
+
+// splitAndTrim parses a comma-separated env value into a trimmed, non-empty
+// slice (used for list-valued LDAP settings supplied via the environment).
+func splitAndTrim(v string) []string {
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func orDefaultInt(v, def int) int {

@@ -79,6 +79,21 @@
     </div>
   </div>
 
+  {{if and (not .User.IsLocal) .DirectoryEnabled}}
+  <div class="panel">
+    <div class="panel-hd">{{template "ic-users" .}} Directory profile</div>
+    <div class="panel-bd">
+      <form class="stack" method="post" action="/admin/users/{{.User.ID}}/profile" style="margin-top:0;max-width:420px">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="return" value="detail">
+        <label class="field">Email <input name="email" type="email" value="{{.User.Email}}" required></label>
+        <label class="field">Display name <span class="muted">(cn)</span><input name="display_name"></label>
+        <button class="btn primary" type="submit" style="align-self:flex-start">Save to directory</button>
+      </form>
+    </div>
+  </div>
+  {{end}}
+
   {{if .User.IsLocal}}
   <div class="panel">
     <div class="panel-hd">{{template "ic-key" .}} Password</div>
@@ -93,10 +108,38 @@
       </form>
     </div>
   </div>
+  {{else if .DirectoryEnabled}}
+  <div class="panel">
+    <div class="panel-hd">{{template "ic-key" .}} Password</div>
+    <div class="panel-bd">
+      <form class="stack" method="post" action="/admin/users/{{.User.ID}}/password" style="margin-top:0;max-width:420px">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="return" value="detail">
+        <label class="field">New password <span class="muted">(sets it in the directory; clears the user's other sessions)</span>
+          <input name="password" type="password" minlength="8" required>
+        </label>
+        <button class="btn primary" type="submit" style="align-self:flex-start">Set directory password</button>
+      </form>
+    </div>
+  </div>
   {{else}}
   <div class="panel">
     <div class="panel-hd">{{template "ic-key" .}} Password</div>
     <div class="panel-bd"><p class="t-caption" style="margin:0">Managed by the external directory — passwords can't be set here.</p></div>
+  </div>
+  {{end}}
+
+  {{if and .Me (ne .Me.ID .User.ID)}}
+  <div class="panel">
+    <div class="panel-hd">{{template "ic-lock" .}} Danger zone</div>
+    <div class="panel-bd">
+      <form method="post" action="/admin/users/{{.User.ID}}/delete" onsubmit="return confirm('Delete {{.User.Username}}? {{if not .User.IsLocal}}This removes the entry from the directory and {{end}}cannot be undone.');">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="return" value="detail">
+        <p class="t-caption" style="margin:0 0 10px">{{if .User.IsLocal}}Permanently removes this local account.{{else}}Permanently removes this user from the directory and from Omni.{{end}}</p>
+        <button class="btn danger" type="submit">Delete user</button>
+      </form>
+    </div>
   </div>
   {{end}}
 </div>

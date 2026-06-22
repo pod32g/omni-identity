@@ -35,6 +35,7 @@ type SettingsView struct {
 	SessionLifetime           time.Duration
 	CookieSecure              bool
 	MaxLogoBytes              int
+	LDAPManageEnabled         bool
 }
 
 // PasswordPolicy renders the live complexity policy.
@@ -91,6 +92,7 @@ func newSettingsService(db settingsStore, cfg *config.Config, defaultSessionLife
 		SessionLifetime:           cfg.Security.SessionLifetime,
 		CookieSecure:              cfg.Cookies.Secure,
 		MaxLogoBytes:              cfg.Uploads.MaxLogoBytes,
+		LDAPManageEnabled:         cfg.LDAP.ManageEnabled,
 	}
 	s.def = withRuntimeSettingDefaults(s.def)
 	s.v = s.def
@@ -170,6 +172,7 @@ func viewFromModel(m *model.Settings, def SettingsView) SettingsView {
 		SessionLifetime:           parseDurOr(m.SessionLifetime, def.SessionLifetime),
 		CookieSecure:              m.CookieSecure,
 		MaxLogoBytes:              m.MaxLogoBytes,
+		LDAPManageEnabled:         m.LDAPManageEnabled,
 	}
 }
 
@@ -218,6 +221,7 @@ func (v SettingsView) toModel() *model.Settings {
 		SessionLifetime:           v.SessionLifetime.String(),
 		CookieSecure:              v.CookieSecure,
 		MaxLogoBytes:              v.MaxLogoBytes,
+		LDAPManageEnabled:         v.LDAPManageEnabled,
 	}
 }
 

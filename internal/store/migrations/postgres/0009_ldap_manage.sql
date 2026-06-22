@@ -1,0 +1,1 @@
+ALTER TABLE settings ADD COLUMN ldap_manage_enabled BOOLEAN NOT NULL DEFAULT FALSE;

@@ -155,23 +155,25 @@ func (s *Server) handleAdminHome(w http.ResponseWriter, r *http.Request) {
 // --- users ---
 
 type adminUsersPage struct {
-	CSRFToken      string
-	Me             *model.User
-	Active         string
-	Users          []model.User
-	Error          string
-	SetupLink      string // one-time activation/reset link, shown once
-	SetupLinkLabel string
+	CSRFToken        string
+	Me               *model.User
+	Active           string
+	Users            []model.User
+	Error            string
+	SetupLink        string // one-time activation/reset link, shown once
+	SetupLinkLabel   string
+	DirectoryEnabled bool // a managed directory is configured (offer directory create)
 }
 
 func (s *Server) renderUsers(w http.ResponseWriter, r *http.Request, status int, errMsg string) {
 	users, _ := s.db.ListUsers(r.Context())
 	s.tmpl.render(w, status, "admin_users", adminUsersPage{
-		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
-		Me:        currentUser(r),
-		Active:    "users",
-		Users:     users,
-		Error:     errMsg,
+		CSRFToken:        auth.CSRFToken(w, r, s.cookieSecure()),
+		Me:               currentUser(r),
+		Active:           "users",
+		Users:            users,
+		Error:            errMsg,
+		DirectoryEnabled: s.directoryEnabled(),
 	})
 }
 
@@ -179,12 +181,13 @@ func (s *Server) renderUsers(w http.ResponseWriter, r *http.Request, status int,
 func (s *Server) renderUsersWithLink(w http.ResponseWriter, r *http.Request, link, label string) {
 	users, _ := s.db.ListUsers(r.Context())
 	s.tmpl.render(w, http.StatusOK, "admin_users", adminUsersPage{
-		CSRFToken:      auth.CSRFToken(w, r, s.cookieSecure()),
-		Me:             currentUser(r),
-		Active:         "users",
-		Users:          users,
-		SetupLink:      link,
-		SetupLinkLabel: label,
+		CSRFToken:        auth.CSRFToken(w, r, s.cookieSecure()),
+		Me:               currentUser(r),
+		Active:           "users",
+		Users:            users,
+		SetupLink:        link,
+		SetupLinkLabel:   label,
+		DirectoryEnabled: s.directoryEnabled(),
 	})
 }
 
@@ -200,6 +203,14 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request) {
 	email := strings.TrimSpace(r.PostFormValue("email"))
 	password := r.PostFormValue("password")
 	isAdmin := r.PostFormValue("is_admin") == "on" || r.PostFormValue("is_admin") == "true"
+
+	// Directory source: provision the user in the canonical directory instead of
+	// the local store. admin-ness for directory users comes from the directory's
+	// groups, so is_admin is ignored on this path.
+	if src := r.PostFormValue("source"); src == "ldap" || src == "directory" {
+		s.handleAdminCreateDirectoryUser(w, r, username, email, strings.TrimSpace(r.PostFormValue("display_name")), password)
+		return
+	}
 
 	if username == "" || email == "" {
 		s.renderUsers(w, r, http.StatusBadRequest, "Username and email are required.")
@@ -287,10 +298,34 @@ func (s *Server) handleAdminUserPassword(w http.ResponseWriter, r *http.Request)
 	}
 	id := r.PathValue("id")
 	password := r.PostFormValue("password")
-	if msg := auth.ValidatePassword(password, "", "", s.passwordPolicy()); msg != "" {
+	user, err := s.db.GetUserByID(r.Context(), id)
+	if err != nil || user == nil {
+		s.userActionError(w, r, http.StatusNotFound, "User not found.")
+		return
+	}
+	if msg := auth.ValidatePassword(password, user.Username, user.Email, s.passwordPolicy()); msg != "" {
 		s.userActionError(w, r, http.StatusBadRequest, msg)
 		return
 	}
+
+	// Directory users: set the password in the canonical directory, not the local
+	// store (their local hash is never consulted at login).
+	if !user.IsLocal() {
+		dir := s.directoryManager()
+		if dir == nil {
+			s.userActionError(w, r, http.StatusBadRequest, "This account is managed by an external directory; passwords can't be set here.")
+			return
+		}
+		if err := dir.SetPassword(r.Context(), user.ExternalID, password); err != nil {
+			s.userActionError(w, r, http.StatusBadGateway, "The directory rejected the password change.")
+			return
+		}
+		_, _ = s.db.DeleteSessionsForUser(r.Context(), id, "")
+		s.audit(r, evtDirPasswordSet, auditEntry{actorUserID: actorID(r), username: user.Username, success: true, detail: "dn=" + user.ExternalID})
+		s.userActionDone(w, r, id)
+		return
+	}
+
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -309,33 +344,36 @@ func (s *Server) handleAdminUserPassword(w http.ResponseWriter, r *http.Request)
 // --- user detail ---
 
 type adminUserDetailPage struct {
-	CSRFToken      string
-	Me             *model.User
-	Active         string
-	User           *model.User
-	Error          string
-	SetupLink      string // one-time reset link, shown once
-	SetupLinkLabel string
+	CSRFToken        string
+	Me               *model.User
+	Active           string
+	User             *model.User
+	Error            string
+	SetupLink        string // one-time reset link, shown once
+	SetupLinkLabel   string
+	DirectoryEnabled bool // a managed directory is configured (offer directory edit/delete)
 }
 
 func (s *Server) renderUserDetail(w http.ResponseWriter, r *http.Request, status int, u *model.User, errMsg string) {
 	s.tmpl.render(w, status, "admin_user_detail", adminUserDetailPage{
-		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
-		Me:        currentUser(r),
-		Active:    "users",
-		User:      u,
-		Error:     errMsg,
+		CSRFToken:        auth.CSRFToken(w, r, s.cookieSecure()),
+		Me:               currentUser(r),
+		Active:           "users",
+		User:             u,
+		Error:            errMsg,
+		DirectoryEnabled: s.directoryEnabled(),
 	})
 }
 
 func (s *Server) renderUserDetailWithLink(w http.ResponseWriter, r *http.Request, u *model.User, link, label string) {
 	s.tmpl.render(w, http.StatusOK, "admin_user_detail", adminUserDetailPage{
-		CSRFToken:      auth.CSRFToken(w, r, s.cookieSecure()),
-		Me:             currentUser(r),
-		Active:         "users",
-		User:           u,
-		SetupLink:      link,
-		SetupLinkLabel: label,
+		CSRFToken:        auth.CSRFToken(w, r, s.cookieSecure()),
+		Me:               currentUser(r),
+		Active:           "users",
+		User:             u,
+		SetupLink:        link,
+		SetupLinkLabel:   label,
+		DirectoryEnabled: s.directoryEnabled(),
 	})
 }
 
@@ -408,6 +446,8 @@ type ldapStatusView struct {
 	StartTLS     bool
 	BaseDN       string
 	AdminGroupDN string
+	WriteCapable bool // a privileged bind is configured, so management can be toggled on
+	Manageable   bool // write management is currently enabled (write-capable AND toggled on)
 }
 
 func (s *Server) handleAdminSettings(w http.ResponseWriter, r *http.Request) {
@@ -443,6 +483,8 @@ func (s *Server) renderSettings(w http.ResponseWriter, r *http.Request, status i
 			StartTLS:     s.cfg.LDAP.StartTLS,
 			BaseDN:       s.cfg.LDAP.BaseDN,
 			AdminGroupDN: s.cfg.LDAP.AdminGroupDN,
+			WriteCapable: s.directoryWriteCapable(),
+			Manageable:   s.directoryEnabled(),
 		},
 		Branding: b,
 		HasLogo:  len(b.LogoBytes) > 0,

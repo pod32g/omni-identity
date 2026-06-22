@@ -12,7 +12,8 @@ first, one binary, SQLite.
 - Local users with Argon2id password hashing
 - **LDAP / Active Directory** authentication backend (optional): sign in with
   directory credentials, just-in-time provisioning, group→admin mapping, with
-  Omni's TOTP MFA still layered on top
+  Omni's TOTP MFA still layered on top — and optional write management to
+  create / edit / delete / set passwords for directory users from the admin panel
 - OIDC: Authorization Code flow + **PKCE (S256)**, refresh tokens (with rotation
   & reuse detection), ID tokens, access tokens
 - **Hosted, branded login page** — unauthenticated authorization requests are
@@ -193,6 +194,32 @@ How it works:
 - The bind password is a **secret**: it is read from config/env only and is never
   shown in or settable from the web UI. **Admin → Settings** shows a read-only
   directory status panel; the users list marks each account's source.
+
+#### Managing directory users (optional)
+
+By default the LDAP integration is **read-only** — Omni authenticates against the
+directory but does not modify it. To manage directory users from the admin panel,
+configure a `bind_dn` that has **write** permission, then turn on **Admin →
+Settings → System → Directory management** (the toggle appears once a write-capable
+bind is configured; it applies live, no restart). `ldap.manage_enabled: true` in
+config/env seeds that toggle on for fresh installs. The directory stays the
+**source of truth**: each action is a single LDAP write, and Omni's local row
+remains a thin mirror.
+
+- **Create** a directory user from **Admin → Users** (Account type → *Directory
+  user*): Omni issues an LDAP **Add** under `people_base_dn` (defaults to
+  `base_dn`), named by `rdn_attr` (defaults to `attr_username`) with
+  `user_object_classes` (defaults to the standard `inetOrgPerson` chain), then
+  mirrors it locally so it appears immediately — no first login required.
+- **Edit** email / display name (LDAP **Modify**), **set a password** (RFC 3062
+  **PasswordModify**), and **delete** (LDAP **Delete**) from the user's page.
+  Delete is **directory-first**: the entry is removed from the directory before
+  the local mirror, so a failed write never orphans the directory entry.
+- Guards: you cannot delete your own account or the last remaining administrator.
+  Admin-ness for directory users still comes from `admin_group_dn`, not the panel.
+- Targets **OpenLDAP / `inetOrgPerson`**. Active Directory write semantics,
+  directory-side enable/disable, and promoting a local account into the directory
+  are tracked as follow-ups; disable currently stays an Omni-layer control.
 
 Pluggable by design: LDAP is the first `PasswordConnector`, so additional
 external sources can be added behind the same login flow.

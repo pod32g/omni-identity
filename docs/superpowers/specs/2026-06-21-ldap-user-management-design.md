@@ -187,3 +187,16 @@ All new POSTs: CSRF-checked (`csrfOK`), admin-gated (`requireAdmin`), audited.
 
 AD write support, directory enable/disable write-back, local→LDAP promotion,
 group/role management. Each is a follow-up with its own spec.
+
+## Addendum (2026-06-21): live UI toggle
+
+Management is gated by a **live, admin-editable toggle** rather than a
+boot-time-only flag. `ldap_manage_enabled` joins the editable settings row
+(migration `0009`, `model.Settings` → `SettingsView`), seeded from
+`ldap.manage_enabled`. The server keeps the write-capable client whenever LDAP is
+enabled with a `bind_dn`; `directoryManager()` exposes it only when the live
+setting is on, so `directoryEnabled()` (and every handler) reflects the toggle
+without a restart. **Admin → Settings → System → Directory management** renders the
+checkbox only when a write-capable bind exists; the POST honors it only when
+write-capable (defense against a forged submit). The bind credentials remain
+config/env-only secrets — only the on/off flag is web-editable.

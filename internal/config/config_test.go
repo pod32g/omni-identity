@@ -76,6 +76,28 @@ func TestLDAPEnabledRequiresURL(t *testing.T) {
 	}
 }
 
+func TestLDAPManageRequiresBindDN(t *testing.T) {
+	// manage_enabled without a privileged bind_dn must be rejected.
+	_, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"+
+		"ldap:\n  enabled: true\n  url: ldap://h\n  base_dn: dc=x\n  manage_enabled: true\n"))
+	if err == nil {
+		t.Fatal("expected error for manage_enabled without bind_dn")
+	}
+}
+
+func TestLDAPManageEnabledParses(t *testing.T) {
+	cfg, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"+
+		"ldap:\n  enabled: true\n  url: ldap://h\n  base_dn: dc=x\n"+
+		"  bind_dn: cn=admin,dc=x\n  bind_password: s3cret\n  manage_enabled: true\n"+
+		"  people_base_dn: ou=people,dc=x\n  rdn_attr: uid\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.LDAP.ManageEnabled || cfg.LDAP.PeopleBaseDN != "ou=people,dc=x" || cfg.LDAP.RDNAttr != "uid" {
+		t.Fatalf("management fields not parsed: %+v", cfg.LDAP)
+	}
+}
+
 func TestLoggingDisabledByDefaultWithServiceDefault(t *testing.T) {
 	cfg, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"))
 	if err != nil {

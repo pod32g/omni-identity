@@ -11,7 +11,7 @@ const settingsColumns = `issuer, public_url, token_ttl, refresh_token_ttl, max_f
 	`lockout_duration, rate_limit_window, login_ip_max_attempts, password_verify_concurrency, ` +
 	`max_login_username_bytes, max_login_password_bytes, allow_loopback_http_redirects, ` +
 	`password_min_length, require_upper, require_lower, require_number, require_symbol, ` +
-	`session_idle_timeout, session_lifetime, cookie_secure, max_logo_bytes, seeded, updated_at`
+	`session_idle_timeout, session_lifetime, cookie_secure, max_logo_bytes, ldap_manage_enabled, seeded, updated_at`
 
 // GetSettings returns the single settings row (id = 1), seeded by migration.
 func (d *DB) GetSettings(ctx context.Context) (*model.Settings, error) {
@@ -24,7 +24,7 @@ func (d *DB) GetSettings(ctx context.Context) (*model.Settings, error) {
 		&s.MaxLoginUsernameBytes, &s.MaxLoginPasswordBytes, &s.AllowLoopbackHTTPRedirect,
 		&s.PasswordMinLength, &s.RequireUpper, &s.RequireLower, &s.RequireNumber,
 		&s.RequireSymbol, &s.SessionIdleTimeout, &s.SessionLifetime, &s.CookieSecure,
-		&s.MaxLogoBytes, &s.Seeded, &s.UpdatedAt)
+		&s.MaxLogoBytes, &s.LDAPManageEnabled, &s.Seeded, &s.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -41,13 +41,13 @@ func (d *DB) UpdateSettings(ctx context.Context, s *model.Settings) error {
 			allow_loopback_http_redirects = ?, password_min_length = ?,
 			require_upper = ?, require_lower = ?, require_number = ?, require_symbol = ?,
 			session_idle_timeout = ?, session_lifetime = ?, cookie_secure = ?,
-			max_logo_bytes = ?, seeded = TRUE, updated_at = ?
+			max_logo_bytes = ?, ldap_manage_enabled = ?, seeded = TRUE, updated_at = ?
 		WHERE id = 1`,
 		s.Issuer, s.PublicURL, s.TokenTTL, s.RefreshTokenTTL, s.MaxFailedLogins,
 		s.LockoutDuration, s.RateLimitWindow, s.LoginIPMaxAttempts,
 		s.PasswordVerifyConcurrency, s.MaxLoginUsernameBytes, s.MaxLoginPasswordBytes,
 		s.AllowLoopbackHTTPRedirect, s.PasswordMinLength, s.RequireUpper, s.RequireLower,
 		s.RequireNumber, s.RequireSymbol, s.SessionIdleTimeout, s.SessionLifetime,
-		s.CookieSecure, s.MaxLogoBytes, time.Now().UTC())
+		s.CookieSecure, s.MaxLogoBytes, s.LDAPManageEnabled, time.Now().UTC())
 	return err
 }

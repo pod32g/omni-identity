@@ -41,6 +41,14 @@ type Config struct {
 	CACertFile         string
 	InsecureSkipVerify bool
 	Timeout            time.Duration
+
+	// Write-management settings (used only by the DirectoryManager methods).
+	// PeopleBaseDN is the parent DN under which new entries are created; RDNAttr
+	// is the naming attribute for the entry's RDN; UserObjectClasses are the
+	// objectClass values written on create.
+	PeopleBaseDN      string
+	RDNAttr           string
+	UserObjectClasses []string
 }
 
 // Client is a configured LDAP password connector. It satisfies
@@ -50,7 +58,10 @@ type Client struct {
 	tlsConf *tls.Config
 }
 
-var _ authn.PasswordConnector = (*Client)(nil)
+var (
+	_ authn.PasswordConnector = (*Client)(nil)
+	_ authn.DirectoryManager  = (*Client)(nil)
+)
 
 // New validates cfg and builds a Client.
 func New(cfg Config) (*Client, error) {
@@ -74,6 +85,17 @@ func New(cfg Config) (*Client, error) {
 	}
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 10 * time.Second
+	}
+	// Write-management defaults: new entries land under the search base, named by
+	// the same attribute used to find them, with the standard person schema.
+	if cfg.RDNAttr == "" {
+		cfg.RDNAttr = cfg.AttrUsername
+	}
+	if cfg.PeopleBaseDN == "" {
+		cfg.PeopleBaseDN = cfg.BaseDN
+	}
+	if len(cfg.UserObjectClasses) == 0 {
+		cfg.UserObjectClasses = []string{"top", "person", "organizationalPerson", "inetOrgPerson"}
 	}
 
 	u, err := url.Parse(cfg.URL)
@@ -201,6 +223,123 @@ func (c *Client) isAdmin(conn *goldap.Conn, userDN string) bool {
 		return false
 	}
 	return len(res.Entries) == 1
+}
+
+// --- DirectoryManager: write operations against the canonical directory ---
+
+// userDN builds the distinguished name for a username under the people base,
+// escaping the RDN value to prevent DN injection.
+func (c *Client) userDN(username string) string {
+	return fmt.Sprintf("%s=%s,%s", c.cfg.RDNAttr, goldap.EscapeDN(username), c.cfg.PeopleBaseDN)
+}
+
+// dialBound opens a connection and binds as the service account, ready for a
+// write. The caller closes the returned connection.
+func (c *Client) dialBound() (*goldap.Conn, error) {
+	conn, err := c.dial()
+	if err != nil {
+		return nil, fmt.Errorf("ldap: connect: %w", err)
+	}
+	conn.SetTimeout(c.cfg.Timeout)
+	if c.cfg.BindDN != "" {
+		if err := conn.Bind(c.cfg.BindDN, c.cfg.BindPassword); err != nil {
+			conn.Close()
+			return nil, fmt.Errorf("ldap: service bind: %w", err)
+		}
+	}
+	return conn, nil
+}
+
+// CreateUser adds a new person entry and returns its DN. cn and sn are required
+// by inetOrgPerson; both are defaulted from the display name / username when not
+// supplied so a minimal create still satisfies the schema.
+func (c *Client) CreateUser(_ context.Context, u authn.DirectoryUser) (string, error) {
+	if u.Username == "" {
+		return "", errors.New("ldap: username is required")
+	}
+	dn := c.userDN(u.Username)
+	cn := firstOr(u.DisplayName, u.Username)
+	sn := firstOr(u.Surname, cn)
+
+	conn, err := c.dialBound()
+	if err != nil {
+		return "", err
+	}
+	defer conn.Close()
+
+	add := goldap.NewAddRequest(dn, nil)
+	add.Attribute("objectClass", c.cfg.UserObjectClasses)
+	add.Attribute(c.cfg.AttrUsername, []string{u.Username})
+	add.Attribute("cn", []string{cn})
+	add.Attribute("sn", []string{sn})
+	if u.Email != "" {
+		add.Attribute(c.cfg.AttrEmail, []string{u.Email})
+	}
+	// Ensure the naming attribute is present even when it differs from the
+	// username/cn attributes already set above.
+	if c.cfg.RDNAttr != c.cfg.AttrUsername && c.cfg.RDNAttr != "cn" {
+		add.Attribute(c.cfg.RDNAttr, []string{u.Username})
+	}
+	if err := conn.Add(add); err != nil {
+		return "", fmt.Errorf("ldap: add %q: %w", dn, err)
+	}
+	return dn, nil
+}
+
+// UpdateUser replaces the mutable attributes (mail, display name) of the entry.
+func (c *Client) UpdateUser(_ context.Context, dn string, u authn.DirectoryUser) error {
+	conn, err := c.dialBound()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	mod := goldap.NewModifyRequest(dn, nil)
+	if u.Email != "" {
+		mod.Replace(c.cfg.AttrEmail, []string{u.Email})
+	}
+	if u.DisplayName != "" {
+		mod.Replace(c.cfg.AttrDisplayName, []string{u.DisplayName})
+	}
+	if len(mod.Changes) == 0 {
+		return nil // nothing to change
+	}
+	if err := conn.Modify(mod); err != nil {
+		return fmt.Errorf("ldap: modify %q: %w", dn, err)
+	}
+	return nil
+}
+
+// SetPassword sets the entry's password via the RFC 3062 extended operation.
+func (c *Client) SetPassword(_ context.Context, dn, password string) error {
+	if password == "" {
+		return errors.New("ldap: password is required")
+	}
+	conn, err := c.dialBound()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	req := goldap.NewPasswordModifyRequest(dn, "", password)
+	if _, err := conn.PasswordModify(req); err != nil {
+		return fmt.Errorf("ldap: password modify %q: %w", dn, err)
+	}
+	return nil
+}
+
+// DeleteUser removes the entry at dn.
+func (c *Client) DeleteUser(_ context.Context, dn string) error {
+	conn, err := c.dialBound()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := conn.Del(goldap.NewDelRequest(dn, nil)); err != nil {
+		return fmt.Errorf("ldap: delete %q: %w", dn, err)
+	}
+	return nil
 }
 
 // dial opens a connection, applying StartTLS when configured.

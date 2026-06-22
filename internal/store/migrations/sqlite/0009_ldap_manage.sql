@@ -1,0 +1,1 @@
+ALTER TABLE settings ADD COLUMN ldap_manage_enabled INTEGER NOT NULL DEFAULT 0;
