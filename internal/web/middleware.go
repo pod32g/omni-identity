@@ -142,6 +142,19 @@ func writeLabeled(b *strings.Builder, name, help, label string, vals map[string]
 	}
 }
 
+// logHTTPRequest reports whether a request with the given status should be
+// access-logged under the configured mode ("all" | "errors" | "off").
+func logHTTPRequest(mode string, status int) bool {
+	switch mode {
+	case "off":
+		return false
+	case "errors":
+		return status >= 400
+	default: // "all" (and any unset/unknown value falls back to logging)
+		return true
+	}
+}
+
 // withMiddleware wraps the router with logging, recovery, and security headers.
 // logging is outermost so it observes the final status, including 500s written
 // by the recoverer.
@@ -158,6 +171,12 @@ func (s *Server) logging(next http.Handler) http.Handler {
 		s.metrics.record(rec.status)
 		if r.URL.Path == "/healthz" || r.URL.Path == "/metrics" {
 			return // avoid log noise from probes/scrapers
+		}
+		// Per-request access logging is configurable (logging.http_requests):
+		// "all" logs every request, "errors" only 4xx/5xx (the default, so routine
+		// traffic doesn't flood the logs), "off" none.
+		if !logHTTPRequest(s.settings.Current().LogHTTPRequests, rec.status) {
+			return
 		}
 		// Level by status so operators can filter: 5xx → error, 4xx → warn.
 		lvl := slog.LevelInfo

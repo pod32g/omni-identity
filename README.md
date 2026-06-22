@@ -242,12 +242,21 @@ run the gated LDAP integration test, set `OMNI_TEST_LDAP_URL` (plus the
   `omni_identity_mfa_total{result}`, `omni_identity_tokens_issued_total{type}`,
   the `omni_identity_active_sessions` gauge, and `omni_identity_build_info`. Point
   any Prometheus-compatible scraper (e.g. omni-metrics) at it.
-- **Log shipping** — by default logs go to stdout as JSON. Set the `logging`
-  block (`OMNI_LOGGING_*`) to *also* ship them to an [omnilog](https://github.com/pod32g/omni-logging)
-  server: records are batched and POSTed to `/api/v1/ingest` (NDJSON, `X-Api-Key`)
-  by a background worker. It is **best-effort and non-blocking** — if omnilog is
-  slow or down, records are dropped rather than ever delaying or failing a
-  request. The API key is a secret (config/env only).
+- **Log verbosity** — logs are structured JSON on stdout. The signal is the
+  audit-event stream (`login.success`, `admin.user.created`, …); per-request
+  access lines (`http_request`) are controlled by the request-logging mode:
+  **`errors`** (default) logs only 4xx/5xx so routine traffic doesn't drown the
+  useful events, `all` is a full access log, `off` silences them. A log level
+  (`debug|info|warn|error`) sets the floor. Both apply to stdout and shipped
+  logs, and are **editable live in Admin → Settings → System → Logging** (no
+  restart). `logging.level` / `logging.http_requests` (`OMNI_LOG_LEVEL` /
+  `OMNI_LOG_HTTP_REQUESTS`) seed the defaults for a fresh install.
+- **Log shipping** — set the `logging` block (`OMNI_LOGGING_*`) to *also* ship
+  logs to an [omnilog](https://github.com/pod32g/omni-logging) server: records
+  are batched and POSTed to `/api/v1/ingest` (NDJSON, `X-Api-Key`) by a
+  background worker, filtered by the same level. It is **best-effort and
+  non-blocking** — if omnilog is slow or down, records are dropped rather than
+  ever delaying or failing a request. The API key is a secret (config/env only).
 
 ## Run
 

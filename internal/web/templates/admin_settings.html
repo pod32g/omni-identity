@@ -268,6 +268,32 @@
     {{end}}
 
     <div class="panel">
+      <div class="panel-hd">Logging</div>
+      <div class="panel-bd">
+        <form class="stack" method="post" action="/admin/settings/logging" style="margin-top:0;max-width:420px">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <label class="field">Log level <span class="muted">(floor for stdout &amp; omnilog)</span>
+            <select name="log_level">
+              <option value="debug" {{if eq .Settings.LogLevel "debug"}}selected{{end}}>debug</option>
+              <option value="info" {{if eq .Settings.LogLevel "info"}}selected{{end}}>info</option>
+              <option value="warn" {{if eq .Settings.LogLevel "warn"}}selected{{end}}>warn</option>
+              <option value="error" {{if eq .Settings.LogLevel "error"}}selected{{end}}>error</option>
+            </select>
+          </label>
+          <label class="field">Request logging <span class="muted">(per-request http_request lines)</span>
+            <select name="log_http_requests">
+              <option value="all" {{if eq .Settings.LogHTTPRequests "all"}}selected{{end}}>All requests</option>
+              <option value="errors" {{if eq .Settings.LogHTTPRequests "errors"}}selected{{end}}>Errors only (4xx/5xx)</option>
+              <option value="off" {{if eq .Settings.LogHTTPRequests "off"}}selected{{end}}>Off</option>
+            </select>
+          </label>
+          <p class="t-caption" style="margin:0">“Errors only” keeps successful traffic from flooding the logs. Applies live to stdout and omnilog — no restart.</p>
+          <div class="save-bar"><button class="btn primary" type="submit">Save</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="panel">
       <div class="panel-hd">Endpoints</div>
       <div class="panel-bd">
         <table class="omni">

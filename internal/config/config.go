@@ -37,6 +37,13 @@ type LoggingConfig struct {
 	URL     string // omnilog base URL, e.g. http://host:8080
 	APIKey  string
 	Service string // source name reported to omnilog
+	// Level is the minimum log level for stdout and shipping: debug|info|warn|
+	// error. Applies even when shipping is disabled.
+	Level string
+	// HTTPRequests controls per-request access logging: all|errors|off. Default
+	// "errors" logs only 4xx/5xx, so routine successful traffic does not flood
+	// the logs (and omnilog). Applies even when shipping is disabled.
+	HTTPRequests string
 }
 
 // LDAPConfig configures the optional LDAP / Active Directory authentication
@@ -248,10 +255,12 @@ type fileConfig struct {
 		UserObjectClasses  []string `yaml:"user_object_classes"`
 	} `yaml:"ldap"`
 	Logging struct {
-		Enabled bool   `yaml:"enabled"`
-		URL     string `yaml:"url"`
-		APIKey  string `yaml:"api_key"`
-		Service string `yaml:"service"`
+		Enabled      bool   `yaml:"enabled"`
+		URL          string `yaml:"url"`
+		APIKey       string `yaml:"api_key"`
+		Service      string `yaml:"service"`
+		Level        string `yaml:"level"`
+		HTTPRequests string `yaml:"http_requests"`
 	} `yaml:"logging"`
 }
 
@@ -420,6 +429,8 @@ func Load(path string) (*Config, error) {
 	cfg.Logging.URL = fc.Logging.URL
 	cfg.Logging.APIKey = fc.Logging.APIKey
 	cfg.Logging.Service = orDefault(fc.Logging.Service, "omni-identity")
+	cfg.Logging.Level = strings.ToLower(orDefault(fc.Logging.Level, "info"))
+	cfg.Logging.HTTPRequests = strings.ToLower(orDefault(fc.Logging.HTTPRequests, "errors"))
 
 	if err := cfg.validate(); err != nil {
 		return nil, err
@@ -556,6 +567,16 @@ func (c *Config) validate() error {
 		if c.LDAP.ManageEnabled && c.LDAP.BindDN == "" {
 			return fmt.Errorf("ldap.bind_dn is required when ldap.manage_enabled (writes need a privileged bind)")
 		}
+	}
+	switch c.Logging.Level {
+	case "debug", "info", "warn", "error":
+	default:
+		return fmt.Errorf("logging.level %q is not supported (want debug, info, warn, or error)", c.Logging.Level)
+	}
+	switch c.Logging.HTTPRequests {
+	case "all", "errors", "off":
+	default:
+		return fmt.Errorf("logging.http_requests %q is not supported (want all, errors, or off)", c.Logging.HTTPRequests)
 	}
 	if c.Logging.Enabled {
 		if c.Logging.URL == "" {
@@ -826,6 +847,12 @@ func applyEnvOverrides(fc *fileConfig) {
 	}
 	if v := os.Getenv("OMNI_LOGGING_SERVICE"); v != "" {
 		fc.Logging.Service = v
+	}
+	if v := os.Getenv("OMNI_LOG_LEVEL"); v != "" {
+		fc.Logging.Level = v
+	}
+	if v := os.Getenv("OMNI_LOG_HTTP_REQUESTS"); v != "" {
+		fc.Logging.HTTPRequests = v
 	}
 }
 

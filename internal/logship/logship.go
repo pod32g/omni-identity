@@ -26,6 +26,10 @@ type Config struct {
 	APIKey  string
 	Service string
 
+	// Level is the minimum level shipped to omnilog, consulted live on every
+	// record (pass a *slog.LevelVar to change it at runtime). nil ⇒ LevelInfo.
+	Level slog.Leveler
+
 	BatchSize     int
 	FlushInterval time.Duration
 	BufferSize    int
@@ -40,6 +44,7 @@ type shipper struct {
 	apiKey   string
 	service  string
 	client   *http.Client
+	level    slog.Leveler
 
 	batchSize int
 	flush     time.Duration
@@ -68,6 +73,9 @@ func NewHandler(cfg Config) (*Handler, error) {
 	if cfg.Service == "" {
 		cfg.Service = "omni-identity"
 	}
+	if cfg.Level == nil {
+		cfg.Level = slog.LevelInfo
+	}
 	if cfg.BatchSize <= 0 {
 		cfg.BatchSize = 100
 	}
@@ -89,6 +97,7 @@ func NewHandler(cfg Config) (*Handler, error) {
 		apiKey:    cfg.APIKey,
 		service:   cfg.Service,
 		client:    client,
+		level:     cfg.Level,
 		batchSize: cfg.BatchSize,
 		flush:     cfg.FlushInterval,
 		ch:        make(chan map[string]any, cfg.BufferSize),
@@ -116,7 +125,7 @@ func (h *Handler) Close(ctx context.Context) error {
 }
 
 func (h *Handler) Enabled(_ context.Context, level slog.Level) bool {
-	return level >= slog.LevelInfo
+	return level >= h.s.level.Level()
 }
 
 func (h *Handler) Handle(_ context.Context, r slog.Record) error {

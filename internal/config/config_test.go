@@ -98,6 +98,48 @@ func TestLDAPManageEnabledParses(t *testing.T) {
 	}
 }
 
+func TestLoggingLevelAndHTTPDefaults(t *testing.T) {
+	cfg, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Logging.Level != "info" {
+		t.Errorf("default level = %q, want info", cfg.Logging.Level)
+	}
+	// Default must be the quiet mode so successful requests don't flood the logs.
+	if cfg.Logging.HTTPRequests != "errors" {
+		t.Errorf("default http_requests = %q, want errors", cfg.Logging.HTTPRequests)
+	}
+}
+
+func TestLoggingLevelRejectsUnknown(t *testing.T) {
+	_, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"+
+		"logging:\n  level: chatty\n"))
+	if err == nil {
+		t.Fatal("expected error for an invalid logging.level")
+	}
+}
+
+func TestLoggingHTTPRequestsRejectsUnknown(t *testing.T) {
+	_, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"+
+		"logging:\n  http_requests: sometimes\n"))
+	if err == nil {
+		t.Fatal("expected error for an invalid logging.http_requests")
+	}
+}
+
+func TestLoggingLevelAndHTTPEnvOverride(t *testing.T) {
+	t.Setenv("OMNI_LOG_LEVEL", "debug")
+	t.Setenv("OMNI_LOG_HTTP_REQUESTS", "all")
+	cfg, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Logging.Level != "debug" || cfg.Logging.HTTPRequests != "all" {
+		t.Fatalf("env override not applied: level=%q http=%q", cfg.Logging.Level, cfg.Logging.HTTPRequests)
+	}
+}
+
 func TestLoggingDisabledByDefaultWithServiceDefault(t *testing.T) {
 	cfg, err := Load(writeTempConfig(t, "server:\n  public_url: https://id.example\n"))
 	if err != nil {

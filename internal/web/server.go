@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -44,8 +45,24 @@ type Server struct {
 	connectors   []authn.PasswordConnector // external auth sources (e.g. LDAP); empty by default
 	directory    authn.DirectoryManager    // write-capable directory client; nil unless LDAP+bind configured. Exposure gated live by the ldap_manage_enabled setting
 	metrics      *metrics
+	logLevel     *slog.LevelVar // dynamic log level applied live from settings; nil in tests
 	mux          *http.ServeMux
 	handler      http.Handler
+}
+
+// BindLogLevel attaches the process log-level var (created at startup) so the
+// admin Logging settings can change it live, and immediately syncs it to the
+// current stored setting. Called once from main; a nil var (tests) is a no-op.
+func (s *Server) BindLogLevel(v *slog.LevelVar) {
+	s.logLevel = v
+	s.syncLogLevel()
+}
+
+// syncLogLevel pushes the live LogLevel setting into the process level var.
+func (s *Server) syncLogLevel() {
+	if s.logLevel != nil {
+		s.logLevel.Set(parseSettingsLevel(s.settings.Current().LogLevel))
+	}
 }
 
 // NewServer builds a Server with all routes registered. It ensures signing keys
@@ -206,6 +223,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /admin/settings/logo", s.requireAdmin(s.handleAdminUploadLogo))
 	s.mux.HandleFunc("POST /admin/settings/system", s.requireAdmin(s.handleAdminUpdateSettings))
 	s.mux.HandleFunc("POST /admin/settings/directory", s.requireAdmin(s.handleAdminUpdateDirectoryManagement))
+	s.mux.HandleFunc("POST /admin/settings/logging", s.requireAdmin(s.handleAdminUpdateLogging))
 	s.mux.HandleFunc("POST /admin/settings/reset", s.requireAdmin(s.handleAdminResetSettings))
 	s.mux.HandleFunc("GET /admin/audit", s.requireAdmin(s.handleAdminAudit))
 

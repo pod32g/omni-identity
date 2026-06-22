@@ -179,8 +179,12 @@ type Settings struct {
 	// config (ldap.manage_enabled); only effective when a write-capable bind is
 	// configured.
 	LDAPManageEnabled bool
-	Seeded            bool
-	UpdatedAt         time.Time
+	// Logging verbosity, live-editable. LogLevel is debug|info|warn|error;
+	// LogHTTPRequests is all|errors|off. Seeded from config (logging.*).
+	LogLevel        string
+	LogHTTPRequests string
+	Seeded          bool
+	UpdatedAt       time.Time
 }
 
 // Branding holds the configurable look of the hosted pages (single global row).

@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -185,6 +186,67 @@ func (s *Server) handleAdminUpdateDirectoryManagement(w http.ResponseWriter, r *
 	s.settings.Reload(r.Context())
 	s.audit(r, evtSettingsUpdated, auditEntry{actorUserID: actorID(r), success: true, detail: "ldap_manage_enabled=" + boolStr(enable)})
 	http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
+}
+
+// handleAdminUpdateLogging persists the live logging verbosity settings (level +
+// per-request access logging) from their own focused form, then applies them
+// immediately: the request-log mode is read live by the middleware, and the log
+// level is pushed into the process level var (affecting stdout and shipping).
+func (s *Server) handleAdminUpdateLogging(w http.ResponseWriter, r *http.Request) {
+	if !s.csrfOK(w, r) {
+		return
+	}
+	level := r.PostFormValue("log_level")
+	httpReqs := r.PostFormValue("log_http_requests")
+	if !validLogLevel(level) || !validHTTPRequestsMode(httpReqs) {
+		s.renderSettings(w, r, http.StatusBadRequest, "Invalid logging selection.", "")
+		return
+	}
+
+	m, err := s.db.GetSettings(r.Context())
+	if err != nil {
+		s.renderSettings(w, r, http.StatusInternalServerError, "Could not load settings.", "")
+		return
+	}
+	m.LogLevel, m.LogHTTPRequests = level, httpReqs
+	if err := s.db.UpdateSettings(r.Context(), m); err != nil {
+		s.renderSettings(w, r, http.StatusInternalServerError, "Could not save settings.", "")
+		return
+	}
+	s.settings.Reload(r.Context())
+	s.syncLogLevel() // apply the level live (request-log mode is read live already)
+	s.audit(r, evtSettingsUpdated, auditEntry{actorUserID: actorID(r), success: true, detail: "log_level=" + level + " http_requests=" + httpReqs})
+	http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
+}
+
+func validLogLevel(s string) bool {
+	switch s {
+	case "debug", "info", "warn", "error":
+		return true
+	}
+	return false
+}
+
+func validHTTPRequestsMode(s string) bool {
+	switch s {
+	case "all", "errors", "off":
+		return true
+	}
+	return false
+}
+
+// parseSettingsLevel maps a stored log-level string to a slog.Level (default Info).
+func parseSettingsLevel(s string) slog.Level {
+	switch s {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 func parseIntRange(raw string, lo, hi int) (int, bool) {

@@ -78,6 +78,28 @@ func TestHandlerShipsNDJSONWithKey(t *testing.T) {
 	}
 }
 
+func TestHandlerRespectsLevel(t *testing.T) {
+	cap := &capture{}
+	srv := httptest.NewServer(http.HandlerFunc(cap.handler))
+	defer srv.Close()
+
+	h, err := NewHandler(Config{URL: srv.URL, APIKey: "k", Service: "omni-identity", Level: slog.LevelWarn, FlushInterval: 30 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := slog.New(h)
+	log.Info("http_request", "status", 200) // below threshold → must not ship
+	log.Warn("login.failed", "username", "x")
+	if err := h.Close(context.Background()); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	recs, _ := cap.snapshot()
+	if len(recs) != 1 || recs[0]["message"] != "login.failed" {
+		t.Fatalf("level threshold not honored, got: %+v", recs)
+	}
+}
+
 func TestHandlerNeverBlocksOnOverflow(t *testing.T) {
 	// Point at a black-hole server (hangs) and use a tiny buffer; Handle must
 	// stay non-blocking and just drop.

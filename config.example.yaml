@@ -120,6 +120,15 @@ ldap:
   user_object_classes: []                 # objectClasses on create; empty => [top, person, organizationalPerson, inetOrgPerson]
 
 logging:
+  # Verbosity knobs apply to stdout AND omnilog, even when shipping is disabled.
+  # These two SEED the live, admin-editable settings (Admin -> Settings -> System
+  # -> Logging), which can change them without a restart once the app is running.
+  # level: minimum level — debug | info | warn | error (OMNI_LOG_LEVEL).
+  # http_requests: per-request access logging — all | errors | off
+  #   (OMNI_LOG_HTTP_REQUESTS). Default "errors" logs only 4xx/5xx, so routine
+  #   successful traffic doesn't flood the logs. Use "all" for a full access log.
+  level: info
+  http_requests: errors
   # Optional: ship structured logs to an omnilog server (in addition to stdout).
   # Non-blocking and best-effort — log delivery never slows or fails requests.
   # The api_key is a secret: config/env only, never the web-editable settings.

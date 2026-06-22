@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +12,46 @@ import (
 	"testing"
 	"time"
 )
+
+func TestSettingsLoggingControlsApplyLive(t *testing.T) {
+	srv := testServer(t)
+	lv := new(slog.LevelVar)
+	srv.BindLogLevel(lv) // seeds from the stored setting (info)
+	sid := adminSession(t, srv)
+
+	// The Logging card renders both selects.
+	body := adminGet(srv, "/admin/settings", sid).Body.String()
+	if !strings.Contains(body, `name="log_level"`) || !strings.Contains(body, `name="log_http_requests"`) {
+		t.Fatal("logging controls missing from settings page")
+	}
+	if lv.Level() != slog.LevelInfo {
+		t.Fatalf("initial level = %v, want info", lv.Level())
+	}
+
+	// Saving applies live: the level var changes and the request-log mode persists.
+	rr := adminPost(srv, "/admin/settings/logging", url.Values{
+		"log_level": {"warn"}, "log_http_requests": {"all"},
+	}, sid)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("want 303, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+	if lv.Level() != slog.LevelWarn {
+		t.Fatalf("log level not applied live: %v", lv.Level())
+	}
+	if got := srv.settings.Current().LogHTTPRequests; got != "all" {
+		t.Fatalf("http_requests not persisted: %q", got)
+	}
+
+	// Invalid selections are rejected and nothing changes.
+	if rr := adminPost(srv, "/admin/settings/logging", url.Values{
+		"log_level": {"chatty"}, "log_http_requests": {"all"},
+	}, sid); rr.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 for invalid level, got %d", rr.Code)
+	}
+	if lv.Level() != slog.LevelWarn {
+		t.Fatal("rejected input must not change the level")
+	}
+}
 
 // applySettings mutates the live settings via the store + reload (the real path).
 func applySettings(t *testing.T, srv *Server, mutate func(*SettingsView)) {

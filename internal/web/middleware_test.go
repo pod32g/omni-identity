@@ -7,6 +7,24 @@ import (
 	"testing"
 )
 
+func TestLogHTTPRequestModes(t *testing.T) {
+	cases := []struct {
+		mode   string
+		status int
+		want   bool
+	}{
+		{"all", 200, true}, {"all", 404, true}, {"all", 500, true},
+		{"errors", 200, false}, {"errors", 302, false}, {"errors", 404, true}, {"errors", 500, true},
+		{"off", 200, false}, {"off", 500, false},
+		{"", 200, true}, // unset/unknown falls back to logging
+	}
+	for _, c := range cases {
+		if got := logHTTPRequest(c.mode, c.status); got != c.want {
+			t.Errorf("logHTTPRequest(%q, %d) = %v, want %v", c.mode, c.status, got, c.want)
+		}
+	}
+}
+
 func TestSecurityHeadersPresent(t *testing.T) {
 	srv := testServer(t)
 	rr := do(srv, httptest.NewRequest(http.MethodGet, "/healthz", nil))

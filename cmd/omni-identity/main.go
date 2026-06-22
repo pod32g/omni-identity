@@ -90,6 +90,20 @@ Run "omni-identity <command> -h" for command-specific flags.
 `)
 }
 
+// parseLogLevel maps a validated config level string to a slog.Level.
+func parseLogLevel(s string) slog.Level {
+	switch s {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
+}
+
 func runServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	configPath := fs.String("config", "config.yaml", "path to YAML config file (optional; env vars also apply)")
@@ -107,21 +121,29 @@ func runServe(args []string) error {
 	// Expose the build version on /metrics (omni_identity_build_info).
 	web.BuildVersion = version
 
-	// Optionally ship structured logs to omnilog (in addition to stdout).
+	// Reconfigure logging at the configured level now that config is loaded
+	// (the bootstrap logger above ran at Info). The level lives in a LevelVar so
+	// the admin Logging settings can change it live; it seeds from config and is
+	// reconciled to the stored setting by Server.BindLogLevel below.
+	logLevel := new(slog.LevelVar)
+	logLevel.Set(parseLogLevel(cfg.Logging.Level))
+	var handler slog.Handler = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel})
 	if cfg.Logging.Enabled {
 		shipper, lerr := logship.NewHandler(logship.Config{
-			URL: cfg.Logging.URL, APIKey: cfg.Logging.APIKey, Service: cfg.Logging.Service,
+			URL: cfg.Logging.URL, APIKey: cfg.Logging.APIKey, Service: cfg.Logging.Service, Level: logLevel,
 		})
 		if lerr != nil {
 			return fmt.Errorf("init log shipper: %w", lerr)
 		}
-		stdout := slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})
-		slog.SetDefault(slog.New(logship.Fanout(stdout, shipper)))
+		handler = logship.Fanout(handler, shipper)
 		defer func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			_ = shipper.Close(ctx)
 		}()
+	}
+	slog.SetDefault(slog.New(handler))
+	if cfg.Logging.Enabled {
 		slog.Info("log shipping enabled", "omnilog", cfg.Logging.URL, "service", cfg.Logging.Service)
 	}
 
@@ -135,6 +157,9 @@ func runServe(args []string) error {
 	if err != nil {
 		return fmt.Errorf("init server: %w", err)
 	}
+	// Let the admin Logging settings drive the process log level live, and apply
+	// the stored value now (it may differ from the config seed on an existing DB).
+	srv.BindLogLevel(logLevel)
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	httpSrv := &http.Server{
 		Addr:              addr,

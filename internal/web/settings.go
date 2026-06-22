@@ -36,6 +36,8 @@ type SettingsView struct {
 	CookieSecure              bool
 	MaxLogoBytes              int
 	LDAPManageEnabled         bool
+	LogLevel                  string // debug|info|warn|error
+	LogHTTPRequests           string // all|errors|off
 }
 
 // PasswordPolicy renders the live complexity policy.
@@ -93,6 +95,8 @@ func newSettingsService(db settingsStore, cfg *config.Config, defaultSessionLife
 		CookieSecure:              cfg.Cookies.Secure,
 		MaxLogoBytes:              cfg.Uploads.MaxLogoBytes,
 		LDAPManageEnabled:         cfg.LDAP.ManageEnabled,
+		LogLevel:                  cfg.Logging.Level,
+		LogHTTPRequests:           cfg.Logging.HTTPRequests,
 	}
 	s.def = withRuntimeSettingDefaults(s.def)
 	s.v = s.def
@@ -173,6 +177,8 @@ func viewFromModel(m *model.Settings, def SettingsView) SettingsView {
 		CookieSecure:              m.CookieSecure,
 		MaxLogoBytes:              m.MaxLogoBytes,
 		LDAPManageEnabled:         m.LDAPManageEnabled,
+		LogLevel:                  m.LogLevel,
+		LogHTTPRequests:           m.LogHTTPRequests,
 	}
 }
 
@@ -222,6 +228,8 @@ func (v SettingsView) toModel() *model.Settings {
 		CookieSecure:              v.CookieSecure,
 		MaxLogoBytes:              v.MaxLogoBytes,
 		LDAPManageEnabled:         v.LDAPManageEnabled,
+		LogLevel:                  v.LogLevel,
+		LogHTTPRequests:           v.LogHTTPRequests,
 	}
 }
 
@@ -261,6 +269,12 @@ func withRuntimeSettingDefaults(v SettingsView) SettingsView {
 	}
 	if v.MaxLogoBytes < 1 {
 		v.MaxLogoBytes = defaultMaxLogoBytes
+	}
+	if v.LogLevel == "" {
+		v.LogLevel = "info"
+	}
+	if v.LogHTTPRequests == "" {
+		v.LogHTTPRequests = "errors"
 	}
 	return v
 }
