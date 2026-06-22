@@ -36,6 +36,7 @@ const (
 	evtUserUnlocked    = "admin.user.unlocked"
 	evtUserDeleted     = "admin.user.deleted"
 	evtUserUpdated     = "admin.user.updated"
+	evtUserPromoted    = "admin.user.promoted"
 	evtDirUserCreated  = "admin.directory.user.created"
 	evtDirUserUpdated  = "admin.directory.user.updated"
 	evtDirUserDeleted  = "admin.directory.user.deleted"

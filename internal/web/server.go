@@ -190,6 +190,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /admin/users/{id}/disable", s.requireAdmin(s.handleAdminToggleUser))
 	s.mux.HandleFunc("POST /admin/users/{id}/password", s.requireAdmin(s.handleAdminUserPassword))
 	s.mux.HandleFunc("POST /admin/users/{id}/profile", s.requireAdmin(s.handleAdminUpdateDirectoryUser))
+	s.mux.HandleFunc("POST /admin/users/{id}/promote", s.requireAdmin(s.handleAdminPromoteUser))
 	s.mux.HandleFunc("POST /admin/users/{id}/delete", s.requireAdmin(s.handleAdminDeleteUser))
 	s.mux.HandleFunc("GET /admin/clients", s.requireAdmin(s.handleAdminClients))
 	s.mux.HandleFunc("POST /admin/clients", s.requireAdmin(s.handleAdminCreateClient))

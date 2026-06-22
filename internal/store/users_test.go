@@ -199,6 +199,34 @@ func TestDeleteUser(t *testing.T) {
 	}
 }
 
+func TestLinkUserToExternal(t *testing.T) {
+	db := tempDB(t)
+	ctx := context.Background()
+	u := newUser("alice") // local, with a password hash
+	if err := db.CreateUser(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.LinkUserToExternal(ctx, u.ID, "ldap", "uid=alice,dc=x"); err != nil {
+		t.Fatalf("LinkUserToExternal: %v", err)
+	}
+	got, _ := db.GetUserByID(ctx, u.ID)
+	if got.IsLocal() || got.AuthSource != "ldap" || got.ExternalID != "uid=alice,dc=x" {
+		t.Fatalf("not promoted: %+v", got)
+	}
+	if got.PasswordHash != "" {
+		t.Errorf("local hash must be cleared, got %q", got.PasswordHash)
+	}
+
+	// A second row cannot link to the same directory entry (unique index).
+	other := newUser("bob")
+	if err := db.CreateUser(ctx, other); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.LinkUserToExternal(ctx, other.ID, "ldap", "uid=alice,dc=x"); err == nil {
+		t.Error("expected a unique-violation linking two rows to the same DN")
+	}
+}
+
 func TestListUsers(t *testing.T) {
 	db := tempDB(t)
 	ctx := context.Background()

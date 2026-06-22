@@ -22,10 +22,22 @@ type fakeDir struct {
 	pwDN, pw  string
 	deletedDN string
 
+	lookupDN                               string // returned by LookupDN when lookupFound
+	lookupFound                            bool
+	lookedUp                               string // last username looked up
+	lookupErr                              error
 	createErr, updateErr, pwErr, deleteErr error
 }
 
 func (*fakeDir) ID() string { return "ldap" }
+
+func (f *fakeDir) LookupDN(_ context.Context, username string) (string, bool, error) {
+	f.lookedUp = username
+	if f.lookupErr != nil {
+		return "", false, f.lookupErr
+	}
+	return f.lookupDN, f.lookupFound, nil
+}
 
 func (f *fakeDir) CreateUser(_ context.Context, u authn.DirectoryUser) (string, error) {
 	if f.createErr != nil {
@@ -281,6 +293,86 @@ func TestUsersPageOffersDirectoryCreateOnlyWhenEnabled(t *testing.T) {
 	enableDirectory(t, srv, &fakeDir{})
 	if body := adminGet(srv, "/admin/users", sid).Body.String(); !strings.Contains(body, "Directory user (LDAP)") {
 		t.Fatal("directory create option missing when management enabled")
+	}
+}
+
+func TestAdminPromoteLocalUserCreatesEntry(t *testing.T) {
+	srv := testServer(t)
+	dir := &fakeDir{lookupFound: false} // no existing directory entry
+	enableDirectory(t, srv, dir)
+	sid := adminSession(t, srv)
+	victim := createUser(t, srv, "alice", "Sup3r$ecretPW!", false)
+
+	rr := adminPost(srv, "/admin/users/"+victim.ID+"/promote", url.Values{
+		"password": {"D1rectory$ecret!"}, "return": {"detail"},
+	}, sid)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("want 303, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+	if dir.lookedUp != "alice" {
+		t.Fatalf("directory not looked up by username, got %q", dir.lookedUp)
+	}
+	if dir.created.Username != "alice" {
+		t.Fatalf("directory entry not created: %+v", dir.created)
+	}
+	if dir.pwDN != dir.createdDN || dir.pw != "D1rectory$ecret!" {
+		t.Fatalf("password not set on the new entry: dn=%q pw=%q", dir.pwDN, dir.pw)
+	}
+	got, _ := srv.db.GetUserByID(context.Background(), victim.ID)
+	if got.IsLocal() || got.AuthSource != "ldap" || got.ExternalID != dir.createdDN {
+		t.Fatalf("row not re-pointed at the directory: %+v", got)
+	}
+	if got.PasswordHash != "" {
+		t.Fatalf("local hash must be cleared after promotion, got %q", got.PasswordHash)
+	}
+}
+
+func TestAdminPromoteLocalUserLinksExistingEntry(t *testing.T) {
+	srv := testServer(t)
+	dir := &fakeDir{lookupFound: true, lookupDN: "uid=alice,ou=people,dc=x"}
+	enableDirectory(t, srv, dir)
+	sid := adminSession(t, srv)
+	victim := createUser(t, srv, "alice", "Sup3r$ecretPW!", false)
+
+	rr := adminPost(srv, "/admin/users/"+victim.ID+"/promote", url.Values{"return": {"detail"}}, sid)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("want 303, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+	// Linking must not create or set a password on the existing entry.
+	if dir.created.Username != "" || dir.pwDN != "" {
+		t.Fatalf("link path must not create/set-password: created=%+v pwDN=%q", dir.created, dir.pwDN)
+	}
+	got, _ := srv.db.GetUserByID(context.Background(), victim.ID)
+	if got.AuthSource != "ldap" || got.ExternalID != "uid=alice,ou=people,dc=x" || got.PasswordHash != "" {
+		t.Fatalf("row not linked to the existing entry: %+v", got)
+	}
+}
+
+func TestAdminPromoteRejectsDirectoryUser(t *testing.T) {
+	srv := testServer(t)
+	enableDirectory(t, srv, &fakeDir{})
+	sid := adminSession(t, srv)
+	u, err := srv.db.UpsertExternalUser(context.Background(), "ldap", "uid=jane,dc=x", "jane", "jane@x", "Jane", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := adminPost(srv, "/admin/users/"+u.ID+"/promote", url.Values{}, sid)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 promoting a directory user, got %d", rr.Code)
+	}
+}
+
+func TestAdminPromoteRequiresManagement(t *testing.T) {
+	srv := testServer(t) // directory nil
+	sid := adminSession(t, srv)
+	victim := createUser(t, srv, "alice", "Sup3r$ecretPW!", false)
+	rr := adminPost(srv, "/admin/users/"+victim.ID+"/promote", url.Values{}, sid)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 when management is off, got %d", rr.Code)
+	}
+	// Untouched: still a local account.
+	if got, _ := srv.db.GetUserByID(context.Background(), victim.ID); !got.IsLocal() {
+		t.Fatal("local account must be untouched when promotion is unavailable")
 	}
 }
 

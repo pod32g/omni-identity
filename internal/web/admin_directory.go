@@ -82,6 +82,76 @@ func (s *Server) handleAdminCreateDirectoryUser(w http.ResponseWriter, r *http.R
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
+// handleAdminPromoteUser turns a local account into a directory-backed one in a
+// single admin action. It links to an existing directory entry for the username
+// when one is found, otherwise creates a new entry (optionally with an
+// admin-supplied password). Directory-first: the entry must exist before the
+// local row is re-pointed, so a failure leaves the local account untouched.
+func (s *Server) handleAdminPromoteUser(w http.ResponseWriter, r *http.Request) {
+	if !s.csrfOK(w, r) {
+		return
+	}
+	dir := s.directoryManager()
+	if dir == nil {
+		s.userActionError(w, r, http.StatusBadRequest, "Directory management is not enabled.")
+		return
+	}
+	user, err := s.db.GetUserByID(r.Context(), r.PathValue("id"))
+	if err != nil || user == nil {
+		s.userActionError(w, r, http.StatusNotFound, "User not found.")
+		return
+	}
+	if !user.IsLocal() {
+		s.userActionError(w, r, http.StatusBadRequest, "This account is already managed by the directory.")
+		return
+	}
+	password := r.PostFormValue("password")
+
+	ctx := r.Context()
+	dn, found, err := dir.LookupDN(ctx, user.Username)
+	if err != nil {
+		s.userActionError(w, r, http.StatusBadGateway, "Could not query the directory.")
+		return
+	}
+
+	linked := found
+	if !found {
+		// No existing entry — create one (validating the password as a floor when
+		// supplied) and set the initial password if given.
+		if password != "" {
+			if msg := auth.ValidatePassword(password, user.Username, user.Email, s.passwordPolicy()); msg != "" {
+				s.userActionError(w, r, http.StatusBadRequest, msg)
+				return
+			}
+		}
+		dn, err = dir.CreateUser(ctx, authn.DirectoryUser{Username: user.Username, Email: user.Email})
+		if err != nil {
+			s.userActionError(w, r, http.StatusBadGateway, "Could not create the directory entry.")
+			return
+		}
+		if password != "" {
+			if err := dir.SetPassword(ctx, dn, password); err != nil {
+				s.userActionError(w, r, http.StatusBadGateway, "Directory entry created, but setting the password failed. Set it from the user's page.")
+				return
+			}
+		}
+	}
+
+	// Re-point the local row at the directory entry; this clears the local hash.
+	if err := s.db.LinkUserToExternal(ctx, user.ID, dir.ID(), dn); err != nil {
+		s.userActionError(w, r, http.StatusConflict, "Could not link the account to the directory entry (it may already be linked to another user).")
+		return
+	}
+	// Force the next sign-in through the directory bind.
+	_, _ = s.db.DeleteSessionsForUser(ctx, user.ID, "")
+	detail := "linked"
+	if !linked {
+		detail = "created"
+	}
+	s.audit(r, evtUserPromoted, auditEntry{actorUserID: actorID(r), username: user.Username, success: true, detail: detail + " dn=" + dn})
+	s.userActionDone(w, r, user.ID)
+}
+
 // handleAdminUpdateDirectoryUser edits a directory user's mutable attributes
 // (email, display name) in the directory, then refreshes the local mirror.
 func (s *Server) handleAdminUpdateDirectoryUser(w http.ResponseWriter, r *http.Request) {

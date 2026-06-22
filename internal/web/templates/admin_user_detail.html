@@ -129,6 +129,23 @@
   </div>
   {{end}}
 
+  {{if and .User.IsLocal .DirectoryEnabled}}
+  <div class="panel">
+    <div class="panel-hd">{{template "ic-users" .}} Promote to directory</div>
+    <div class="panel-bd">
+      <form class="stack" method="post" action="/admin/users/{{.User.ID}}/promote" style="margin-top:0;max-width:420px" onsubmit="return confirm('Promote {{.User.Username}} to a directory account? Their local password is cleared and the directory owns the credential afterward.');">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="return" value="detail">
+        <p class="t-caption" style="margin:0 0 4px">Links this account to its directory entry if one already exists, otherwise creates a new one. The local password is cleared; 2FA and lockout state are kept.</p>
+        <label class="field">Directory password <span class="muted">(optional — used only when creating a new entry)</span>
+          <input name="password" type="password" minlength="8">
+        </label>
+        <button class="btn primary" type="submit" style="align-self:flex-start">Promote to directory</button>
+      </form>
+    </div>
+  </div>
+  {{end}}
+
   {{if and .Me (ne .Me.ID .User.ID)}}
   <div class="panel">
     <div class="panel-hd">{{template "ic-lock" .}} Danger zone</div>

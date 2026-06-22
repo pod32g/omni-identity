@@ -60,6 +60,10 @@ type DirectoryUser struct {
 type DirectoryManager interface {
 	// ID returns the stable connector identifier (matches the user's auth_source).
 	ID() string
+	// LookupDN finds an existing entry by username and returns its DN. found is
+	// false (with nil err) when there is no unique match — used to decide whether
+	// a promote should link to an existing entry or create a new one.
+	LookupDN(ctx context.Context, username string) (dn string, found bool, err error)
 	// CreateUser adds a new entry and returns its distinguished name (DN), which
 	// the caller stores as the mirror user's ExternalID.
 	CreateUser(ctx context.Context, u DirectoryUser) (dn string, err error)

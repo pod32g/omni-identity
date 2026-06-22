@@ -120,6 +120,20 @@ func (d *DB) UpdateUser(ctx context.Context, u *model.User) error {
 	return requireRow(res)
 }
 
+// LinkUserToExternal promotes a local account to a directory-backed one: it sets
+// auth_source/external_id and clears the local password hash (the directory owns
+// the credential from now on). The unique (auth_source, external_id) index
+// prevents linking two rows to the same directory entry.
+func (d *DB) LinkUserToExternal(ctx context.Context, id, source, externalID string) error {
+	res, err := d.sql.ExecContext(ctx,
+		`UPDATE users SET auth_source = ?, external_id = ?, password_hash = '', updated_at = ? WHERE id = ?`,
+		source, externalID, time.Now().UTC(), id)
+	if err != nil {
+		return err
+	}
+	return requireRow(res)
+}
+
 // SetUserPassword replaces a user's password hash.
 func (d *DB) SetUserPassword(ctx context.Context, id, passwordHash string) error {
 	res, err := d.sql.ExecContext(ctx,

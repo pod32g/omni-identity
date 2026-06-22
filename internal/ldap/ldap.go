@@ -250,6 +250,26 @@ func (c *Client) dialBound() (*goldap.Conn, error) {
 	return conn, nil
 }
 
+// LookupDN searches for an existing entry by username and returns its DN. A zero
+// or ambiguous match returns found=false (nil err), matching the auth path's
+// treatment of non-unique results.
+func (c *Client) LookupDN(_ context.Context, username string) (string, bool, error) {
+	if username == "" {
+		return "", false, nil
+	}
+	conn, err := c.dialBound()
+	if err != nil {
+		return "", false, err
+	}
+	defer conn.Close()
+
+	entry, found, err := c.findUser(conn, username)
+	if err != nil || !found {
+		return "", false, err
+	}
+	return entry.DN, true, nil
+}
+
 // CreateUser adds a new person entry and returns its DN. cn and sn are required
 // by inetOrgPerson; both are defaulted from the display name / username when not
 // supplied so a minimal create still satisfies the schema.

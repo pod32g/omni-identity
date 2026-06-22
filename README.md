@@ -215,11 +215,18 @@ remains a thin mirror.
   **PasswordModify**), and **delete** (LDAP **Delete**) from the user's page.
   Delete is **directory-first**: the entry is removed from the directory before
   the local mirror, so a failed write never orphans the directory entry.
+- **Promote a local account into the directory** from a local user's page
+  ("Promote to directory"). Omni **links** the account to its existing directory
+  entry if one is found for the username, otherwise **creates** a new entry (with
+  an optional admin-supplied password). The account flips to `auth_source=ldap`,
+  its local password is cleared (the directory owns the credential), and its 2FA
+  / lockout state is kept. Sessions are revoked so the next sign-in goes through
+  the directory.
 - Guards: you cannot delete your own account or the last remaining administrator.
   Admin-ness for directory users still comes from `admin_group_dn`, not the panel.
-- Targets **OpenLDAP / `inetOrgPerson`**. Active Directory write semantics,
-  directory-side enable/disable, and promoting a local account into the directory
-  are tracked as follow-ups; disable currently stays an Omni-layer control.
+- Targets **OpenLDAP / `inetOrgPerson`**. Active Directory write semantics and
+  directory-side enable/disable are tracked as follow-ups; disable currently
+  stays an Omni-layer control.
 
 Pluggable by design: LDAP is the first `PasswordConnector`, so additional
 external sources can be added behind the same login flow.
