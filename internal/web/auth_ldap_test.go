@@ -149,8 +149,28 @@ func TestAdminUsersPageShowsDirectorySource(t *testing.T) {
 		t.Fatalf("code = %d", rr.Code)
 	}
 	body := rr.Body.String()
-	if !strings.Contains(body, "managed by directory") || !strings.Contains(body, ">ldap<") {
-		t.Fatalf("users page missing directory source markers:\n%s", body)
+	// The list shows the directory source as a chip; per-account management
+	// (and the "managed by directory" note) now lives on the user detail page.
+	if !strings.Contains(body, ">ldap<") {
+		t.Fatalf("users page missing directory source chip:\n%s", body)
+	}
+}
+
+// TestAdminUserDetailShowsDirectoryManaged verifies the detail page surfaces
+// that an external user is directory-managed and offers no local password form.
+func TestAdminUserDetailShowsDirectoryManaged(t *testing.T) {
+	srv := testServer(t)
+	sid := adminSession(t, srv)
+	u, err := srv.db.UpsertExternalUser(context.Background(), "ldap", "uid=jane,dc=x", "jane", "jane@x", "Jane", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rr := adminGet(srv, "/admin/users/"+u.ID, sid)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code = %d", rr.Code)
+	}
+	if body := rr.Body.String(); !strings.Contains(body, "Managed by the external directory") {
+		t.Fatalf("detail page missing directory-managed note:\n%s", body)
 	}
 }
 

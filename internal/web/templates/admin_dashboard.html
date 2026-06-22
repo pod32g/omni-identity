@@ -1,0 +1,65 @@
+{{define "title"}}Overview · Omni Identity{{end}}
+{{define "content"}}
+{{template "shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>Overview</h1>
+    <p class="desc">A snapshot of accounts, applications, and recent activity.</p>
+  </div>
+</div>
+<div class="page-body">
+  {{range .Nudges}}
+  <div class="nudge"><span class="ico">{{template "ic-warn" .}}</span>
+    <span>{{.Text}}{{if .Link}}<a href="{{.Href}}">{{.Link}}</a>{{end}}</span>
+  </div>
+  {{end}}
+
+  <div class="stat-grid">
+    <a class="stat-card" href="/admin/users">
+      <span class="stat-label">{{template "ic-users" .}} Users</span>
+      <span class="stat-value">{{.UserCount}}</span>
+      <span class="stat-sub{{if .UserDisabled}} warn{{end}}">{{if .UserDisabled}}{{.UserDisabled}} disabled{{else}}all active{{end}}</span>
+    </a>
+    <a class="stat-card" href="/admin/clients">
+      <span class="stat-label">{{template "ic-app" .}} Applications</span>
+      <span class="stat-value">{{.ClientCount}}</span>
+      <span class="stat-sub{{if .ClientDisable}} warn{{end}}">{{if .ClientDisable}}{{.ClientDisable}} disabled{{else}}all active{{end}}</span>
+    </a>
+    <div class="stat-card">
+      <span class="stat-label">{{template "ic-lock" .}} MFA adoption</span>
+      <span class="stat-value">{{.MFAPercent}}%</span>
+      <span class="stat-sub">{{.MFAEnabled}} of {{.MFAEligible}} local accounts</span>
+    </div>
+    <a class="stat-card" href="/admin/audit">
+      <span class="stat-label">{{template "ic-shield" .}} Failed logins</span>
+      <span class="stat-value">{{.FailedLogins}}</span>
+      <span class="stat-sub{{if .FailedLogins}} bad{{end}}">last 24 hours</span>
+    </a>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">Recent activity <span class="spacer" style="flex:1"></span><a href="/admin/audit" class="muted" style="font-weight:510">View all →</a></div>
+    {{if .Recent}}
+    <div class="feed">
+      {{range .Recent}}
+      <div class="feed-item">
+        <span class="feed-dot{{if not .Success}} bad{{end}}"></span>
+        <span class="feed-main"><code>{{.Event}}</code>
+          {{if .Username}}<span class="feed-who">· {{.Username}}</span>{{end}}
+          {{if .IP}}<span class="feed-who">· {{.IP}}</span>{{end}}
+        </span>
+        <span class="feed-time">{{.Time}}</span>
+      </div>
+      {{end}}
+    </div>
+    {{else}}
+    <div class="empty">
+      <span class="empty-ico">{{template "ic-shield" .}}</span>
+      <div class="empty-title">No activity yet</div>
+      <div class="empty-hint">Security events will show up here as users sign in and admins make changes.</div>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{template "shell-end" .}}
+{{end}}

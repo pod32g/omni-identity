@@ -185,6 +185,85 @@
   .scope-list .scope-name { color: var(--fg-tertiary); font-family: var(--font-mono); font-size: 0.86em; }
   .btn-row { display: flex; gap: 10px; margin-top: 18px; }
   .btn-row .btn { flex: 1; }
+
+  /* ---- Dashboard stat cards ---- */
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; }
+  .stat-card { background: var(--bg-surface); border-radius: var(--r-lg); box-shadow: var(--hairline); padding: 16px 18px;
+    display: flex; flex-direction: column; gap: 6px; }
+  .stat-card .stat-label { display: flex; align-items: center; gap: 8px; color: var(--fg-tertiary); font-size: var(--t-footnote); }
+  .stat-card .stat-label .ico { color: var(--fg-tertiary); display: inline-flex; }
+  .stat-card .stat-value { font-family: var(--font-display); font-size: var(--t-title2); font-weight: 620;
+    letter-spacing: var(--ls-tight); font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .stat-card .stat-sub { color: var(--fg-tertiary); font-size: var(--t-caption1); }
+  .stat-card .stat-sub.warn { color: oklch(0.80 0.14 80); }
+  .stat-card .stat-sub.bad { color: oklch(0.80 0.14 25); }
+
+  /* ---- Two-column page layout (content + side rail) ---- */
+  .with-rail { display: grid; grid-template-columns: 1fr 300px; gap: 16px; align-items: start; }
+  @media (max-width: 900px) { .with-rail { grid-template-columns: 1fr; } }
+
+  /* ---- Activity feed ---- */
+  .feed { display: flex; flex-direction: column; }
+  .feed-item { display: flex; align-items: center; gap: 10px; padding: 9px 16px; border-bottom: 0.5px solid var(--separator); font-size: var(--t-footnote); }
+  .feed-item:last-child { border-bottom: 0; }
+  .feed-item .feed-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+  .feed-item .feed-dot.bad { background: var(--danger); }
+  .feed-item .feed-main { min-width: 0; flex: 1; }
+  .feed-item .feed-time { color: var(--fg-quaternary); font-size: var(--t-caption1); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .feed-item .feed-who { color: var(--fg-tertiary); }
+
+  /* ---- Overflow menu (CSS-only, no JS) ---- */
+  .menu { position: relative; display: inline-block; }
+  .menu > summary { list-style: none; cursor: pointer; height: var(--control-sm); width: var(--control-sm);
+    display: inline-grid; place-items: center; border-radius: var(--r-sm); color: var(--fg-secondary); box-shadow: var(--hairline); background: var(--fill-secondary); }
+  .menu > summary::-webkit-details-marker { display: none; }
+  .menu > summary:hover { background: var(--fill-primary); color: var(--fg-primary); }
+  .menu[open] > summary { background: var(--fill-primary); color: var(--fg-primary); }
+  .menu-pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; min-width: 168px;
+    background: var(--bg-elevated); border-radius: var(--r-md); box-shadow: var(--hairline-strong), var(--elev-2); padding: 4px; }
+  .menu-pop a, .menu-pop button { display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    height: 30px; padding: 0 10px; border: 0; background: transparent; box-shadow: none; color: var(--fg-secondary);
+    font: inherit; font-size: var(--t-footnote); border-radius: var(--r-sm); cursor: pointer; white-space: nowrap; }
+  .menu-pop a:hover, .menu-pop button:hover { background: var(--fill-tertiary); color: var(--fg-primary); text-decoration: none; }
+  .menu-pop button.danger:hover { background: color-mix(in oklch, var(--danger) 22%, transparent); color: oklch(0.88 0.10 25); }
+  .menu-pop .menu-sep { height: 0.5px; background: var(--separator); margin: 4px 2px; }
+  .menu-pop form { display: block; margin: 0; }
+
+  /* ---- Empty state ---- */
+  .empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px; padding: 44px 24px; }
+  .empty .empty-ico { width: 44px; height: 44px; border-radius: var(--r-xl); display: grid; place-items: center;
+    background: var(--fill-tertiary); color: var(--fg-tertiary); box-shadow: var(--hairline); margin-bottom: 4px; }
+  .empty .empty-title { font-size: var(--t-callout); font-weight: 590; color: var(--fg-primary); }
+  .empty .empty-hint { color: var(--fg-tertiary); font-size: var(--t-footnote); max-width: 360px; }
+  .empty .btn { margin-top: 6px; }
+
+  /* ---- Filter bar ---- */
+  .filter-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 0.5px solid var(--separator); }
+  .filter-bar .grow { flex: 1; min-width: 160px; }
+  .filter-bar input, .filter-bar select { height: var(--control-sm); font-size: var(--t-footnote); }
+  .filter-bar .filter-field { display: flex; align-items: center; gap: 6px; }
+  .filter-bar label { color: var(--fg-tertiary); font-size: var(--t-caption1); }
+
+  /* ---- In-page section nav ---- */
+  .section-nav { position: sticky; top: 16px; display: flex; flex-direction: column; gap: 1px; }
+  .section-nav a { padding: 6px 10px; border-radius: var(--r-sm); color: var(--fg-secondary); font-size: var(--t-footnote); }
+  .section-nav a:hover { background: var(--fill-tertiary); text-decoration: none; color: var(--fg-primary); }
+  .section-nav .nav-label { color: var(--fg-tertiary); font-size: var(--t-caption2); text-transform: uppercase; letter-spacing: .04em; padding: 8px 10px 4px; }
+  .panel[id], [id].anchor, .section-head[id] { scroll-margin-top: 16px; }
+  .settings-layout { display: grid; grid-template-columns: 184px minmax(0, 1fr); gap: 20px; align-items: start; }
+  .settings-content { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .section-head { font-size: var(--t-callout); font-weight: 590; letter-spacing: var(--ls-snug); padding: 6px 2px 0; }
+  @media (max-width: 900px) {
+    .settings-layout { grid-template-columns: 1fr; }
+    .section-nav { position: static; flex-direction: row; flex-wrap: wrap; }
+    .section-nav .nav-label { width: 100%; }
+  }
+
+  /* ---- Definition table (read-only key/value) ---- */
+  .nudge { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: var(--r-md);
+    background: color-mix(in oklch, var(--warning) 12%, transparent); color: oklch(0.88 0.10 80); box-shadow: var(--hairline); font-size: var(--t-footnote); }
+  .nudge .ico { flex-shrink: 0; margin-top: 1px; }
+  .nudge a { color: inherit; text-decoration: underline; }
 </style>
 {{with brand}}<style>
   :root {
@@ -212,6 +291,22 @@
 {{define "ic-grid"}}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>{{end}}
 {{define "ic-settings"}}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>{{end}}
 {{define "ic-plus"}}<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>{{end}}
+{{define "ic-home"}}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H4a1 1 0 0 1-1-1z"/></svg>{{end}}
+{{define "ic-key"}}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.5 12.5 8-8M16 5l3 3M18 7l2-2"/></svg>{{end}}
+{{define "ic-lock"}}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>{{end}}
+{{define "ic-search"}}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>{{end}}
+{{define "ic-more"}}<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/></svg>{{end}}
+{{define "ic-warn"}}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>{{end}}
+{{define "ic-app"}}<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>{{end}}
+
+{{/* Reusable empty state. Pass a dict-like struct with .Icon (template name),
+     .Title, .Hint, and optional .ActionLabel/.ActionHref. Most callers inline
+     the markup below directly when they need a POST action instead. */}}
+{{define "empty-state"}}<div class="empty">
+  <span class="empty-ico">{{template "ic-search" .}}</span>
+  <div class="empty-title">{{.Title}}</div>
+  <div class="empty-hint">{{.Hint}}</div>
+</div>{{end}}
 
 {{define "topbar"}}
 <header class="omni-toolbar">
@@ -229,6 +324,7 @@
 
 {{define "sidebar"}}
 <aside class="omni-sidebar">
+  <a class="omni-sidebar-item{{if eq .Active "home"}} active{{end}}" href="/admin"><span class="ico">{{template "ic-home" .}}</span><span>Overview</span></a>
   <div class="group-label">Directory</div>
   <a class="omni-sidebar-item{{if eq .Active "users"}} active{{end}}" href="/admin/users"><span class="ico">{{template "ic-users" .}}</span><span>Users</span></a>
   <div class="group-label">Access</div>

@@ -1,0 +1,104 @@
+{{define "title"}}{{.User.Username}} · Omni Identity{{end}}
+{{define "content"}}
+{{template "shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>{{.User.Username}}</h1>
+    <p class="desc">{{.User.Email}}
+      {{if .User.IsAdmin}}<span class="chip">admin</span>{{else}}<span class="chip">user</span>{{end}}
+      {{if .User.IsLocal}}<span class="t-tertiary">· local</span>{{else}}<span class="chip">{{.User.AuthSource}}</span>{{end}}
+      {{if .User.Disabled}}<span class="chip off"><span class="dot"></span>disabled</span>
+      {{else}}<span class="chip ok"><span class="dot"></span>active</span>{{end}}
+      {{if .User.Locked}}<span class="chip off"><span class="dot"></span>locked</span>{{end}}
+      {{if .User.MFAEnabled}}<span class="chip"><span class="dot"></span>2FA</span>{{end}}
+    </p>
+  </div>
+  <div class="actions"><a class="btn" href="/admin/users">Back</a></div>
+</div>
+<div class="page-body">
+  {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+  {{if .SetupLink}}
+  <div class="callout">
+    <strong>{{.SetupLinkLabel}}</strong>
+    <code>{{.SetupLink}}</code>
+  </div>
+  {{end}}
+
+  <div class="panel">
+    <div class="panel-hd">{{template "ic-users" .}} Access</div>
+    <div class="panel-bd">
+      <table class="omni" style="margin-bottom:14px">
+        <tbody>
+          <tr><td class="t-tertiary" style="width:160px">Role</td><td>{{if .User.IsAdmin}}Administrator{{else}}Standard user{{end}}</td></tr>
+          <tr><td class="t-tertiary">Source</td><td>{{if .User.IsLocal}}Local account{{else}}{{.User.AuthSource}} (external directory){{end}}</td></tr>
+          <tr><td class="t-tertiary">Status</td><td>{{if .User.Disabled}}Disabled — cannot sign in{{else}}Active{{end}}</td></tr>
+        </tbody>
+      </table>
+      {{if and .Me (ne .Me.ID .User.ID)}}
+      <form method="post" action="/admin/users/{{.User.ID}}/disable">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="return" value="detail">
+        <input type="hidden" name="disabled" value="{{if .User.Disabled}}false{{else}}true{{end}}">
+        <button class="btn {{if not .User.Disabled}}danger{{end}}" type="submit">{{if .User.Disabled}}Enable account{{else}}Disable account{{end}}</button>
+      </form>
+      {{else}}
+      <p class="t-caption">This is your own account — disable it from another admin to avoid locking yourself out.</p>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">{{template "ic-lock" .}} Security</div>
+    <div class="panel-bd">
+      <div class="row-actions">
+        {{if .User.Locked}}
+        <form method="post" action="/admin/users/{{.User.ID}}/unlock">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="return" value="detail">
+          <button class="btn" type="submit">Unlock account</button>
+        </form>
+        {{end}}
+        {{if .User.MFAEnabled}}
+        <form method="post" action="/admin/users/{{.User.ID}}/mfa/reset">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="return" value="detail">
+          <button class="btn" type="submit">Reset 2FA</button>
+        </form>
+        {{end}}
+        {{if .User.IsLocal}}
+        <form method="post" action="/admin/users/{{.User.ID}}/reset-link">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="return" value="detail">
+          <button class="btn" type="submit">Send password reset link</button>
+        </form>
+        {{end}}
+      </div>
+      {{if not (or .User.Locked .User.MFAEnabled .User.IsLocal)}}
+      <p class="t-caption" style="margin:0">No security actions available — this account is managed by an external directory.</p>
+      {{end}}
+    </div>
+  </div>
+
+  {{if .User.IsLocal}}
+  <div class="panel">
+    <div class="panel-hd">{{template "ic-key" .}} Password</div>
+    <div class="panel-bd">
+      <form class="stack" method="post" action="/admin/users/{{.User.ID}}/password" style="margin-top:0;max-width:420px">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="return" value="detail">
+        <label class="field">New password <span class="muted">(sets it directly; clears the user's other sessions)</span>
+          <input name="password" type="password" minlength="8" required>
+        </label>
+        <button class="btn primary" type="submit" style="align-self:flex-start">Set password</button>
+      </form>
+    </div>
+  </div>
+  {{else}}
+  <div class="panel">
+    <div class="panel-hd">{{template "ic-key" .}} Password</div>
+    <div class="panel-bd"><p class="t-caption" style="margin:0">Managed by the external directory — passwords can't be set here.</p></div>
+  </div>
+  {{end}}
+</div>
+{{template "shell-end" .}}
+{{end}}

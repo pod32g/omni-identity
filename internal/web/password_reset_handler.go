@@ -137,18 +137,23 @@ func (s *Server) handleAdminUserResetLink(w http.ResponseWriter, r *http.Request
 	id := r.PathValue("id")
 	user, err := s.db.GetUserByID(r.Context(), id)
 	if err != nil {
-		s.renderUsers(w, r, http.StatusNotFound, "User not found.")
+		s.userActionError(w, r, http.StatusNotFound, "User not found.")
 		return
 	}
 	if !user.IsLocal() {
-		s.renderUsers(w, r, http.StatusBadRequest, "This user is managed by an external directory; passwords can't be reset here.")
+		s.userActionError(w, r, http.StatusBadRequest, "This user is managed by an external directory; passwords can't be reset here.")
 		return
 	}
 	link, err := s.issuePasswordToken(r.Context(), user.ID, model.PasswordTokenReset, resetTokenTTL)
 	if err != nil {
-		s.renderUsers(w, r, http.StatusInternalServerError, "Could not create a reset link.")
+		s.userActionError(w, r, http.StatusInternalServerError, "Could not create a reset link.")
 		return
 	}
 	s.audit(r, evtResetLinkIssued, auditEntry{actorUserID: actorID(r), username: user.Username, success: true, detail: "id=" + id})
-	s.renderUsersWithLink(w, r, link, "Reset link for "+user.Username+" (valid 1 hour, single use):")
+	label := "Reset link for " + user.Username + " (valid 1 hour, single use):"
+	if fromDetail(r) {
+		s.renderUserDetailWithLink(w, r, user, link, label)
+		return
+	}
+	s.renderUsersWithLink(w, r, link, label)
 }

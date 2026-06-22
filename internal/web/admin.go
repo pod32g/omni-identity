@@ -54,8 +54,102 @@ func (s *Server) csrfOK(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// --- dashboard ---
+
+type adminDashboardPage struct {
+	CSRFToken string
+	Me        *model.User
+	Active    string
+
+	UserCount     int
+	UserDisabled  int
+	ClientCount   int
+	ClientDisable int
+	MFAPercent    int
+	MFAEnabled    int
+	MFAEligible   int
+	FailedLogins  int // failed logins in the last 24h (within the recent window)
+
+	Recent []auditView
+	Nudges []dashNudge
+}
+
+// dashNudge is a one-line setup hint shown on the dashboard when something
+// noteworthy needs the admin's attention.
+type dashNudge struct {
+	Text string
+	Href string
+	Link string // link label appended after Text, optional
+}
+
 func (s *Server) handleAdminHome(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+	ctx := r.Context()
+	users, _ := s.db.ListUsers(ctx)
+	clients, _ := s.db.ListClients(ctx)
+	events, _ := s.db.ListAuditEvents(ctx, 200)
+
+	page := adminDashboardPage{
+		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
+		Me:        currentUser(r),
+		Active:    "home",
+	}
+
+	page.UserCount = len(users)
+	for i := range users {
+		u := &users[i]
+		if u.Disabled {
+			page.UserDisabled++
+		}
+		if u.IsLocal() {
+			page.MFAEligible++
+			if u.MFAEnabled {
+				page.MFAEnabled++
+			}
+		}
+	}
+	if page.MFAEligible > 0 {
+		page.MFAPercent = page.MFAEnabled * 100 / page.MFAEligible
+	}
+
+	page.ClientCount = len(clients)
+	for i := range clients {
+		if clients[i].Disabled {
+			page.ClientDisable++
+		}
+	}
+
+	cutoff := time.Now().UTC().Add(-24 * time.Hour)
+	page.Recent = make([]auditView, 0, 8)
+	for _, e := range events {
+		if e.Event == evtLoginFailed && e.CreatedAt.After(cutoff) {
+			page.FailedLogins++
+		}
+		if len(page.Recent) < 8 {
+			page.Recent = append(page.Recent, auditView{
+				Time:     e.CreatedAt.Format("Jan 2, 15:04"),
+				Event:    e.Event,
+				Username: e.Username,
+				ClientID: e.ClientID,
+				IP:       e.IP,
+				Success:  e.Success,
+				Detail:   e.Detail,
+			})
+		}
+	}
+
+	// Setup nudges: only surfaced when relevant.
+	if page.ClientCount == 0 {
+		page.Nudges = append(page.Nudges, dashNudge{
+			Text: "No applications are registered yet. ", Href: "/admin/clients", Link: "Register your first app",
+		})
+	}
+	if !s.settings.Current().CookieSecure {
+		page.Nudges = append(page.Nudges, dashNudge{
+			Text: "Secure cookies are off — turn them on once you're serving over HTTPS. ", Href: "/admin/settings", Link: "Review settings",
+		})
+	}
+
+	s.tmpl.render(w, http.StatusOK, "admin_dashboard", page)
 }
 
 // --- users ---
@@ -171,12 +265,12 @@ func (s *Server) handleAdminToggleUser(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	// Guard against locking yourself out.
 	if me := currentUser(r); me != nil && me.ID == id {
-		s.renderUsers(w, r, http.StatusBadRequest, "You cannot disable your own account.")
+		s.userActionError(w, r, http.StatusBadRequest, "You cannot disable your own account.")
 		return
 	}
 	disabled := r.PostFormValue("disabled") == "true"
 	if err := s.db.SetUserDisabled(r.Context(), id, disabled); err != nil {
-		s.renderUsers(w, r, http.StatusBadRequest, "Could not update user.")
+		s.userActionError(w, r, http.StatusBadRequest, "Could not update user.")
 		return
 	}
 	if disabled {
@@ -184,7 +278,7 @@ func (s *Server) handleAdminToggleUser(w http.ResponseWriter, r *http.Request) {
 		_, _ = s.db.DeleteSessionsForUser(r.Context(), id, "")
 	}
 	s.audit(r, evtUserDisabled, auditEntry{actorUserID: actorID(r), success: true, detail: "id=" + id + " disabled=" + boolStr(disabled)})
-	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+	s.userActionDone(w, r, id)
 }
 
 func (s *Server) handleAdminUserPassword(w http.ResponseWriter, r *http.Request) {
@@ -194,7 +288,7 @@ func (s *Server) handleAdminUserPassword(w http.ResponseWriter, r *http.Request)
 	id := r.PathValue("id")
 	password := r.PostFormValue("password")
 	if msg := auth.ValidatePassword(password, "", "", s.passwordPolicy()); msg != "" {
-		s.renderUsers(w, r, http.StatusBadRequest, msg)
+		s.userActionError(w, r, http.StatusBadRequest, msg)
 		return
 	}
 	hash, err := auth.HashPassword(password)
@@ -203,13 +297,79 @@ func (s *Server) handleAdminUserPassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := s.db.SetUserPassword(r.Context(), id, hash); err != nil {
-		s.renderUsers(w, r, http.StatusBadRequest, "Could not change password.")
+		s.userActionError(w, r, http.StatusBadRequest, "Could not change password.")
 		return
 	}
 	// Force re-auth elsewhere by clearing the target's other sessions.
 	_, _ = s.db.DeleteSessionsForUser(r.Context(), id, "")
 	s.audit(r, evtPasswordChange, auditEntry{actorUserID: actorID(r), success: true, detail: "admin set password for id=" + id})
+	s.userActionDone(w, r, id)
+}
+
+// --- user detail ---
+
+type adminUserDetailPage struct {
+	CSRFToken      string
+	Me             *model.User
+	Active         string
+	User           *model.User
+	Error          string
+	SetupLink      string // one-time reset link, shown once
+	SetupLinkLabel string
+}
+
+func (s *Server) renderUserDetail(w http.ResponseWriter, r *http.Request, status int, u *model.User, errMsg string) {
+	s.tmpl.render(w, status, "admin_user_detail", adminUserDetailPage{
+		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
+		Me:        currentUser(r),
+		Active:    "users",
+		User:      u,
+		Error:     errMsg,
+	})
+}
+
+func (s *Server) renderUserDetailWithLink(w http.ResponseWriter, r *http.Request, u *model.User, link, label string) {
+	s.tmpl.render(w, http.StatusOK, "admin_user_detail", adminUserDetailPage{
+		CSRFToken:      auth.CSRFToken(w, r, s.cookieSecure()),
+		Me:             currentUser(r),
+		Active:         "users",
+		User:           u,
+		SetupLink:      link,
+		SetupLinkLabel: label,
+	})
+}
+
+func (s *Server) handleAdminUserDetail(w http.ResponseWriter, r *http.Request) {
+	u, err := s.db.GetUserByID(r.Context(), r.PathValue("id"))
+	if err != nil || u == nil {
+		s.renderError(w, http.StatusNotFound, "User not found.")
+		return
+	}
+	s.renderUserDetail(w, r, http.StatusOK, u, "")
+}
+
+// fromDetail reports whether a per-user action POST originated from the detail
+// page (vs. the list), so success/error rendering can return to the right page.
+func fromDetail(r *http.Request) bool { return r.PostFormValue("return") == "detail" }
+
+// userActionDone redirects back to the page a per-user action came from.
+func (s *Server) userActionDone(w http.ResponseWriter, r *http.Request, id string) {
+	if fromDetail(r) {
+		http.Redirect(w, r, "/admin/users/"+id, http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+}
+
+// userActionError re-renders the originating page (detail or list) with an error.
+func (s *Server) userActionError(w http.ResponseWriter, r *http.Request, status int, errMsg string) {
+	if fromDetail(r) {
+		if u, err := s.db.GetUserByID(r.Context(), r.PathValue("id")); err == nil && u != nil {
+			s.renderUserDetail(w, r, status, u, errMsg)
+			return
+		}
+	}
+	s.renderUsers(w, r, status, errMsg)
 }
 
 // --- settings ---

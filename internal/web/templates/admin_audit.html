@@ -4,11 +4,33 @@
 <div class="page-hd">
   <div class="titles">
     <h1>Audit log <span class="count">{{len .Events}}</span></h1>
-    <p class="desc">Recent security events (most recent first).</p>
+    <p class="desc">Recent security events (most recent first){{if .Filtered}} · filtered from {{.Total}}{{end}}.</p>
   </div>
 </div>
 <div class="page-body">
   <div class="panel">
+    <form class="filter-bar" method="get" action="/admin/audit">
+      <div class="filter-field">
+        <label for="f-result">Result</label>
+        <select id="f-result" name="result">
+          <option value="">All</option>
+          <option value="ok"{{if eq .FilterResult "ok"}} selected{{end}}>Success</option>
+          <option value="fail"{{if eq .FilterResult "fail"}} selected{{end}}>Failure</option>
+        </select>
+      </div>
+      <div class="filter-field">
+        <label for="f-event">Event</label>
+        <select id="f-event" name="event">
+          <option value="">All events</option>
+          {{range .EventTypes}}<option value="{{.}}"{{if eq $.FilterEvent .}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
+      </div>
+      <input class="grow" type="search" name="q" value="{{.FilterQuery}}" placeholder="Search user or IP…">
+      <button class="btn sm" type="submit">{{template "ic-search" .}} Filter</button>
+      {{if .Filtered}}<a class="btn sm ghost" href="/admin/audit">Clear</a>{{end}}
+    </form>
+
+    {{if .Events}}
     <table class="omni">
       <thead>
         <tr><th>Time</th><th>Event</th><th>User</th><th>Client</th><th>IP</th><th>Result</th><th>Detail</th></tr>
@@ -27,6 +49,14 @@
         {{end}}
       </tbody>
     </table>
+    {{else}}
+    <div class="empty">
+      <span class="empty-ico">{{template "ic-shield" .}}</span>
+      <div class="empty-title">{{if .Filtered}}No matching events{{else}}No audit events yet{{end}}</div>
+      <div class="empty-hint">{{if .Filtered}}Try widening or clearing the filter.{{else}}Security events appear here as users sign in and admins make changes.{{end}}</div>
+      {{if .Filtered}}<a class="btn" href="/admin/audit">Clear filter</a>{{end}}
+    </div>
+    {{end}}
   </div>
 </div>
 {{template "shell-end" .}}

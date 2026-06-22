@@ -11,6 +11,7 @@
   {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
 
   <div class="panel">
+    {{if .Clients}}
     <table class="omni">
       <thead>
         <tr><th>Name</th><th>Client ID</th><th>Type</th><th>Status</th><th>Actions</th></tr>
@@ -37,6 +38,13 @@
         {{end}}
       </tbody>
     </table>
+    {{else}}
+    <div class="empty">
+      <span class="empty-ico">{{template "ic-app" .}}</span>
+      <div class="empty-title">No applications yet</div>
+      <div class="empty-hint">Register your first app below to let it sign users in through Omni Identity over OIDC.</div>
+    </div>
+    {{end}}
   </div>
 
   <div class="panel">

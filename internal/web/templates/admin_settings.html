@@ -17,10 +17,25 @@
   {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
   {{if .Saved}}<div class="alert success">{{.Saved}}</div>{{end}}
 
-  <form id="security-settings-form" class="stack" method="post" action="/admin/settings/system" style="margin-top:0">
+  <div class="settings-layout">
+  <aside class="section-nav">
+    <div class="nav-label">Policy</div>
+    <a href="#s-identity">Identity</a>
+    <a href="#s-tokens">Tokens</a>
+    <a href="#s-sessions">Sessions</a>
+    <a href="#s-protection">Account protection</a>
+    <div class="nav-label">Appearance</div>
+    <a href="#s-branding">Branding</a>
+    <a href="#s-logo">Logo</a>
+    <div class="nav-label">Infrastructure</div>
+    <a href="#s-system">System</a>
+  </aside>
+  <div class="settings-content">
+
+  <form id="security-settings-form" class="stack" method="post" action="/admin/settings/system" style="margin-top:0;gap:16px">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 
-    <div class="panel">
+    <div class="panel" id="s-identity">
       <div class="panel-hd">Identity</div>
       <div class="panel-bd">
         <div class="alert error" style="margin-bottom:14px">Changing the issuer or public URL breaks previously issued access/ID tokens and requires client apps to re-read discovery. (Browser sessions and refresh tokens are unaffected.)</div>
@@ -43,7 +58,7 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="s-tokens">
       <div class="panel-hd">Tokens</div>
       <div class="panel-bd">
         <label class="field">Access token TTL <span class="muted">(e.g. 15m — 1m to 24h)</span>
@@ -55,7 +70,7 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="s-sessions">
       <div class="panel-hd">Sessions &amp; cookies</div>
       <div class="panel-bd">
         <label class="field">Session lifetime <span class="muted">(absolute, e.g. 12h)</span>
@@ -71,7 +86,7 @@
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="s-protection">
       <div class="panel-hd">Account protection</div>
       <div class="panel-bd">
         <label class="field">Max failed logins before lockout <span class="muted">(≥ 1)</span>
@@ -119,7 +134,7 @@
     <div><button class="btn primary" type="submit">Save settings</button></div>
   </form>
 
-  <div class="panel">
+  <div class="panel" id="s-branding">
     <div class="panel-hd">Branding</div>
     <div class="panel-bd">
       <form class="stack" method="post" action="/admin/settings">
@@ -141,7 +156,7 @@
     </div>
   </div>
 
-  <div class="panel">
+  <div class="panel" id="s-logo">
     <div class="panel-hd">Logo</div>
     <div class="panel-bd">
       <div class="inline" style="gap:16px; margin-bottom:14px">
@@ -162,8 +177,10 @@
     </div>
   </div>
 
+  <div class="section-head" id="s-system">System <span class="muted">(read-only — set via config/env, restart to change)</span></div>
+
   <div class="panel">
-    <div class="panel-hd">Config/env status <span class="muted">(read-only — restart to change)</span></div>
+    <div class="panel-hd">Config/env status</div>
     <div class="panel-bd">
       <table class="omni">
         <tbody>
@@ -184,7 +201,7 @@
   </div>
 
   <div class="panel">
-    <div class="panel-hd">Directory (LDAP) <span class="muted">(read-only — set via config/env, requires restart)</span></div>
+    <div class="panel-hd">Directory (LDAP)</div>
     <div class="panel-bd">
       <table class="omni">
         <tbody>
@@ -216,6 +233,9 @@
       </table>
     </div>
   </div>
+
+  </div><!-- /.settings-content -->
+  </div><!-- /.settings-layout -->
 </div>
 {{template "shell-end" .}}
 {{end}}

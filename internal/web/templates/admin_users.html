@@ -17,14 +17,15 @@
   {{end}}
 
   <div class="panel">
+    {{if .Users}}
     <table class="omni">
       <thead>
-        <tr><th>Username</th><th>Email</th><th>Role</th><th>Source</th><th>Status</th><th>Actions</th></tr>
+        <tr><th>Username</th><th>Email</th><th>Role</th><th>Source</th><th>Status</th><th style="width:44px"></th></tr>
       </thead>
       <tbody>
         {{range .Users}}
         <tr>
-          <td>{{.Username}}</td>
+          <td><a href="/admin/users/{{.ID}}">{{.Username}}</a></td>
           <td class="t-secondary">{{.Email}}</td>
           <td>{{if .IsAdmin}}<span class="chip">admin</span>{{else}}<span class="t-tertiary">user</span>{{end}}</td>
           <td>{{if .IsLocal}}<span class="t-tertiary">local</span>{{else}}<span class="chip">{{.AuthSource}}</span>{{end}}</td>
@@ -34,42 +35,31 @@
             {{if .Locked}}<span class="chip off"><span class="dot"></span>locked</span>{{end}}
             {{if .MFAEnabled}}<span class="chip"><span class="dot"></span>2FA</span>{{end}}
           </td>
-          <td class="row-actions">
-            <form method="post" action="/admin/users/{{.ID}}/disable">
-              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-              <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
-              <button class="btn sm" type="submit">{{if .Disabled}}Enable{{else}}Disable{{end}}</button>
-            </form>
-            {{if .Locked}}
-            <form method="post" action="/admin/users/{{.ID}}/unlock">
-              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-              <button class="btn sm" type="submit">Unlock</button>
-            </form>
-            {{end}}
-            {{if .MFAEnabled}}
-            <form method="post" action="/admin/users/{{.ID}}/mfa/reset">
-              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-              <button class="btn sm" type="submit">Reset 2FA</button>
-            </form>
-            {{end}}
-            {{if .IsLocal}}
-            <form method="post" action="/admin/users/{{.ID}}/reset-link">
-              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-              <button class="btn sm" type="submit">Reset link</button>
-            </form>
-            <form method="post" action="/admin/users/{{.ID}}/password" class="inline">
-              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-              <input name="password" type="password" placeholder="set password" minlength="8" required style="width:140px">
-              <button class="btn sm" type="submit">Set</button>
-            </form>
-            {{else}}
-            <span class="t-tertiary">managed by directory</span>
-            {{end}}
+          <td>
+            <details class="menu">
+              <summary aria-label="Actions">{{template "ic-more" .}}</summary>
+              <div class="menu-pop">
+                <a href="/admin/users/{{.ID}}">{{template "ic-settings" .}} Manage</a>
+                <div class="menu-sep"></div>
+                <form method="post" action="/admin/users/{{.ID}}/disable">
+                  <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                  <input type="hidden" name="disabled" value="{{if .Disabled}}false{{else}}true{{end}}">
+                  <button type="submit">{{if .Disabled}}Enable account{{else}}Disable account{{end}}</button>
+                </form>
+              </div>
+            </details>
           </td>
         </tr>
         {{end}}
       </tbody>
     </table>
+    {{else}}
+    <div class="empty">
+      <span class="empty-ico">{{template "ic-users" .}}</span>
+      <div class="empty-title">No users yet</div>
+      <div class="empty-hint">Create the first account below — or send an invite link and let them set their own password.</div>
+    </div>
+    {{end}}
   </div>
 
   <div class="panel">
