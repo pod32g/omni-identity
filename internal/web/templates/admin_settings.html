@@ -234,7 +234,6 @@
             <tr><td class="t-tertiary">Server URL</td><td><code>{{.LDAP.URL}}</code>{{if .LDAP.StartTLS}} <span class="chip">StartTLS</span>{{end}}</td></tr>
             <tr><td class="t-tertiary">Base DN</td><td><code>{{.LDAP.BaseDN}}</code></td></tr>
             <tr><td class="t-tertiary">Admin group</td><td>{{if .LDAP.AdminGroupDN}}<code>{{.LDAP.AdminGroupDN}}</code>{{else}}<span class="t-tertiary">none</span>{{end}}</td></tr>
-            <tr><td class="t-tertiary">Management</td><td>{{if .LDAP.Manageable}}<span class="chip ok"><span class="dot"></span>read &amp; write</span> <span class="muted">create, edit, delete &amp; set passwords from Users</span>{{else}}<span class="chip"><span class="dot"></span>read-only</span> <span class="muted">authentication only</span>{{end}}</td></tr>
             {{end}}
           </tbody>
         </table>
@@ -245,9 +244,20 @@
     <div class="panel">
       <div class="panel-hd">Directory management</div>
       <div class="panel-bd">
-        <label class="field inline"><input type="checkbox" name="ldap_manage_enabled" {{if .Settings.LDAPManageEnabled}}checked{{end}}> Manage directory users from Omni — create, edit, delete &amp; set passwords from the Users page</label>
-        <p class="t-caption" style="margin:6px 0 0">Omni writes directly to your LDAP directory using the configured bind account; the directory stays the source of truth. Turn off to make the integration authentication-only.</p>
-        <div class="save-bar"><button class="btn primary" type="submit">Save settings</button></div>
+        <form method="post" action="/admin/settings/directory">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <div class="switch-row">
+            <div class="switch-text">
+              <span class="switch-title">Manage directory users from Omni</span>
+              <p class="t-caption" style="margin:0">Create, edit, delete &amp; set passwords for LDAP users from the Users page. Omni writes directly to your directory using the configured bind account; the directory stays the source of truth. Off makes the integration authentication-only.</p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" name="ldap_manage_enabled" {{if .Settings.LDAPManageEnabled}}checked{{end}}>
+              <span class="track"></span>
+            </label>
+          </div>
+          <div class="save-bar"><button class="btn primary" type="submit">Save</button></div>
+        </form>
       </div>
     </div>
     {{else if .LDAP.Enabled}}

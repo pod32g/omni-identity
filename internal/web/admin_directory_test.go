@@ -309,27 +309,39 @@ func TestSettingsManagementToggle(t *testing.T) {
 		t.Fatal("management toggle shown without a write-capable bind")
 	}
 
-	// Write-capable: the toggle renders, and management starts off.
+	// Write-capable: the toggle renders inside its own form posting to the
+	// dedicated endpoint (the bug was a button with no enclosing form).
 	srv.directory = &fakeDir{}
-	if body := adminGet(srv, "/admin/settings", sid).Body.String(); !strings.Contains(body, `name="ldap_manage_enabled"`) {
+	body := adminGet(srv, "/admin/settings", sid).Body.String()
+	if !strings.Contains(body, `name="ldap_manage_enabled"`) {
 		t.Fatal("management toggle missing when write-capable")
+	}
+	if !strings.Contains(body, `action="/admin/settings/directory"`) {
+		t.Fatal("management toggle not wired to its dedicated form action")
 	}
 	if srv.directoryEnabled() {
 		t.Fatal("management should start disabled")
 	}
 
-	// Posting the toggle on enables management live.
-	form := validSettingsForm()
-	form.Set("ldap_manage_enabled", "on")
-	if rr := adminPost(srv, "/admin/settings/system", form, sid); rr.Code != http.StatusSeeOther {
+	// Posting the dedicated toggle on enables management live.
+	if rr := adminPost(srv, "/admin/settings/directory", url.Values{"ldap_manage_enabled": {"on"}}, sid); rr.Code != http.StatusSeeOther {
 		t.Fatalf("enable toggle: code = %d (body: %s)", rr.Code, rr.Body.String())
 	}
 	if !srv.directoryEnabled() {
 		t.Fatal("management not enabled after posting the toggle on")
 	}
 
-	// Posting again without the checkbox turns it back off.
+	// Saving unrelated system settings must NOT disturb the toggle (it's not in
+	// that form).
 	if rr := adminPost(srv, "/admin/settings/system", validSettingsForm(), sid); rr.Code != http.StatusSeeOther {
+		t.Fatalf("system save: code = %d (body: %s)", rr.Code, rr.Body.String())
+	}
+	if !srv.directoryEnabled() {
+		t.Fatal("system save wrongly disabled directory management")
+	}
+
+	// Posting the dedicated toggle without the checkbox turns it back off.
+	if rr := adminPost(srv, "/admin/settings/directory", url.Values{}, sid); rr.Code != http.StatusSeeOther {
 		t.Fatalf("disable toggle: code = %d", rr.Code)
 	}
 	if srv.directoryEnabled() {

@@ -49,9 +49,9 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 	next.RequireNumber = form.Get("require_number") == "on"
 	next.RequireSymbol = form.Get("require_symbol") == "on"
 	next.AllowLoopbackHTTPRedirect = form.Get("allow_loopback_http_redirects") == "on"
-	// Directory write management: only honored when a write-capable bind exists
-	// (the toggle is hidden otherwise, so this also defends against a forged post).
-	next.LDAPManageEnabled = form.Get("ldap_manage_enabled") == "on" && s.directoryWriteCapable()
+	// Directory write management is toggled via its own endpoint
+	// (/admin/settings/directory), so it is preserved here as-is (next starts from
+	// the current view) rather than read from this form.
 
 	// Durations.
 	var perr error
@@ -157,6 +157,33 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 	}
 	s.settings.Reload(r.Context())
 	s.audit(r, evtSettingsUpdated, auditEntry{actorUserID: actorID(r), success: true})
+	http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
+}
+
+// handleAdminUpdateDirectoryManagement flips just the live LDAP write-management
+// toggle. It is its own focused endpoint (and form) so it never has to satisfy
+// the full system-settings validation, and so the control can live in the
+// read-only System tab without being part of that big form.
+func (s *Server) handleAdminUpdateDirectoryManagement(w http.ResponseWriter, r *http.Request) {
+	if !s.csrfOK(w, r) {
+		return
+	}
+	// Only honored when a write-capable bind exists (the control is hidden
+	// otherwise; this also defends against a forged post).
+	enable := r.PostFormValue("ldap_manage_enabled") == "on" && s.directoryWriteCapable()
+
+	m, err := s.db.GetSettings(r.Context())
+	if err != nil {
+		s.renderSettings(w, r, http.StatusInternalServerError, "Could not load settings.", "")
+		return
+	}
+	m.LDAPManageEnabled = enable
+	if err := s.db.UpdateSettings(r.Context(), m); err != nil {
+		s.renderSettings(w, r, http.StatusInternalServerError, "Could not save settings.", "")
+		return
+	}
+	s.settings.Reload(r.Context())
+	s.audit(r, evtSettingsUpdated, auditEntry{actorUserID: actorID(r), success: true, detail: "ldap_manage_enabled=" + boolStr(enable)})
 	http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
 }
 

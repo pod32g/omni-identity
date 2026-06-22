@@ -204,6 +204,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /admin/settings", s.requireAdmin(s.handleAdminUpdateBranding))
 	s.mux.HandleFunc("POST /admin/settings/logo", s.requireAdmin(s.handleAdminUploadLogo))
 	s.mux.HandleFunc("POST /admin/settings/system", s.requireAdmin(s.handleAdminUpdateSettings))
+	s.mux.HandleFunc("POST /admin/settings/directory", s.requireAdmin(s.handleAdminUpdateDirectoryManagement))
 	s.mux.HandleFunc("POST /admin/settings/reset", s.requireAdmin(s.handleAdminResetSettings))
 	s.mux.HandleFunc("GET /admin/audit", s.requireAdmin(s.handleAdminAudit))
 
