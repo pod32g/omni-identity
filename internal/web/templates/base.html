@@ -249,10 +249,38 @@
   .section-nav a { padding: 6px 10px; border-radius: var(--r-sm); color: var(--fg-secondary); font-size: var(--t-footnote); }
   .section-nav a:hover { background: var(--fill-tertiary); text-decoration: none; color: var(--fg-primary); }
   .section-nav .nav-label { color: var(--fg-tertiary); font-size: var(--t-caption2); text-transform: uppercase; letter-spacing: .04em; padding: 8px 10px 4px; }
-  .panel[id], [id].anchor, .section-head[id] { scroll-margin-top: 16px; }
   .settings-layout { display: grid; grid-template-columns: 184px minmax(0, 1fr); gap: 20px; align-items: start; }
-  .settings-content { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-  .section-head { font-size: var(--t-callout); font-weight: 590; letter-spacing: var(--ls-snug); padding: 6px 2px 0; }
+  .settings-content { display: flex; flex-direction: column; min-width: 0; }
+  .section-head { font-size: var(--t-callout); font-weight: 590; letter-spacing: var(--ls-snug); padding: 2px 2px 0; }
+
+  /* Settings tabs: hidden radios drive which section shows; clicking a nav
+     label swaps the panel in place — no scroll, no JS. The radios sit just
+     inside .settings-layout (absolutely positioned so they take no grid cell)
+     as siblings of both the nav and the content, so ~ can reach both. */
+  .tab-radio { position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none; }
+  .tab-panel { display: none; }
+  #t-identity:checked   ~ .settings-content [data-tab="identity"],
+  #t-tokens:checked     ~ .settings-content [data-tab="tokens"],
+  #t-sessions:checked   ~ .settings-content [data-tab="sessions"],
+  #t-protection:checked ~ .settings-content [data-tab="protection"],
+  #t-branding:checked   ~ .settings-content [data-tab="branding"],
+  #t-logo:checked       ~ .settings-content [data-tab="logo"],
+  #t-system:checked     ~ .settings-content [data-tab="system"] {
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .save-bar { margin-top: 2px; }
+  .section-nav label { display: block; padding: 6px 10px; border-radius: var(--r-sm);
+    color: var(--fg-secondary); font-size: var(--t-footnote); cursor: pointer; }
+  .section-nav label:hover { background: var(--fill-tertiary); color: var(--fg-primary); }
+  #t-identity:checked   ~ .section-nav label[for="t-identity"],
+  #t-tokens:checked     ~ .section-nav label[for="t-tokens"],
+  #t-sessions:checked   ~ .section-nav label[for="t-sessions"],
+  #t-protection:checked ~ .section-nav label[for="t-protection"],
+  #t-branding:checked   ~ .section-nav label[for="t-branding"],
+  #t-logo:checked       ~ .section-nav label[for="t-logo"],
+  #t-system:checked     ~ .section-nav label[for="t-system"] {
+    background: var(--accent-muted); color: var(--fg-primary);
+  }
   @media (max-width: 900px) {
     .settings-layout { grid-template-columns: 1fr; }
     .section-nav { position: static; flex-direction: row; flex-wrap: wrap; }
