@@ -94,10 +94,43 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return // loadAuthRequest rendered the error page
 		}
+		// Let the successful-login redirect reach the app's origin.
+		s.allowClientFormAction(w, p.client)
 		app = appViewFor(p.client, p.redirectURI)
 	}
 
 	s.renderLogin(w, r, http.StatusOK, "", reqID, safeNext(r.URL.Query().Get("next")), app)
+}
+
+// clientRedirectOrigins returns the distinct scheme://host origins of a client's
+// registered redirect URIs, for widening the form-action CSP directive.
+func clientRedirectOrigins(c *model.Client) []string {
+	if c == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, uri := range c.RedirectURIs {
+		u, err := url.Parse(uri)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			continue
+		}
+		o := u.Scheme + "://" + u.Host
+		if !seen[o] {
+			seen[o] = true
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// allowClientFormAction widens this response's form-action CSP to include the
+// client's registered redirect origins, so a successful login/consent submission
+// can redirect back to the application instead of being blocked by 'self'.
+func (s *Server) allowClientFormAction(w http.ResponseWriter, c *model.Client) {
+	if origins := clientRedirectOrigins(c); len(origins) > 0 {
+		w.Header().Set("Content-Security-Policy", cspHeader(origins...))
+	}
 }
 
 // signedInLanding is where an already-authenticated user is sent when there is no
@@ -164,6 +197,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 			s.loadAuthRequest(w, r, reqID) // renders the proper expiry error
 			return
 		}
+		s.allowClientFormAction(w, p.client) // applies to any failure re-render below
 		app = appViewFor(p.client, p.redirectURI)
 		haveReq = true
 	}

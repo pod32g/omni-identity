@@ -148,6 +148,65 @@ func TestConsentRequiredFlow(t *testing.T) {
 	}
 }
 
+func TestCSPHeaderFormAction(t *testing.T) {
+	if base := cspHeader(); !strings.Contains(base, "form-action 'self';") {
+		t.Fatalf("base form-action wrong: %s", base)
+	}
+	ext := cspHeader("http://192.168.68.225:4000")
+	if !strings.Contains(ext, "form-action 'self' http://192.168.68.225:4000;") {
+		t.Fatalf("extended form-action wrong: %s", ext)
+	}
+}
+
+func TestClientRedirectOrigins(t *testing.T) {
+	c := &model.Client{RedirectURIs: []string{
+		"http://192.168.68.225:4000/callback",
+		"http://192.168.68.225:4000/other", // same origin → deduped
+		"https://app.example.com/cb",
+		"not a url",
+	}}
+	got := clientRedirectOrigins(c)
+	want := []string{"http://192.168.68.225:4000", "https://app.example.com"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Fatalf("origins = %v, want %v", got, want)
+	}
+}
+
+// The hosted login page for an OIDC client must widen form-action to the client's
+// redirect origin, or the post-login redirect back to the app is blocked.
+func TestLoginPageAllowsClientRedirectInFormAction(t *testing.T) {
+	srv := testServer(t)
+	createUser(t, srv, "admin", "pw", true) // avoid the /setup diversion
+	createClientFull(t, srv, &model.Client{
+		ClientID: "omnivideo", Name: "OmniVideo",
+		RedirectURIs:  []string{"http://192.168.68.225:4000/callback"},
+		AllowedScopes: []string{"openid"}, Type: model.ClientTypeConfidential,
+		ClientSecretHash: "x", SkipConsent: true,
+	})
+	now := time.Now().UTC()
+	parked := &model.AuthRequest{
+		ID: "req-csp", ClientID: "omnivideo", RedirectURI: "http://192.168.68.225:4000/callback",
+		ResponseType: "code", Scope: "openid", CreatedAt: now, ExpiresAt: now.Add(time.Minute),
+	}
+	if err := srv.db.CreateAuthRequest(context.Background(), parked); err != nil {
+		t.Fatal(err)
+	}
+
+	rr := do(srv, httptest.NewRequest(http.MethodGet, "/login?req=req-csp", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("code = %d (body: %s)", rr.Code, rr.Body.String())
+	}
+	if csp := rr.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "form-action 'self' http://192.168.68.225:4000;") {
+		t.Fatalf("form-action does not include the client origin:\n%s", csp)
+	}
+
+	// A plain login page (no client) stays strict.
+	rr = do(srv, httptest.NewRequest(http.MethodGet, "/login", nil))
+	if csp := rr.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "form-action 'self';") {
+		t.Fatalf("plain login should keep strict form-action:\n%s", csp)
+	}
+}
+
 func TestConsentCancelReturnsAccessDenied(t *testing.T) {
 	srv := testServer(t)
 	user := createUser(t, srv, "alice", "pw", false)

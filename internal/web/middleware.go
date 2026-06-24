@@ -208,6 +208,21 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 	})
 }
 
+// cspHeader builds the Content-Security-Policy. formActionExtra adds sources to
+// the form-action directive beyond 'self' — used on the hosted login/consent
+// pages so a successful submission can redirect to an OIDC client's registered
+// redirect origin (browsers enforce form-action across the submission's redirect
+// chain, which would otherwise block the cross-origin hop back to the app).
+func cspHeader(formActionExtra ...string) string {
+	fa := "form-action 'self'"
+	for _, src := range formActionExtra {
+		fa += " " + src
+	}
+	return "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+		"img-src 'self' https: data:; object-src 'none'; base-uri 'none'; " +
+		fa + "; frame-ancestors 'none'"
+}
+
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
@@ -217,8 +232,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
 		// img-src allows https so the hosted login can show a registered client's
 		// externally hosted logo; the uploaded Omni logo is served from 'self'.
-		h.Set("Content-Security-Policy",
-			"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+		h.Set("Content-Security-Policy", cspHeader())
 		if noStorePath(r.URL.Path) {
 			h.Set("Cache-Control", "no-store")
 		}

@@ -65,6 +65,9 @@ func (s *Server) handleConsentForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The Continue button redirects to the app's redirect_uri; allow that origin
+	// in form-action so the cross-origin hop isn't blocked.
+	s.allowClientFormAction(w, p.client)
 	s.tmpl.render(w, http.StatusOK, "consent", consentPage{
 		CSRFToken: auth.CSRFToken(w, r, s.cookieSecure()),
 		Req:       reqID,
