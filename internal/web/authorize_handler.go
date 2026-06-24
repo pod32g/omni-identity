@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -204,6 +205,35 @@ func (s *Server) issueCode(w http.ResponseWriter, r *http.Request, p authzParams
 // loadAuthRequest fetches a parked request and re-resolves its client into
 // authzParams. A missing/expired request or vanished client yields ok=false and
 // a rendered error page.
+// peekAuthRequest validates a parked auth request and returns its params, but
+// renders nothing on failure (unlike loadAuthRequest). Used where a missing or
+// already-consumed request should be handled gracefully — e.g. a logged-in user
+// re-hitting /login after the one-time request was spent — rather than shown as
+// an error.
+func (s *Server) peekAuthRequest(ctx context.Context, id string) (authzParams, *model.AuthRequest, bool) {
+	req, err := s.db.GetAuthRequest(ctx, id)
+	if err != nil {
+		return authzParams{}, nil, false
+	}
+	client, err := s.db.GetClient(ctx, req.ClientID)
+	if err != nil || client.Disabled {
+		return authzParams{}, nil, false
+	}
+	if !redirectURIAllowed(client, req.RedirectURI) {
+		return authzParams{}, nil, false
+	}
+	return authzParams{
+		client:       client,
+		responseType: req.ResponseType,
+		redirectURI:  req.RedirectURI,
+		scope:        req.Scope,
+		state:        req.State,
+		nonce:        req.Nonce,
+		challenge:    req.CodeChallenge,
+		method:       req.CodeChallengeMethod,
+	}, req, true
+}
+
 func (s *Server) loadAuthRequest(w http.ResponseWriter, r *http.Request, id string) (authzParams, *model.AuthRequest, bool) {
 	req, err := s.db.GetAuthRequest(r.Context(), id)
 	if err != nil {

@@ -71,21 +71,42 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reqID := r.URL.Query().Get("req")
+
+	// Already signed in: never show an "expired link" error. Continue the OAuth
+	// request when it's still valid (the common "skip the login page" case);
+	// otherwise the one-time request was already spent (double-submit, Back, or a
+	// client re-init), so send them to their landing page instead of a 400.
+	if sess, err := s.sessions.Current(r); err == nil {
+		if reqID != "" {
+			if p, _, ok := s.peekAuthRequest(r.Context(), reqID); ok {
+				s.continueAfterAuth(w, r, p, reqID, sess.UserID, sess.CreatedAt)
+				return
+			}
+		}
+		http.Redirect(w, r, s.signedInLanding(r.Context(), sess.UserID), http.StatusSeeOther)
+		return
+	}
+
+	// Not signed in: a parked request must be valid to render the SSO context.
 	var app *appView
 	if reqID != "" {
 		p, _, ok := s.loadAuthRequest(w, r, reqID)
 		if !ok {
 			return // loadAuthRequest rendered the error page
 		}
-		// Already signed in? Skip the login page and continue automatically.
-		if sess, err := s.sessions.Current(r); err == nil {
-			s.continueAfterAuth(w, r, p, reqID, sess.UserID, sess.CreatedAt)
-			return
-		}
 		app = appViewFor(p.client, p.redirectURI)
 	}
 
 	s.renderLogin(w, r, http.StatusOK, "", reqID, safeNext(r.URL.Query().Get("next")), app)
+}
+
+// signedInLanding is where an already-authenticated user is sent when there is no
+// live OAuth request to continue.
+func (s *Server) signedInLanding(ctx context.Context, userID string) string {
+	if u, err := s.db.GetUserByID(ctx, userID); err == nil && u != nil {
+		return redirectAfterLogin(u)
+	}
+	return "/account"
 }
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, status int, errMsg, reqID, next string, app *appView) {
@@ -130,8 +151,17 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	var haveReq bool
 	if reqID != "" {
 		var ok bool
-		p, _, ok = s.loadAuthRequest(w, r, reqID)
+		p, _, ok = s.peekAuthRequest(r.Context(), reqID)
 		if !ok {
+			// The one-time request is gone (double-submit, Back, or expiry). If the
+			// user is already signed in — e.g. a first submit just succeeded and
+			// consumed it — finish gracefully instead of a confusing "expired"
+			// error; otherwise render the genuine expiry.
+			if sess, serr := s.sessions.Current(r); serr == nil {
+				http.Redirect(w, r, s.signedInLanding(r.Context(), sess.UserID), http.StatusSeeOther)
+				return
+			}
+			s.loadAuthRequest(w, r, reqID) // renders the proper expiry error
 			return
 		}
 		app = appViewFor(p.client, p.redirectURI)

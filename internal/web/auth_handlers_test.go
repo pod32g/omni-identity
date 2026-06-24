@@ -89,6 +89,41 @@ func TestGetLoginRendersFormWhenAdminExists(t *testing.T) {
 	}
 }
 
+// A signed-in user hitting /login with a stale/missing one-time request must not
+// see the "expired link" 400 — they're sent to their landing instead. Fix for
+// "login failed, but a reload shows I'm logged in".
+func TestLoginFormSignedInSkipsAndLands(t *testing.T) {
+	srv := testServer(t)
+	createUser(t, srv, "admin", "pw", true) // so /login doesn't divert to /setup
+	u := createUser(t, srv, "carol", "Sup3r$ecretPW!", false)
+	sid := startSession(t, srv, u.ID)
+
+	// No req: a signed-in user is sent to their landing, not shown the form.
+	rr := adminGet(srv, "/login", sid)
+	if rr.Code != http.StatusSeeOther || rr.Header().Get("Location") != "/account" {
+		t.Fatalf("want 303 -> /account, got %d -> %q", rr.Code, rr.Header().Get("Location"))
+	}
+
+	// Stale/consumed req: must not 400 a logged-in user; redirect away from /login.
+	rr = adminGet(srv, "/login?req=already-consumed", sid)
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("want 303 for signed-in stale req, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+	if loc := rr.Header().Get("Location"); loc == "" || strings.HasPrefix(loc, "/login") {
+		t.Fatalf("should redirect away from login, got %q", loc)
+	}
+}
+
+// An anonymous user with a stale request still gets the genuine expiry error.
+func TestLoginFormAnonStaleReqStillErrors(t *testing.T) {
+	srv := testServer(t)
+	createUser(t, srv, "admin", "pw", true) // so /login doesn't divert to /setup
+	rr := adminGet(srv, "/login?req=does-not-exist", "")
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("want 400 for anonymous stale req, got %d", rr.Code)
+	}
+}
+
 func TestPostLoginSuccessSetsSession(t *testing.T) {
 	srv := testServer(t)
 	createUser(t, srv, "admin", "pw", true)
