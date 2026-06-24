@@ -17,6 +17,7 @@
 </div>
 <div class="page-body">
   {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+  {{if .Warning}}<div class="alert warn">{{.Warning}}</div>{{end}}
   {{if .SetupLink}}
   <div class="callout">
     <strong>{{.SetupLinkLabel}}</strong>
@@ -120,6 +121,7 @@
         </label>
         <button class="btn primary" type="submit" style="align-self:flex-start">Set directory password</button>
       </form>
+      <p class="t-caption" style="margin:10px 0 0">Can't sign in? A directory entry created without a password can't authenticate — set one here.</p>
     </div>
   </div>
   {{else}}

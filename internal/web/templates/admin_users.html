@@ -9,6 +9,7 @@
 </div>
 <div class="page-body">
   {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+  {{if .Warning}}<div class="alert warn">{{.Warning}}</div>{{end}}
   {{if .SetupLink}}
   <div class="callout">
     <strong>{{.SetupLinkLabel}}</strong>

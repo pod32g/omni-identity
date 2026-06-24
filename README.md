@@ -210,7 +210,10 @@ remains a thin mirror.
   user*): Omni issues an LDAP **Add** under `people_base_dn` (defaults to
   `base_dn`), named by `rdn_attr` (defaults to `attr_username`) with
   `user_object_classes` (defaults to the standard `inetOrgPerson` chain), then
-  mirrors it locally so it appears immediately — no first login required.
+  mirrors it locally so it appears immediately — no first login required. The
+  password is optional at create time, but an entry without one **cannot sign in**
+  (the directory bind has nothing to verify), so Omni flags it; set a password
+  from the user's page before the account is usable.
 - **Edit** email / display name (LDAP **Modify**), **set a password** (RFC 3062
   **PasswordModify**), and **delete** (LDAP **Delete**) from the user's page.
   Delete is **directory-first**: the entry is removed from the directory before

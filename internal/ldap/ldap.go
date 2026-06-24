@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"strings"
@@ -166,6 +167,11 @@ func (c *Client) Login(ctx context.Context, username, password string) (authn.Id
 	userConn.SetTimeout(c.cfg.Timeout)
 	if err := userConn.Bind(entry.DN, password); err != nil {
 		if goldap.IsErrorWithCode(err, goldap.LDAPResultInvalidCredentials) {
+			// Operator-visible (debug) reason for the otherwise-generic "invalid"
+			// the browser sees. A directory entry created without a password binds
+			// with InvalidCredentials, so call that case out explicitly.
+			slog.Debug("ldap: user bind rejected — wrong password, or the entry has no password set",
+				"dn", entry.DN, "username", username)
 			return authn.Identity{}, false, nil
 		}
 		return authn.Identity{}, false, fmt.Errorf("ldap: user bind: %w", err)
@@ -197,11 +203,19 @@ func (c *Client) findUser(conn *goldap.Conn, username string) (*goldap.Entry, bo
 		// A size-limit-exceeded result means the filter is too broad — treat the
 		// ambiguity as "no unique user" rather than a hard error.
 		if goldap.IsErrorWithCode(err, goldap.LDAPResultSizeLimitExceeded) {
+			slog.Debug("ldap: user search hit the size limit (filter too broad)", "username", username)
 			return nil, false, nil
 		}
 		return nil, false, fmt.Errorf("ldap: search: %w", err)
 	}
-	if len(res.Entries) != 1 {
+	// Zero or multiple matches both fail closed; log which so operators can tell a
+	// missing entry / wrong filter from an ambiguous one.
+	if n := len(res.Entries); n != 1 {
+		if n == 0 {
+			slog.Debug("ldap: no entry matched the user filter", "username", username, "base_dn", c.cfg.BaseDN)
+		} else {
+			slog.Debug("ldap: multiple entries matched the user filter (ambiguous)", "username", username, "matches", n)
+		}
 		return nil, false, nil
 	}
 	return res.Entries[0], true, nil

@@ -79,6 +79,12 @@ func (s *Server) handleAdminCreateDirectoryUser(w http.ResponseWriter, r *http.R
 		return
 	}
 	s.audit(r, evtDirUserCreated, auditEntry{actorUserID: actorID(r), username: username, success: true, detail: "dn=" + dn})
+	if password == "" {
+		// An entry with no password can't bind — flag it so it isn't a silent
+		// login-less account.
+		s.renderUsersWithWarning(w, r, username+" was created in the directory without a password — they can't sign in until you set one from their page.")
+		return
+	}
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
@@ -149,6 +155,14 @@ func (s *Server) handleAdminPromoteUser(w http.ResponseWriter, r *http.Request) 
 		detail = "created"
 	}
 	s.audit(r, evtUserPromoted, auditEntry{actorUserID: actorID(r), username: user.Username, success: true, detail: detail + " dn=" + dn})
+	// A freshly-created entry with no password can't bind — flag it (a linked
+	// entry already has its own credential, so only warn on the create path).
+	if !linked && password == "" {
+		if u, err := s.db.GetUserByID(ctx, user.ID); err == nil && u != nil {
+			s.renderUserDetailWithWarning(w, r, u, "Promoted "+user.Username+" and created a new directory entry with no password — set one below before they can sign in.")
+			return
+		}
+	}
 	s.userActionDone(w, r, user.ID)
 }
 

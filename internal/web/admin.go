@@ -160,9 +160,23 @@ type adminUsersPage struct {
 	Active           string
 	Users            []model.User
 	Error            string
+	Warning          string // non-fatal advisory (e.g. directory user created without a password)
 	SetupLink        string // one-time activation/reset link, shown once
 	SetupLinkLabel   string
 	DirectoryEnabled bool // a managed directory is configured (offer directory create)
+}
+
+// renderUsersWithWarning renders the users page with a non-fatal advisory banner.
+func (s *Server) renderUsersWithWarning(w http.ResponseWriter, r *http.Request, warning string) {
+	users, _ := s.db.ListUsers(r.Context())
+	s.tmpl.render(w, http.StatusOK, "admin_users", adminUsersPage{
+		CSRFToken:        auth.CSRFToken(w, r, s.cookieSecure()),
+		Me:               currentUser(r),
+		Active:           "users",
+		Users:            users,
+		Warning:          warning,
+		DirectoryEnabled: s.directoryEnabled(),
+	})
 }
 
 func (s *Server) renderUsers(w http.ResponseWriter, r *http.Request, status int, errMsg string) {
@@ -349,9 +363,22 @@ type adminUserDetailPage struct {
 	Active           string
 	User             *model.User
 	Error            string
+	Warning          string // non-fatal advisory (e.g. promoted with no directory password)
 	SetupLink        string // one-time reset link, shown once
 	SetupLinkLabel   string
 	DirectoryEnabled bool // a managed directory is configured (offer directory edit/delete)
+}
+
+// renderUserDetailWithWarning renders the user page with a non-fatal advisory.
+func (s *Server) renderUserDetailWithWarning(w http.ResponseWriter, r *http.Request, u *model.User, warning string) {
+	s.tmpl.render(w, http.StatusOK, "admin_user_detail", adminUserDetailPage{
+		CSRFToken:        auth.CSRFToken(w, r, s.cookieSecure()),
+		Me:               currentUser(r),
+		Active:           "users",
+		User:             u,
+		Warning:          warning,
+		DirectoryEnabled: s.directoryEnabled(),
+	})
 }
 
 func (s *Server) renderUserDetail(w http.ResponseWriter, r *http.Request, status int, u *model.User, errMsg string) {

@@ -114,6 +114,48 @@ func TestAdminCreateDirectoryUser(t *testing.T) {
 	}
 }
 
+func TestAdminCreateDirectoryUserNoPasswordWarns(t *testing.T) {
+	srv := testServer(t)
+	dir := &fakeDir{}
+	enableDirectory(t, srv, dir)
+	sid := adminSession(t, srv)
+
+	rr := adminPost(srv, "/admin/users", url.Values{
+		"source": {"ldap"}, "username": {"nopwd"}, "email": {"nopwd@x.test"},
+	}, sid)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200 with inline warning, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+	if dir.pwDN != "" {
+		t.Fatalf("no password should have been set, got dn=%q", dir.pwDN)
+	}
+	if !strings.Contains(rr.Body.String(), "without a password") {
+		t.Fatalf("missing the no-password warning:\n%s", rr.Body.String())
+	}
+	// The entry is still created and mirrored — just flagged.
+	if _, err := srv.db.GetUserByUsername(context.Background(), "nopwd"); err != nil {
+		t.Fatalf("mirror not created: %v", err)
+	}
+}
+
+func TestAdminPromoteNoPasswordWarns(t *testing.T) {
+	srv := testServer(t)
+	enableDirectory(t, srv, &fakeDir{lookupFound: false}) // create path
+	sid := adminSession(t, srv)
+	victim := createUser(t, srv, "carol", "Sup3r$ecretPW!", false)
+
+	rr := adminPost(srv, "/admin/users/"+victim.ID+"/promote", url.Values{"return": {"detail"}}, sid)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200 with inline warning, got %d (body: %s)", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "no password") {
+		t.Fatalf("missing the no-password warning:\n%s", rr.Body.String())
+	}
+	if got, _ := srv.db.GetUserByID(context.Background(), victim.ID); got.IsLocal() {
+		t.Fatal("user should still have been promoted to the directory")
+	}
+}
+
 func TestAdminCreateDirectoryUserDirectoryErrorLeavesNoMirror(t *testing.T) {
 	srv := testServer(t)
 	enableDirectory(t, srv, &fakeDir{createErr: errors.New("entryAlreadyExists")})
