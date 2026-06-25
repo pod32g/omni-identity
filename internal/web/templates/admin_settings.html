@@ -62,6 +62,10 @@
             <input type="checkbox" name="allow_loopback_http_redirects" {{if .Settings.AllowLoopbackHTTPRedirect}}checked{{end}}>
             Allow loopback HTTP redirect URIs <span class="muted">(localhost, 127.0.0.1, and ::1 only)</span>
           </label>
+          <label class="field inline">
+            <input type="checkbox" name="allow_private_scheme_redirects" {{if .Settings.AllowPrivateSchemeRedirect}}checked{{end}}>
+            Allow private-use URI scheme redirects <span class="muted">(native apps, public clients only, e.g. com.example.app://callback)</span>
+          </label>
         </div>
       </div>
       <div class="save-bar"><button class="btn primary" type="submit">Save settings</button></div>

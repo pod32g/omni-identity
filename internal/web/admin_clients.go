@@ -133,7 +133,7 @@ type clientForm struct {
 	skipConsent    bool
 }
 
-func parseClientForm(r *http.Request, allowLoopbackHTTP bool) (clientForm, string) {
+func parseClientForm(r *http.Request, allowLoopbackHTTP, allowPrivateSchemeSetting bool) (clientForm, string) {
 	f := clientForm{
 		clientID:       strings.TrimSpace(r.PostFormValue("client_id")),
 		name:           strings.TrimSpace(r.PostFormValue("name")),
@@ -162,8 +162,9 @@ func parseClientForm(r *http.Request, allowLoopbackHTTP bool) (clientForm, strin
 		return f, "Unknown scope requested."
 	}
 	// Native (public) clients may use a private-use URI scheme redirect so the
-	// app can receive the callback without a hosted https domain.
-	allowPrivateScheme := f.clientType == model.ClientTypePublic
+	// app can receive the callback without a hosted https domain — when the
+	// admin setting allows it.
+	allowPrivateScheme := allowPrivateSchemeSetting && f.clientType == model.ClientTypePublic
 	if !httpsOrLocalURLs(f.redirectURIs, allowLoopbackHTTP, allowPrivateScheme) {
 		return f, redirectURIMessage("Redirect", allowLoopbackHTTP, allowPrivateScheme)
 	}
@@ -188,7 +189,7 @@ func (s *Server) handleAdminCreateClient(w http.ResponseWriter, r *http.Request)
 	if !s.csrfOK(w, r) {
 		return
 	}
-	form, errMsg := parseClientForm(r, s.settings.Current().AllowLoopbackHTTPRedirect)
+	form, errMsg := parseClientForm(r, s.settings.Current().AllowLoopbackHTTPRedirect, s.settings.Current().AllowPrivateSchemeRedirect)
 	if errMsg != "" {
 		s.renderClients(w, r, http.StatusBadRequest, errMsg)
 		return
@@ -243,7 +244,7 @@ func (s *Server) handleAdminUpdateClient(w http.ResponseWriter, r *http.Request)
 		s.renderError(w, http.StatusNotFound, "Client not found.")
 		return
 	}
-	form, errMsg := parseClientForm(r, s.settings.Current().AllowLoopbackHTTPRedirect)
+	form, errMsg := parseClientForm(r, s.settings.Current().AllowLoopbackHTTPRedirect, s.settings.Current().AllowPrivateSchemeRedirect)
 	if errMsg != "" {
 		s.renderClientDetail(w, r, http.StatusBadRequest, existing, "", errMsg)
 		return

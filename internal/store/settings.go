@@ -10,6 +10,7 @@ import (
 const settingsColumns = `issuer, public_url, token_ttl, refresh_token_ttl, max_failed_logins, ` +
 	`lockout_duration, rate_limit_window, login_ip_max_attempts, password_verify_concurrency, ` +
 	`max_login_username_bytes, max_login_password_bytes, allow_loopback_http_redirects, ` +
+	`allow_private_scheme_redirects, ` +
 	`password_min_length, require_upper, require_lower, require_number, require_symbol, ` +
 	`session_idle_timeout, session_lifetime, cookie_secure, max_logo_bytes, ldap_manage_enabled, ` +
 	`log_level, log_http_requests, seeded, updated_at`
@@ -23,6 +24,7 @@ func (d *DB) GetSettings(ctx context.Context) (*model.Settings, error) {
 		&s.MaxFailedLogins, &s.LockoutDuration, &s.RateLimitWindow,
 		&s.LoginIPMaxAttempts, &s.PasswordVerifyConcurrency,
 		&s.MaxLoginUsernameBytes, &s.MaxLoginPasswordBytes, &s.AllowLoopbackHTTPRedirect,
+		&s.AllowPrivateSchemeRedirect,
 		&s.PasswordMinLength, &s.RequireUpper, &s.RequireLower, &s.RequireNumber,
 		&s.RequireSymbol, &s.SessionIdleTimeout, &s.SessionLifetime, &s.CookieSecure,
 		&s.MaxLogoBytes, &s.LDAPManageEnabled, &s.LogLevel, &s.LogHTTPRequests,
@@ -40,7 +42,8 @@ func (d *DB) UpdateSettings(ctx context.Context, s *model.Settings) error {
 			refresh_token_ttl = ?, max_failed_logins = ?, lockout_duration = ?,
 			rate_limit_window = ?, login_ip_max_attempts = ?, password_verify_concurrency = ?,
 			max_login_username_bytes = ?, max_login_password_bytes = ?,
-			allow_loopback_http_redirects = ?, password_min_length = ?,
+			allow_loopback_http_redirects = ?, allow_private_scheme_redirects = ?,
+			password_min_length = ?,
 			require_upper = ?, require_lower = ?, require_number = ?, require_symbol = ?,
 			session_idle_timeout = ?, session_lifetime = ?, cookie_secure = ?,
 			max_logo_bytes = ?, ldap_manage_enabled = ?, log_level = ?,
@@ -49,7 +52,8 @@ func (d *DB) UpdateSettings(ctx context.Context, s *model.Settings) error {
 		s.Issuer, s.PublicURL, s.TokenTTL, s.RefreshTokenTTL, s.MaxFailedLogins,
 		s.LockoutDuration, s.RateLimitWindow, s.LoginIPMaxAttempts,
 		s.PasswordVerifyConcurrency, s.MaxLoginUsernameBytes, s.MaxLoginPasswordBytes,
-		s.AllowLoopbackHTTPRedirect, s.PasswordMinLength, s.RequireUpper, s.RequireLower,
+		s.AllowLoopbackHTTPRedirect, s.AllowPrivateSchemeRedirect,
+		s.PasswordMinLength, s.RequireUpper, s.RequireLower,
 		s.RequireNumber, s.RequireSymbol, s.SessionIdleTimeout, s.SessionLifetime,
 		s.CookieSecure, s.MaxLogoBytes, s.LDAPManageEnabled, s.LogLevel,
 		s.LogHTTPRequests, time.Now().UTC())

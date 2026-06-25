@@ -153,27 +153,28 @@ func (c *Client) Label() string {
 // Durations are stored as strings (Go duration syntax) and parsed by the web
 // layer, matching how the YAML config handles them.
 type Settings struct {
-	Issuer                    string
-	PublicURL                 string
-	TokenTTL                  string
-	RefreshTokenTTL           string
-	MaxFailedLogins           int
-	LockoutDuration           string
-	RateLimitWindow           string
-	LoginIPMaxAttempts        int
-	PasswordVerifyConcurrency int
-	MaxLoginUsernameBytes     int
-	MaxLoginPasswordBytes     int
-	AllowLoopbackHTTPRedirect bool
-	PasswordMinLength         int
-	RequireUpper              bool
-	RequireLower              bool
-	RequireNumber             bool
-	RequireSymbol             bool
-	SessionIdleTimeout        string
-	SessionLifetime           string
-	CookieSecure              bool
-	MaxLogoBytes              int
+	Issuer                     string
+	PublicURL                  string
+	TokenTTL                   string
+	RefreshTokenTTL            string
+	MaxFailedLogins            int
+	LockoutDuration            string
+	RateLimitWindow            string
+	LoginIPMaxAttempts         int
+	PasswordVerifyConcurrency  int
+	MaxLoginUsernameBytes      int
+	MaxLoginPasswordBytes      int
+	AllowLoopbackHTTPRedirect  bool
+	AllowPrivateSchemeRedirect bool
+	PasswordMinLength          int
+	RequireUpper               bool
+	RequireLower               bool
+	RequireNumber              bool
+	RequireSymbol              bool
+	SessionIdleTimeout         string
+	SessionLifetime            string
+	CookieSecure               bool
+	MaxLogoBytes               int
 	// LDAPManageEnabled toggles directory write management (create/edit/delete/
 	// set-password for LDAP users) live from the admin panel. Seeded from
 	// config (ldap.manage_enabled); only effective when a write-capable bind is
