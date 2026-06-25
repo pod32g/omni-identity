@@ -14,30 +14,31 @@ import (
 // the single source of truth read by the token issuer, session manager, and
 // request handlers at use-time.
 type SettingsView struct {
-	Issuer                    string
-	PublicURL                 string
-	TokenTTL                  time.Duration
-	RefreshTokenTTL           time.Duration
-	MaxFailedLogins           int
-	LockoutDuration           time.Duration
-	RateLimitWindow           time.Duration
-	LoginIPMaxAttempts        int
-	PasswordVerifyConcurrency int
-	MaxLoginUsernameBytes     int
-	MaxLoginPasswordBytes     int
-	AllowLoopbackHTTPRedirect bool
-	PasswordMinLength         int
-	RequireUpper              bool
-	RequireLower              bool
-	RequireNumber             bool
-	RequireSymbol             bool
-	SessionIdleTimeout        time.Duration
-	SessionLifetime           time.Duration
-	CookieSecure              bool
-	MaxLogoBytes              int
-	LDAPManageEnabled         bool
-	LogLevel                  string // debug|info|warn|error
-	LogHTTPRequests           string // all|errors|off
+	Issuer                     string
+	PublicURL                  string
+	TokenTTL                   time.Duration
+	RefreshTokenTTL            time.Duration
+	MaxFailedLogins            int
+	LockoutDuration            time.Duration
+	RateLimitWindow            time.Duration
+	LoginIPMaxAttempts         int
+	PasswordVerifyConcurrency  int
+	MaxLoginUsernameBytes      int
+	MaxLoginPasswordBytes      int
+	AllowLoopbackHTTPRedirect  bool
+	AllowPrivateSchemeRedirect bool
+	PasswordMinLength          int
+	RequireUpper               bool
+	RequireLower               bool
+	RequireNumber              bool
+	RequireSymbol              bool
+	SessionIdleTimeout         time.Duration
+	SessionLifetime            time.Duration
+	CookieSecure               bool
+	MaxLogoBytes               int
+	LDAPManageEnabled          bool
+	LogLevel                   string // debug|info|warn|error
+	LogHTTPRequests            string // all|errors|off
 }
 
 // PasswordPolicy renders the live complexity policy.
@@ -73,30 +74,31 @@ type settingsService struct {
 func newSettingsService(db settingsStore, cfg *config.Config, defaultSessionLifetime time.Duration) *settingsService {
 	s := &settingsService{db: db, allowInsecureHTTP: cfg.Server.AllowInsecureHTTP}
 	s.def = SettingsView{
-		Issuer:                    cfg.Security.Issuer,
-		PublicURL:                 cfg.Server.PublicURL,
-		TokenTTL:                  cfg.Security.TokenTTL,
-		RefreshTokenTTL:           cfg.Security.RefreshTokenTTL,
-		MaxFailedLogins:           cfg.Security.MaxFailedLogins,
-		LockoutDuration:           cfg.Security.LockoutDuration,
-		RateLimitWindow:           cfg.Security.RateLimitWindow,
-		LoginIPMaxAttempts:        cfg.Security.LoginIPMaxAttempts,
-		PasswordVerifyConcurrency: cfg.Security.PasswordVerifyConcurrency,
-		MaxLoginUsernameBytes:     cfg.Security.MaxLoginUsernameBytes,
-		MaxLoginPasswordBytes:     cfg.Security.MaxLoginPasswordBytes,
-		AllowLoopbackHTTPRedirect: cfg.Security.AllowLoopbackHTTPRedirect,
-		PasswordMinLength:         cfg.Security.PasswordMinLength,
-		RequireUpper:              cfg.Security.RequireUpper,
-		RequireLower:              cfg.Security.RequireLower,
-		RequireNumber:             cfg.Security.RequireNumber,
-		RequireSymbol:             cfg.Security.RequireSymbol,
-		SessionIdleTimeout:        cfg.Security.SessionIdleTimeout,
-		SessionLifetime:           cfg.Security.SessionLifetime,
-		CookieSecure:              cfg.Cookies.Secure,
-		MaxLogoBytes:              cfg.Uploads.MaxLogoBytes,
-		LDAPManageEnabled:         cfg.LDAP.ManageEnabled,
-		LogLevel:                  cfg.Logging.Level,
-		LogHTTPRequests:           cfg.Logging.HTTPRequests,
+		Issuer:                     cfg.Security.Issuer,
+		PublicURL:                  cfg.Server.PublicURL,
+		TokenTTL:                   cfg.Security.TokenTTL,
+		RefreshTokenTTL:            cfg.Security.RefreshTokenTTL,
+		MaxFailedLogins:            cfg.Security.MaxFailedLogins,
+		LockoutDuration:            cfg.Security.LockoutDuration,
+		RateLimitWindow:            cfg.Security.RateLimitWindow,
+		LoginIPMaxAttempts:         cfg.Security.LoginIPMaxAttempts,
+		PasswordVerifyConcurrency:  cfg.Security.PasswordVerifyConcurrency,
+		MaxLoginUsernameBytes:      cfg.Security.MaxLoginUsernameBytes,
+		MaxLoginPasswordBytes:      cfg.Security.MaxLoginPasswordBytes,
+		AllowLoopbackHTTPRedirect:  cfg.Security.AllowLoopbackHTTPRedirect,
+		AllowPrivateSchemeRedirect: cfg.Security.AllowPrivateSchemeRedirect,
+		PasswordMinLength:          cfg.Security.PasswordMinLength,
+		RequireUpper:               cfg.Security.RequireUpper,
+		RequireLower:               cfg.Security.RequireLower,
+		RequireNumber:              cfg.Security.RequireNumber,
+		RequireSymbol:              cfg.Security.RequireSymbol,
+		SessionIdleTimeout:         cfg.Security.SessionIdleTimeout,
+		SessionLifetime:            cfg.Security.SessionLifetime,
+		CookieSecure:               cfg.Cookies.Secure,
+		MaxLogoBytes:               cfg.Uploads.MaxLogoBytes,
+		LDAPManageEnabled:          cfg.LDAP.ManageEnabled,
+		LogLevel:                   cfg.Logging.Level,
+		LogHTTPRequests:            cfg.Logging.HTTPRequests,
 	}
 	s.def = withRuntimeSettingDefaults(s.def)
 	s.v = s.def
@@ -155,30 +157,31 @@ func (s *settingsService) IdleTimeout() time.Duration { return s.Current().Sessi
 // for any unparseable duration.
 func viewFromModel(m *model.Settings, def SettingsView) SettingsView {
 	return SettingsView{
-		Issuer:                    m.Issuer,
-		PublicURL:                 m.PublicURL,
-		TokenTTL:                  parseDurOr(m.TokenTTL, def.TokenTTL),
-		RefreshTokenTTL:           parseDurOr(m.RefreshTokenTTL, def.RefreshTokenTTL),
-		MaxFailedLogins:           m.MaxFailedLogins,
-		LockoutDuration:           parseDurOr(m.LockoutDuration, def.LockoutDuration),
-		RateLimitWindow:           parseDurOr(m.RateLimitWindow, def.RateLimitWindow),
-		LoginIPMaxAttempts:        m.LoginIPMaxAttempts,
-		PasswordVerifyConcurrency: m.PasswordVerifyConcurrency,
-		MaxLoginUsernameBytes:     m.MaxLoginUsernameBytes,
-		MaxLoginPasswordBytes:     m.MaxLoginPasswordBytes,
-		AllowLoopbackHTTPRedirect: m.AllowLoopbackHTTPRedirect,
-		PasswordMinLength:         m.PasswordMinLength,
-		RequireUpper:              m.RequireUpper,
-		RequireLower:              m.RequireLower,
-		RequireNumber:             m.RequireNumber,
-		RequireSymbol:             m.RequireSymbol,
-		SessionIdleTimeout:        parseDurOr(m.SessionIdleTimeout, def.SessionIdleTimeout),
-		SessionLifetime:           parseDurOr(m.SessionLifetime, def.SessionLifetime),
-		CookieSecure:              m.CookieSecure,
-		MaxLogoBytes:              m.MaxLogoBytes,
-		LDAPManageEnabled:         m.LDAPManageEnabled,
-		LogLevel:                  m.LogLevel,
-		LogHTTPRequests:           m.LogHTTPRequests,
+		Issuer:                     m.Issuer,
+		PublicURL:                  m.PublicURL,
+		TokenTTL:                   parseDurOr(m.TokenTTL, def.TokenTTL),
+		RefreshTokenTTL:            parseDurOr(m.RefreshTokenTTL, def.RefreshTokenTTL),
+		MaxFailedLogins:            m.MaxFailedLogins,
+		LockoutDuration:            parseDurOr(m.LockoutDuration, def.LockoutDuration),
+		RateLimitWindow:            parseDurOr(m.RateLimitWindow, def.RateLimitWindow),
+		LoginIPMaxAttempts:         m.LoginIPMaxAttempts,
+		PasswordVerifyConcurrency:  m.PasswordVerifyConcurrency,
+		MaxLoginUsernameBytes:      m.MaxLoginUsernameBytes,
+		MaxLoginPasswordBytes:      m.MaxLoginPasswordBytes,
+		AllowLoopbackHTTPRedirect:  m.AllowLoopbackHTTPRedirect,
+		AllowPrivateSchemeRedirect: m.AllowPrivateSchemeRedirect,
+		PasswordMinLength:          m.PasswordMinLength,
+		RequireUpper:               m.RequireUpper,
+		RequireLower:               m.RequireLower,
+		RequireNumber:              m.RequireNumber,
+		RequireSymbol:              m.RequireSymbol,
+		SessionIdleTimeout:         parseDurOr(m.SessionIdleTimeout, def.SessionIdleTimeout),
+		SessionLifetime:            parseDurOr(m.SessionLifetime, def.SessionLifetime),
+		CookieSecure:               m.CookieSecure,
+		MaxLogoBytes:               m.MaxLogoBytes,
+		LDAPManageEnabled:          m.LDAPManageEnabled,
+		LogLevel:                   m.LogLevel,
+		LogHTTPRequests:            m.LogHTTPRequests,
 	}
 }
 
@@ -206,30 +209,31 @@ func sanitizeSettingsView(v, def SettingsView, allowInsecureHTTP bool) SettingsV
 // toModel renders a view back into a storable Settings row.
 func (v SettingsView) toModel() *model.Settings {
 	return &model.Settings{
-		Issuer:                    v.Issuer,
-		PublicURL:                 v.PublicURL,
-		TokenTTL:                  v.TokenTTL.String(),
-		RefreshTokenTTL:           v.RefreshTokenTTL.String(),
-		MaxFailedLogins:           v.MaxFailedLogins,
-		LockoutDuration:           v.LockoutDuration.String(),
-		RateLimitWindow:           v.RateLimitWindow.String(),
-		LoginIPMaxAttempts:        v.LoginIPMaxAttempts,
-		PasswordVerifyConcurrency: v.PasswordVerifyConcurrency,
-		MaxLoginUsernameBytes:     v.MaxLoginUsernameBytes,
-		MaxLoginPasswordBytes:     v.MaxLoginPasswordBytes,
-		AllowLoopbackHTTPRedirect: v.AllowLoopbackHTTPRedirect,
-		PasswordMinLength:         v.PasswordMinLength,
-		RequireUpper:              v.RequireUpper,
-		RequireLower:              v.RequireLower,
-		RequireNumber:             v.RequireNumber,
-		RequireSymbol:             v.RequireSymbol,
-		SessionIdleTimeout:        v.SessionIdleTimeout.String(),
-		SessionLifetime:           v.SessionLifetime.String(),
-		CookieSecure:              v.CookieSecure,
-		MaxLogoBytes:              v.MaxLogoBytes,
-		LDAPManageEnabled:         v.LDAPManageEnabled,
-		LogLevel:                  v.LogLevel,
-		LogHTTPRequests:           v.LogHTTPRequests,
+		Issuer:                     v.Issuer,
+		PublicURL:                  v.PublicURL,
+		TokenTTL:                   v.TokenTTL.String(),
+		RefreshTokenTTL:            v.RefreshTokenTTL.String(),
+		MaxFailedLogins:            v.MaxFailedLogins,
+		LockoutDuration:            v.LockoutDuration.String(),
+		RateLimitWindow:            v.RateLimitWindow.String(),
+		LoginIPMaxAttempts:         v.LoginIPMaxAttempts,
+		PasswordVerifyConcurrency:  v.PasswordVerifyConcurrency,
+		MaxLoginUsernameBytes:      v.MaxLoginUsernameBytes,
+		MaxLoginPasswordBytes:      v.MaxLoginPasswordBytes,
+		AllowLoopbackHTTPRedirect:  v.AllowLoopbackHTTPRedirect,
+		AllowPrivateSchemeRedirect: v.AllowPrivateSchemeRedirect,
+		PasswordMinLength:          v.PasswordMinLength,
+		RequireUpper:               v.RequireUpper,
+		RequireLower:               v.RequireLower,
+		RequireNumber:              v.RequireNumber,
+		RequireSymbol:              v.RequireSymbol,
+		SessionIdleTimeout:         v.SessionIdleTimeout.String(),
+		SessionLifetime:            v.SessionLifetime.String(),
+		CookieSecure:               v.CookieSecure,
+		MaxLogoBytes:               v.MaxLogoBytes,
+		LDAPManageEnabled:          v.LDAPManageEnabled,
+		LogLevel:                   v.LogLevel,
+		LogHTTPRequests:            v.LogHTTPRequests,
 	}
 }
 

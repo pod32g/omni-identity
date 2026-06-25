@@ -50,6 +50,7 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 	next.RequireNumber = form.Get("require_number") == "on"
 	next.RequireSymbol = form.Get("require_symbol") == "on"
 	next.AllowLoopbackHTTPRedirect = form.Get("allow_loopback_http_redirects") == "on"
+	next.AllowPrivateSchemeRedirect = form.Get("allow_private_scheme_redirects") == "on"
 	// Directory write management is toggled via its own endpoint
 	// (/admin/settings/directory), so it is preserved here as-is (next starts from
 	// the current view) rather than read from this form.

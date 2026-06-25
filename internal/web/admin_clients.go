@@ -13,11 +13,17 @@ import (
 
 // httpsOrLocalURLs reports whether every entry is an absolute URL suitable for
 // OAuth redirects: https in production, with http allowed only for loopback
-// native/local development clients.
-func httpsOrLocalURLs(uris []string, allowLoopbackHTTP bool) bool {
+// native/local development clients. When allowPrivateScheme is true (native
+// public clients), reverse-DNS private-use URI scheme redirects are also
+// permitted per RFC 8252 §7.1 (e.g. com.example.app://oauth/callback) — these
+// let mobile apps receive the redirect without a hosted https domain.
+func httpsOrLocalURLs(uris []string, allowLoopbackHTTP, allowPrivateScheme bool) bool {
 	for _, raw := range uris {
+		if strings.Contains(raw, "*") {
+			return false
+		}
 		u, err := url.Parse(raw)
-		if err != nil || u.Host == "" || strings.Contains(raw, "*") {
+		if err != nil {
 			return false
 		}
 		if u.User != nil || u.Fragment != "" {
@@ -25,15 +31,33 @@ func httpsOrLocalURLs(uris []string, allowLoopbackHTTP bool) bool {
 		}
 		switch u.Scheme {
 		case "https":
+			if u.Host == "" {
+				return false
+			}
 			continue
 		case "http":
-			if allowLoopbackHTTP && isLoopbackHost(u.Hostname()) {
+			if u.Host != "" && allowLoopbackHTTP && isLoopbackHost(u.Hostname()) {
+				continue
+			}
+		default:
+			if allowPrivateScheme && isPrivateUseScheme(u.Scheme) {
 				continue
 			}
 		}
 		return false
 	}
 	return true
+}
+
+// isPrivateUseScheme reports whether scheme is a reverse-DNS private-use URI
+// scheme (RFC 8252 §7.1): contains a dot and is not http(s). Using a reverse-DNS
+// name (e.g. com.omnivideo.app) makes collisions between native apps unlikely.
+func isPrivateUseScheme(scheme string) bool {
+	s := strings.ToLower(scheme)
+	if s == "" || s == "http" || s == "https" {
+		return false
+	}
+	return strings.Contains(s, ".")
 }
 
 type adminClientsPage struct {
@@ -109,7 +133,7 @@ type clientForm struct {
 	skipConsent    bool
 }
 
-func parseClientForm(r *http.Request, allowLoopbackHTTP bool) (clientForm, string) {
+func parseClientForm(r *http.Request, allowLoopbackHTTP, allowPrivateSchemeSetting bool) (clientForm, string) {
 	f := clientForm{
 		clientID:       strings.TrimSpace(r.PostFormValue("client_id")),
 		name:           strings.TrimSpace(r.PostFormValue("name")),
@@ -137,27 +161,35 @@ func parseClientForm(r *http.Request, allowLoopbackHTTP bool) (clientForm, strin
 	if !oidc.ScopesSubset(f.scopes, oidc.SupportedScopes) {
 		return f, "Unknown scope requested."
 	}
-	if !httpsOrLocalURLs(f.redirectURIs, allowLoopbackHTTP) {
-		return f, redirectURIMessage("Redirect", allowLoopbackHTTP)
+	// Native (public) clients may use a private-use URI scheme redirect so the
+	// app can receive the callback without a hosted https domain — when the
+	// admin setting allows it.
+	allowPrivateScheme := allowPrivateSchemeSetting && f.clientType == model.ClientTypePublic
+	if !httpsOrLocalURLs(f.redirectURIs, allowLoopbackHTTP, allowPrivateScheme) {
+		return f, redirectURIMessage("Redirect", allowLoopbackHTTP, allowPrivateScheme)
 	}
-	if !httpsOrLocalURLs(f.postLogoutURIs, allowLoopbackHTTP) {
-		return f, redirectURIMessage("Post-logout redirect", allowLoopbackHTTP)
+	if !httpsOrLocalURLs(f.postLogoutURIs, allowLoopbackHTTP, allowPrivateScheme) {
+		return f, redirectURIMessage("Post-logout redirect", allowLoopbackHTTP, allowPrivateScheme)
 	}
 	return f, ""
 }
 
-func redirectURIMessage(kind string, allowLoopbackHTTP bool) string {
+func redirectURIMessage(kind string, allowLoopbackHTTP, allowPrivateScheme bool) string {
+	msg := kind + " URIs must use HTTPS"
 	if allowLoopbackHTTP {
-		return kind + " URIs must use HTTPS, except http://localhost or loopback addresses for local development."
+		msg += ", or http://localhost / loopback addresses for local development"
 	}
-	return kind + " URIs must use HTTPS."
+	if allowPrivateScheme {
+		msg += ", or a reverse-DNS private-use URI scheme (e.g. com.example.app://callback) for native public clients"
+	}
+	return msg + "."
 }
 
 func (s *Server) handleAdminCreateClient(w http.ResponseWriter, r *http.Request) {
 	if !s.csrfOK(w, r) {
 		return
 	}
-	form, errMsg := parseClientForm(r, s.settings.Current().AllowLoopbackHTTPRedirect)
+	form, errMsg := parseClientForm(r, s.settings.Current().AllowLoopbackHTTPRedirect, s.settings.Current().AllowPrivateSchemeRedirect)
 	if errMsg != "" {
 		s.renderClients(w, r, http.StatusBadRequest, errMsg)
 		return
@@ -212,7 +244,7 @@ func (s *Server) handleAdminUpdateClient(w http.ResponseWriter, r *http.Request)
 		s.renderError(w, http.StatusNotFound, "Client not found.")
 		return
 	}
-	form, errMsg := parseClientForm(r, s.settings.Current().AllowLoopbackHTTPRedirect)
+	form, errMsg := parseClientForm(r, s.settings.Current().AllowLoopbackHTTPRedirect, s.settings.Current().AllowPrivateSchemeRedirect)
 	if errMsg != "" {
 		s.renderClientDetail(w, r, http.StatusBadRequest, existing, "", errMsg)
 		return

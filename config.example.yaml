@@ -46,6 +46,10 @@ security:
   max_login_username_bytes: 320
   max_login_password_bytes: 1024
   allow_loopback_http_redirects: true
+  # Allow reverse-DNS private-use URI scheme redirects (RFC 8252) for native
+  # public clients, e.g. com.example.app://callback. Lets mobile apps receive
+  # the OAuth callback without a hosted https domain.
+  allow_private_scheme_redirects: true
   password_min_length: 12
   require_upper: false
   require_lower: false
