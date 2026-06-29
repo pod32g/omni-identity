@@ -26,6 +26,12 @@ services:
       # The app listens on :8080 inside the container; the host port defaults to 8081.
       OMNI_SERVER_HOST: 0.0.0.0
       OMNI_SERVER_PORT: "8080"
+      # Database backend. Defaults to the zero-config SQLite file on the volume.
+      # To use Postgres, set OMNI_DATABASE_DRIVER=postgres and OMNI_DATABASE_URL
+      # in the host .env (the URL holds credentials and must not be committed).
+      # OMNI_DATABASE_PATH is ignored when the driver is postgres.
+      OMNI_DATABASE_DRIVER: ${OMNI_DATABASE_DRIVER:-sqlite}
+      OMNI_DATABASE_URL: ${OMNI_DATABASE_URL:-}
       OMNI_DATABASE_PATH: /data/omni-identity.db
       # Public base URL clients use to reach this server (also the OIDC issuer).
       OMNI_SERVER_PUBLIC_URL: ${OMNI_SERVER_PUBLIC_URL:-https://identity.omni.local}

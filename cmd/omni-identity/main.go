@@ -5,6 +5,7 @@
 //	omni-identity serve       [flags]   # run the HTTP server + admin UI (default)
 //	omni-identity backup       --db P --out F   # online DB snapshot (VACUUM INTO)
 //	omni-identity integrity    --db P           # PRAGMA integrity_check
+//	omni-identity migrate-data --from-path P --to-url U  # copy SQLite -> Postgres
 //	omni-identity healthcheck  --url U          # HTTP-probe a URL (2xx = healthy)
 //	omni-identity version
 package main
@@ -60,6 +61,8 @@ func main() {
 		err = runBackup(args)
 	case "integrity":
 		err = runIntegrity(args)
+	case "migrate-data":
+		err = runMigrateData(args)
 	case "healthcheck":
 		err = runHealthcheck(args)
 	case "version", "-v", "--version":
@@ -83,6 +86,7 @@ Commands:
   serve        Run the HTTP server and admin UI (default)
   backup       Write a consistent online DB snapshot (VACUUM INTO)
   integrity    Run PRAGMA integrity_check; exit non-zero if unsound
+  migrate-data Copy every table from a SQLite DB into a Postgres DB
   healthcheck  HTTP-probe a URL; exit non-zero unless it returns 2xx
   version      Print the version
 
@@ -247,6 +251,60 @@ func runIntegrity(args []string) error {
 		return fmt.Errorf("integrity check FAILED: %s", strings.Join(problems, "; "))
 	}
 	fmt.Println("integrity check: ok")
+	return nil
+}
+
+// runMigrateData copies every application table from a SQLite database into a
+// Postgres database. The destination schema is created (migrations run) on open;
+// existing rows are replaced. Both databases must be at the same migration
+// version. Used once to move a SQLite deployment onto Postgres.
+func runMigrateData(args []string) error {
+	fs := flag.NewFlagSet("migrate-data", flag.ExitOnError)
+	fromPath := fs.String("from-path", "", "source SQLite database file to copy from")
+	toURL := fs.String("to-url", "", "destination Postgres connection URL")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *fromPath == "" {
+		return fmt.Errorf("migrate-data: --from-path is required")
+	}
+	if *toURL == "" {
+		return fmt.Errorf("migrate-data: --to-url is required")
+	}
+
+	src, err := store.Open(*fromPath)
+	if err != nil {
+		return fmt.Errorf("open source sqlite: %w", err)
+	}
+	defer src.Close()
+
+	dst, err := store.OpenWith(store.DriverPostgres, *toURL)
+	if err != nil {
+		return fmt.Errorf("open destination postgres: %w", err)
+	}
+	defer dst.Close()
+
+	report, err := store.CopyData(context.Background(), src, dst)
+	if err != nil {
+		return err
+	}
+
+	mismatch := false
+	total := 0
+	fmt.Printf("migrated %s -> postgres\n", *fromPath)
+	for _, tc := range report.Tables {
+		status := "ok"
+		if tc.SourceRows != tc.DestRows {
+			status = fmt.Sprintf("MISMATCH (source %d)", tc.SourceRows)
+			mismatch = true
+		}
+		fmt.Printf("  %-24s %7d rows  %s\n", tc.Table, tc.DestRows, status)
+		total += tc.DestRows
+	}
+	fmt.Printf("total: %d rows across %d tables\n", total, len(report.Tables))
+	if mismatch {
+		return fmt.Errorf("migrate-data: row counts did not match for some tables")
+	}
 	return nil
 }
 
