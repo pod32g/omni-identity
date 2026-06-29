@@ -71,6 +71,20 @@ jobs:
 
           ts="$(date +%Y%m%d-%H%M%S)"
 
+          # Read a value from the (uncommitted) host .env. The .env is preserved
+          # across deploys (rsync runs without --delete and .env is gitignored),
+          # so it reflects the live runtime config. Empty if the key is absent.
+          # ([ -f ] guard first: under pipefail, sed on a missing .env would exit
+          # non-zero and abort the deploy — a fresh sqlite host may have no .env.)
+          read_env() { [ -f "$2" ] || return 0; sed -nE "s/^[[:space:]]*$1=//p" "$2" | tail -n1 | sed -E 's/^"(.*)"$/\1/; s/^'\''(.*)'\''$/\1/'; }
+
+          # Which database backend is live? This drives a backend-appropriate
+          # backup and post-deploy gate. Defaults to sqlite (the compose default)
+          # when unset. The driver/URL hold credentials and live only in .env.
+          DB_DRIVER="$(read_env OMNI_DATABASE_DRIVER "$DEST/.env")"; [ -n "$DB_DRIVER" ] || DB_DRIVER="sqlite"
+          OMNI_DATABASE_URL="$(read_env OMNI_DATABASE_URL "$DEST/.env")"
+          echo "deploy: database backend = $DB_DRIVER"
+
           # The runtime image executes as distroless nonroot (65532). Existing
           # volumes may have been created by a previous root-running image.
           fix_volume_owner() {
@@ -87,15 +101,43 @@ jobs:
             esac
           fi
 
-          # back up BEFORE deploying (online VACUUM INTO; WAL-safe), if a running
-          # container exists. Copy the snapshot out to the host too.
-          cid="$(docker compose ps -q "$SVC" 2>/dev/null || true)"
-          if [ -n "$cid" ] && [ "$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null)" = "true" ]; then
-            echo "backup: snapshotting DB before deploy"
-            docker compose exec -T "$SVC" /omni-identity backup --db "$DBPATH" --out "/data/backups/omni-identity-${ts}.db"
-            docker cp "$cid:/data/backups/omni-identity-${ts}.db" "$DEST/backups/omni-identity-${ts}.db"
+          # back up BEFORE deploying. The SQLite and Postgres backends need
+          # different tooling, so branch on the live driver.
+          if [ "$DB_DRIVER" = "postgres" ]; then
+            # pg_dump the live appdb. Run pg_dump from a throwaway container built
+            # from the SAME image as the running 'postgres' container (guarantees
+            # a pg_dump >= the server version and reuses an already-pulled image).
+            # --network host lets it reach the DB at the host IP in the URL exactly
+            # as the app container does. The URL (with its password) is passed via
+            # env and dereferenced inside the container, so it never lands in the
+            # host-visible argv or the build log. A failed/empty dump ABORTS the
+            # deploy: never release without a usable backup of live data.
+            if [ -z "$OMNI_DATABASE_URL" ]; then
+              echo "backup: OMNI_DATABASE_URL is not set in $DEST/.env - aborting"; exit 1
+            fi
+            pg_image="$(docker inspect -f '{{.Config.Image}}' postgres 2>/dev/null || true)"
+            if [ -z "$pg_image" ]; then
+              echo "backup: 'postgres' container not found - cannot snapshot appdb - aborting"; exit 1
+            fi
+            out="$DEST/backups/appdb-${ts}.dump"
+            echo "backup: pg_dump appdb before deploy (image $pg_image)"
+            docker run --rm --network host -e PGURL="$OMNI_DATABASE_URL" "$pg_image" \
+              sh -c 'exec pg_dump --dbname="$PGURL" --format=custom' > "$out"
+            if [ ! -s "$out" ]; then
+              echo "backup: pg_dump produced an empty file - aborting"; rm -f "$out"; exit 1
+            fi
+            echo "backup: wrote $out ($(du -h "$out" | cut -f1))"
           else
-            echo "backup: no running container (first deploy?) - skipping"
+            # SQLite: online VACUUM INTO (WAL-safe) from inside the running app
+            # container, if one exists. Copy the snapshot out to the host too.
+            cid="$(docker compose ps -q "$SVC" 2>/dev/null || true)"
+            if [ -n "$cid" ] && [ "$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null)" = "true" ]; then
+              echo "backup: snapshotting SQLite DB before deploy"
+              docker compose exec -T "$SVC" /omni-identity backup --db "$DBPATH" --out "/data/backups/omni-identity-${ts}.db"
+              docker cp "$cid:/data/backups/omni-identity-${ts}.db" "$DEST/backups/omni-identity-${ts}.db"
+            else
+              echo "backup: no running container (first deploy?) - skipping"
+            fi
           fi
 
           # stop-first, then recreate: old and new must never hold the DB at once.
@@ -117,30 +159,47 @@ jobs:
           curl -fsS --max-time 10 "http://localhost:${PORT}/healthz" >/dev/null
           echo "deploy: health OK on :${PORT}"
 
-          # integrity check; auto-heal from the latest backup on failure.
-          if docker compose exec -T "$SVC" /omni-identity integrity --db "$DBPATH"; then
-            echo "deploy: integrity OK"
+          # Post-deploy data gate. The two backends verify differently.
+          if [ "$DB_DRIVER" = "postgres" ]; then
+            # The /healthz loop above calls db.Ping() (see handleHealth), so a
+            # healthy app already proves Postgres is reachable and serving. There
+            # is no safe AUTOMATIC restore here: re-importing a dump would be
+            # destructive, and the integrity/auto-heal logic below is SQLite-only
+            # (the integrity subcommand returns errSQLiteOnly on Postgres). The
+            # health gate already failed the deploy loudly on a real DB problem.
+            # For a manual recovery, restore the pre-deploy dump from $DEST/backups:
+            #   docker run --rm --network host -e U="$OMNI_DATABASE_URL" -v "$DEST/backups":/b "$pg_image" \
+            #     sh -c 'pg_restore --clean --if-exists --no-owner -d "$U" /b/appdb-<ts>.dump'
+            echo "deploy: postgres backend healthy (db ping via /healthz OK)"
           else
-            echo "deploy: INTEGRITY CHECK FAILED - auto-healing from latest backup"
-            latest="$(ls -1t "$DEST"/backups/*.db 2>/dev/null | head -1 || true)"
-            if [ -z "$latest" ]; then echo "no backup available to restore"; exit 1; fi
-            docker compose stop "$SVC" || true
-            # Surgery on the named volume needs a shell the distroless image lacks.
-            docker run --rm -v "$VOL":/data -v "$DEST/backups":/backups "$BUSYBOX" \
-              sh -c "cp \"/backups/$(basename "$latest")\" /data/omni-identity.db && rm -f /data/omni-identity.db-wal /data/omni-identity.db-shm"
-            fix_volume_owner
-            docker compose up -d "$SVC"
-            for i in $(seq 1 30); do
-              docker compose exec -T "$SVC" /omni-identity healthcheck --url "http://localhost:8080/healthz" >/dev/null 2>&1 && break
-              sleep 2
-            done
+            # SQLite: integrity check; auto-heal from the latest backup on failure.
             if docker compose exec -T "$SVC" /omni-identity integrity --db "$DBPATH"; then
-              echo "auto-heal: restored from $(basename "$latest") and integrity OK"
+              echo "deploy: integrity OK"
             else
-              echo "auto-heal: integrity still failing after restore"; exit 1
+              echo "deploy: INTEGRITY CHECK FAILED - auto-healing from latest backup"
+              latest="$(ls -1t "$DEST"/backups/omni-identity-*.db 2>/dev/null | head -1 || true)"
+              if [ -z "$latest" ]; then echo "no backup available to restore"; exit 1; fi
+              docker compose stop "$SVC" || true
+              # Surgery on the named volume needs a shell the distroless image lacks.
+              docker run --rm -v "$VOL":/data -v "$DEST/backups":/backups "$BUSYBOX" \
+                sh -c "cp \"/backups/$(basename "$latest")\" /data/omni-identity.db && rm -f /data/omni-identity.db-wal /data/omni-identity.db-shm"
+              fix_volume_owner
+              docker compose up -d "$SVC"
+              for i in $(seq 1 30); do
+                docker compose exec -T "$SVC" /omni-identity healthcheck --url "http://localhost:8080/healthz" >/dev/null 2>&1 && break
+                sleep 2
+              done
+              if docker compose exec -T "$SVC" /omni-identity integrity --db "$DBPATH"; then
+                echo "auto-heal: restored from $(basename "$latest") and integrity OK"
+              else
+                echo "auto-heal: integrity still failing after restore"; exit 1
+              fi
             fi
           fi
 
-          # retain only the 10 most recent host-side backups.
-          ls -1t "$DEST"/backups/*.db 2>/dev/null | tail -n +11 | xargs -r rm -f || true
+          # retain only the 10 most recent host-side backups of each kind
+          # (Postgres .dump and SQLite .db; the latter are kept for rollback).
+          for pat in 'appdb-*.dump' 'omni-identity-*.db'; do
+            ls -1t "$DEST"/backups/$pat 2>/dev/null | tail -n +11 | xargs -r rm -f || true
+          done
           echo "deploy: success"
