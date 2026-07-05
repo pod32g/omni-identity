@@ -20,8 +20,10 @@ services:
       - no-new-privileges:true
     pids_limit: 256
     command: ["serve"]
-    ports:
-      - "${OMNI_IDENTITY_BIND_ADDR:-127.0.0.1}:${OMNI_IDENTITY_HOST_PORT:-8081}:8080"
+    # Fronted by the netviz-sidecar (below): expose internally instead of
+    # publishing. The sidecar takes over the host port (default 8081).
+    expose:
+      - "8080"
     environment:
       # The app listens on :8080 inside the container; the host port defaults to 8081.
       OMNI_SERVER_HOST: 0.0.0.0
@@ -97,6 +99,39 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  # --- Omni-NetViz observability sidecar ---
+  # Fronts omni-identity's published port and reverse-proxies to the app on the
+  # internal network, reporting inbound traffic metadata to Omni-NetViz. Metadata
+  # only — never bodies or credentials (Authorization headers pass through to the
+  # app but are not recorded); talks only to Omni-NetViz. Requires the
+  # netviz-sidecar:local image on the deploy host (built from
+  # github.com/pod32g/omni-netviz Dockerfile.sidecar).
+  netviz-sidecar:
+    image: netviz-sidecar:local
+    container_name: omni-identity-netviz
+    restart: unless-stopped
+    depends_on:
+      - omni-identity
+    command:
+      - "-service=omni-identity"
+      - "-host=chizu"
+      - "-namespace=omni-identity"
+      - "-environment=prod"
+      - "-docker-network=omni-identity_default"
+      - "-listen=:8080"
+      - "-upstream=http://omni-identity:8080"
+      - "-flush-interval=10s"
+    environment:
+      NETVIZ_URL: "${NETVIZ_URL:-http://192.168.68.34:8099}"
+      NETVIZ_TOKEN: "${NETVIZ_INGEST_TOKEN:-}"
+    ports:
+      - "${OMNI_IDENTITY_BIND_ADDR:-127.0.0.1}:${OMNI_IDENTITY_HOST_PORT:-8081}:8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
 volumes:
   omni-identity-data:
