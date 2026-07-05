@@ -88,6 +88,11 @@ services:
       OMNI_LOGGING_URL: ${OMNI_LOGGING_URL:-}
       OMNI_LOGGING_API_KEY: ${OMNI_LOGGING_API_KEY:-}
       OMNI_LOGGING_SERVICE: ${OMNI_LOGGING_SERVICE:-omni-identity}
+      # Route plain-HTTP egress (logship to omnilog) through the netviz-sidecar's
+      # forward proxy so Omni-NetViz sees the outbound edge. HTTP only (no
+      # HTTPS_PROXY); LDAP/Postgres are raw TCP and bypass it; localhost excluded.
+      HTTP_PROXY: "${HTTP_PROXY:-http://netviz-sidecar:13128}"
+      NO_PROXY: "${NO_PROXY:-localhost,127.0.0.1,omni-identity}"
     volumes:
       - omni-identity-data:/data
     tmpfs:
@@ -121,6 +126,7 @@ services:
       - "-docker-network=omni-identity_default"
       - "-listen=:8080"
       - "-upstream=http://omni-identity:8080"
+      - "-proxy-listen=:13128"
       - "-flush-interval=10s"
     environment:
       NETVIZ_URL: "${NETVIZ_URL:-http://192.168.68.34:8099}"
