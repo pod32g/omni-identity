@@ -1,6 +1,6 @@
 module github.com/pod32g/omni-identity
 
-go 1.26.4
+go 1.26.8
 
 require (
 	github.com/go-ldap/ldap/v3 v3.4.13
@@ -22,5 +22,5 @@ require (
 	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/text v0.39.0 // indirect
 )
