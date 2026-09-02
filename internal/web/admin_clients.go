@@ -1,6 +1,7 @@
 package web
 
 import (
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,11 +14,14 @@ import (
 
 // httpsOrLocalURLs reports whether every entry is an absolute URL suitable for
 // OAuth redirects: https in production, with http allowed only for loopback
-// native/local development clients. When allowPrivateScheme is true (native
-// public clients), reverse-DNS private-use URI scheme redirects are also
-// permitted per RFC 8252 §7.1 (e.g. com.example.app://oauth/callback) — these
-// let mobile apps receive the redirect without a hosted https domain.
-func httpsOrLocalURLs(uris []string, allowLoopbackHTTP, allowPrivateScheme bool) bool {
+// native/local development clients. When allowPrivateNetworkHTTP is true
+// (homelab / private LAN deployments), http is also accepted for hosts that
+// cannot be reached from the public Internet — see isPrivateNetworkHost. When
+// allowPrivateScheme is true (native public clients), reverse-DNS private-use
+// URI scheme redirects are also permitted per RFC 8252 §7.1 (e.g.
+// com.example.app://oauth/callback) — these let mobile apps receive the
+// redirect without a hosted https domain.
+func httpsOrLocalURLs(uris []string, allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateScheme bool) bool {
 	for _, raw := range uris {
 		if strings.Contains(raw, "*") {
 			return false
@@ -39,6 +43,9 @@ func httpsOrLocalURLs(uris []string, allowLoopbackHTTP, allowPrivateScheme bool)
 			if u.Host != "" && allowLoopbackHTTP && isLoopbackHost(u.Hostname()) {
 				continue
 			}
+			if u.Host != "" && allowPrivateNetworkHTTP && isPrivateNetworkHost(u.Hostname()) {
+				continue
+			}
 		default:
 			if allowPrivateScheme && isPrivateUseScheme(u.Scheme) {
 				continue
@@ -47,6 +54,50 @@ func httpsOrLocalURLs(uris []string, allowLoopbackHTTP, allowPrivateScheme bool)
 		return false
 	}
 	return true
+}
+
+// privateNetworkSuffixes are DNS suffixes that are reserved or withheld from
+// the public DNS root, so a name under them can only resolve on a local
+// network: home.arpa (RFC 8375), internal (ICANN private-use, 2024), local
+// (mDNS, RFC 6762), localdomain, and the conventional lan/home/corp (ICANN
+// permanently withholds home and corp because of name-collision risk).
+var privateNetworkSuffixes = []string{".home.arpa", ".internal", ".local", ".localdomain", ".lan", ".home", ".corp"}
+
+// isPrivateNetworkHost reports whether host is only reachable inside a
+// private network, which is the homelab justification for accepting an http
+// redirect URI: the authorization code never crosses the public Internet.
+//
+// Accepted: RFC 1918 / ULA addresses, link-local addresses, the CGNAT range
+// 100.64.0.0/10 (used by Tailscale and similar overlays), single-label
+// hostnames (unqualified names never resolve publicly), and hostnames under
+// privateNetworkSuffixes. Loopback is handled by the separate loopback policy.
+// Everything else — public IPs, and any ordinary domain name — is not.
+func isPrivateNetworkHost(host string) bool {
+	host = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+	if host == "" || host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return false // loopback names belong to the loopback policy
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsLoopback() || ip.IsUnspecified() || ip.IsMulticast() {
+			return false
+		}
+		if ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+			return true
+		}
+		if ip4 := ip.To4(); ip4 != nil && ip4[0] == 100 && ip4[1]&0xc0 == 64 {
+			return true // 100.64.0.0/10, RFC 6598 shared address space
+		}
+		return false
+	}
+	if !strings.Contains(host, ".") {
+		return true
+	}
+	for _, suffix := range privateNetworkSuffixes {
+		if strings.HasSuffix(host, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 // isPrivateUseScheme reports whether scheme is a reverse-DNS private-use URI
@@ -133,7 +184,7 @@ type clientForm struct {
 	skipConsent    bool
 }
 
-func parseClientForm(r *http.Request, allowLoopbackHTTP, allowPrivateSchemeSetting bool) (clientForm, string) {
+func parseClientForm(r *http.Request, allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateSchemeSetting bool) (clientForm, string) {
 	f := clientForm{
 		clientID:       strings.TrimSpace(r.PostFormValue("client_id")),
 		name:           strings.TrimSpace(r.PostFormValue("name")),
@@ -165,19 +216,22 @@ func parseClientForm(r *http.Request, allowLoopbackHTTP, allowPrivateSchemeSetti
 	// app can receive the callback without a hosted https domain — when the
 	// admin setting allows it.
 	allowPrivateScheme := allowPrivateSchemeSetting && f.clientType == model.ClientTypePublic
-	if !httpsOrLocalURLs(f.redirectURIs, allowLoopbackHTTP, allowPrivateScheme) {
-		return f, redirectURIMessage("Redirect", allowLoopbackHTTP, allowPrivateScheme)
+	if !httpsOrLocalURLs(f.redirectURIs, allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateScheme) {
+		return f, redirectURIMessage("Redirect", allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateScheme)
 	}
-	if !httpsOrLocalURLs(f.postLogoutURIs, allowLoopbackHTTP, allowPrivateScheme) {
-		return f, redirectURIMessage("Post-logout redirect", allowLoopbackHTTP, allowPrivateScheme)
+	if !httpsOrLocalURLs(f.postLogoutURIs, allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateScheme) {
+		return f, redirectURIMessage("Post-logout redirect", allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateScheme)
 	}
 	return f, ""
 }
 
-func redirectURIMessage(kind string, allowLoopbackHTTP, allowPrivateScheme bool) string {
+func redirectURIMessage(kind string, allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateScheme bool) string {
 	msg := kind + " URIs must use HTTPS"
 	if allowLoopbackHTTP {
 		msg += ", or http://localhost / loopback addresses for local development"
+	}
+	if allowPrivateNetworkHTTP {
+		msg += ", or http:// on a private network address or reserved local name (e.g. 192.168.x.x, *.home.arpa, *.internal)"
 	}
 	if allowPrivateScheme {
 		msg += ", or a reverse-DNS private-use URI scheme (e.g. com.example.app://callback) for native public clients"
@@ -189,7 +243,8 @@ func (s *Server) handleAdminCreateClient(w http.ResponseWriter, r *http.Request)
 	if !s.csrfOK(w, r) {
 		return
 	}
-	form, errMsg := parseClientForm(r, s.settings.Current().AllowLoopbackHTTPRedirect, s.settings.Current().AllowPrivateSchemeRedirect)
+	cur := s.settings.Current()
+	form, errMsg := parseClientForm(r, cur.AllowLoopbackHTTPRedirect, cur.AllowPrivateNetworkHTTPRedirect, cur.AllowPrivateSchemeRedirect)
 	if errMsg != "" {
 		s.renderClients(w, r, http.StatusBadRequest, errMsg)
 		return
@@ -244,7 +299,8 @@ func (s *Server) handleAdminUpdateClient(w http.ResponseWriter, r *http.Request)
 		s.renderError(w, http.StatusNotFound, "Client not found.")
 		return
 	}
-	form, errMsg := parseClientForm(r, s.settings.Current().AllowLoopbackHTTPRedirect, s.settings.Current().AllowPrivateSchemeRedirect)
+	cur := s.settings.Current()
+	form, errMsg := parseClientForm(r, cur.AllowLoopbackHTTPRedirect, cur.AllowPrivateNetworkHTTPRedirect, cur.AllowPrivateSchemeRedirect)
 	if errMsg != "" {
 		s.renderClientDetail(w, r, http.StatusBadRequest, existing, "", errMsg)
 		return

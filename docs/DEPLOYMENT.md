@@ -107,6 +107,23 @@ OMNI_COOKIES_SECURE=false
 
 Do not use that configuration for production.
 
+### Homelab without TLS
+
+If the apps that sign in through Omni are also served over plain HTTP on the
+LAN (for example `http://192.168.68.34:3002` or `http://app.home.arpa`), their
+redirect URIs are rejected by default because the authorization code would
+travel unencrypted. For a private network you can opt in:
+
+```sh
+OMNI_SECURITY_ALLOW_PRIVATE_NETWORK_HTTP_REDIRECTS=true
+```
+
+or, on an already-running instance, tick **Allow private-network HTTP
+redirect URIs** under Admin → Settings → OAuth client policy (settings are
+seeded from env only on first start). Only private addresses and reserved local
+names qualify; `http://` to a public hostname is still refused. Turn it back
+off once the apps are behind HTTPS.
+
 ## Important Configuration
 
 Runtime configuration is supplied through `.env` when using Docker Compose. The
@@ -121,6 +138,7 @@ full set of options is documented in [`.env.example`](../.env.example) and
 | `OMNI_SECURITY_ISSUER` | Optional issuer override. Leave empty unless it must differ from the public URL. |
 | `OMNI_SETUP_TOKEN` | One-time bootstrap token required for first setup on non-loopback public URLs. |
 | `OMNI_ALLOW_INSECURE_HTTP` | Explicit opt-in for non-loopback `http://` public URLs. |
+| `OMNI_SECURITY_ALLOW_PRIVATE_NETWORK_HTTP_REDIRECTS` | Homelab opt-in: accept `http://` client redirect URIs on private IPs and reserved local names (`*.home.arpa`, `*.internal`, `*.local`, `*.lan`). Seeds the live Admin → Settings toggle. |
 | `OMNI_COOKIES_SECURE` | Enables Secure cookies. Required with HTTPS public URLs. |
 | `OMNI_METRICS_TOKEN` | Enables `/metrics` when set; scrape with `Authorization: Bearer`. |
 

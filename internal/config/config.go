@@ -135,13 +135,17 @@ type SecurityConfig struct {
 	MaxFailedLogins int
 	LockoutDuration time.Duration
 	// Abuse controls.
-	RateLimitWindow            time.Duration
-	LoginIPMaxAttempts         int
-	PasswordVerifyConcurrency  int
-	MaxLoginUsernameBytes      int
-	MaxLoginPasswordBytes      int
-	AllowLoopbackHTTPRedirect  bool
-	AllowPrivateSchemeRedirect bool
+	RateLimitWindow           time.Duration
+	LoginIPMaxAttempts        int
+	PasswordVerifyConcurrency int
+	MaxLoginUsernameBytes     int
+	MaxLoginPasswordBytes     int
+	AllowLoopbackHTTPRedirect bool
+	// AllowPrivateNetworkHTTPRedirect accepts http:// redirect URIs whose host
+	// is a private-network address or a reserved local DNS name. Off by
+	// default; intended for homelabs that have not deployed TLS yet.
+	AllowPrivateNetworkHTTPRedirect bool
+	AllowPrivateSchemeRedirect      bool
 	// Password policy.
 	PasswordMinLength int
 	RequireUpper      bool
@@ -195,26 +199,27 @@ type fileConfig struct {
 		URL    string `yaml:"url"`
 	} `yaml:"database"`
 	Security struct {
-		Issuer                     string `yaml:"issuer"`
-		TokenTTL                   string `yaml:"token_ttl"`
-		RefreshTokenTTL            string `yaml:"refresh_token_ttl"`
-		MaxFailedLogins            int    `yaml:"max_failed_logins"`
-		LockoutDuration            string `yaml:"lockout_duration"`
-		RateLimitWindow            string `yaml:"rate_limit_window"`
-		LoginIPMaxAttempts         int    `yaml:"login_ip_max_attempts"`
-		PasswordVerifyConcurrency  int    `yaml:"password_verify_concurrency"`
-		MaxLoginUsernameBytes      int    `yaml:"max_login_username_bytes"`
-		MaxLoginPasswordBytes      int    `yaml:"max_login_password_bytes"`
-		AllowLoopbackHTTPRedirect  *bool  `yaml:"allow_loopback_http_redirects"`
-		AllowPrivateSchemeRedirect *bool  `yaml:"allow_private_scheme_redirects"`
-		PasswordMinLength          int    `yaml:"password_min_length"`
-		RequireUpper               *bool  `yaml:"require_upper"`
-		RequireLower               *bool  `yaml:"require_lower"`
-		RequireNumber              *bool  `yaml:"require_number"`
-		RequireSymbol              *bool  `yaml:"require_symbol"`
-		SessionLifetime            string `yaml:"session_lifetime"`
-		SessionIdleTimeout         string `yaml:"session_idle_timeout"`
-		SetupToken                 string `yaml:"setup_token"`
+		Issuer                          string `yaml:"issuer"`
+		TokenTTL                        string `yaml:"token_ttl"`
+		RefreshTokenTTL                 string `yaml:"refresh_token_ttl"`
+		MaxFailedLogins                 int    `yaml:"max_failed_logins"`
+		LockoutDuration                 string `yaml:"lockout_duration"`
+		RateLimitWindow                 string `yaml:"rate_limit_window"`
+		LoginIPMaxAttempts              int    `yaml:"login_ip_max_attempts"`
+		PasswordVerifyConcurrency       int    `yaml:"password_verify_concurrency"`
+		MaxLoginUsernameBytes           int    `yaml:"max_login_username_bytes"`
+		MaxLoginPasswordBytes           int    `yaml:"max_login_password_bytes"`
+		AllowLoopbackHTTPRedirect       *bool  `yaml:"allow_loopback_http_redirects"`
+		AllowPrivateNetworkHTTPRedirect *bool  `yaml:"allow_private_network_http_redirects"`
+		AllowPrivateSchemeRedirect      *bool  `yaml:"allow_private_scheme_redirects"`
+		PasswordMinLength               int    `yaml:"password_min_length"`
+		RequireUpper                    *bool  `yaml:"require_upper"`
+		RequireLower                    *bool  `yaml:"require_lower"`
+		RequireNumber                   *bool  `yaml:"require_number"`
+		RequireSymbol                   *bool  `yaml:"require_symbol"`
+		SessionLifetime                 string `yaml:"session_lifetime"`
+		SessionIdleTimeout              string `yaml:"session_idle_timeout"`
+		SetupToken                      string `yaml:"setup_token"`
 	} `yaml:"security"`
 	Cookies struct {
 		// Secure is a pointer so we can tell "unset" from "false".
@@ -360,6 +365,10 @@ func Load(path string) (*Config, error) {
 	cfg.Security.AllowLoopbackHTTPRedirect = true
 	if fc.Security.AllowLoopbackHTTPRedirect != nil {
 		cfg.Security.AllowLoopbackHTTPRedirect = *fc.Security.AllowLoopbackHTTPRedirect
+	}
+	cfg.Security.AllowPrivateNetworkHTTPRedirect = false
+	if fc.Security.AllowPrivateNetworkHTTPRedirect != nil {
+		cfg.Security.AllowPrivateNetworkHTTPRedirect = *fc.Security.AllowPrivateNetworkHTTPRedirect
 	}
 	cfg.Security.AllowPrivateSchemeRedirect = true
 	if fc.Security.AllowPrivateSchemeRedirect != nil {
@@ -718,6 +727,10 @@ func applyEnvOverrides(fc *fileConfig) {
 	if v := os.Getenv("OMNI_SECURITY_ALLOW_LOOPBACK_HTTP_REDIRECTS"); v != "" {
 		b := v == "true" || v == "1"
 		fc.Security.AllowLoopbackHTTPRedirect = &b
+	}
+	if v := os.Getenv("OMNI_SECURITY_ALLOW_PRIVATE_NETWORK_HTTP_REDIRECTS"); v != "" {
+		b := v == "true" || v == "1"
+		fc.Security.AllowPrivateNetworkHTTPRedirect = &b
 	}
 	if v := os.Getenv("OMNI_SECURITY_ALLOW_PRIVATE_SCHEME_REDIRECTS"); v != "" {
 		b := v == "true" || v == "1"

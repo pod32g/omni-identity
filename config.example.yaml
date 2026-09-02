@@ -46,6 +46,11 @@ security:
   max_login_username_bytes: 320
   max_login_password_bytes: 1024
   allow_loopback_http_redirects: true
+  # Homelab relaxation: accept http:// redirect URIs whose host is a private
+  # network address (10/8, 172.16/12, 192.168/16, 100.64/10, link-local, ULA)
+  # or a reserved local DNS name (*.home.arpa, *.internal, *.local, *.lan,
+  # single-label hosts). Public hosts still require https. Off by default.
+  allow_private_network_http_redirects: false
   # Allow reverse-DNS private-use URI scheme redirects (RFC 8252) for native
   # public clients, e.g. com.example.app://callback. Lets mobile apps receive
   # the OAuth callback without a hosted https domain.

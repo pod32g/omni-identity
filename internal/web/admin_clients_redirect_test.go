@@ -24,7 +24,7 @@ func TestHTTPSOrLocalURLs_PrivateScheme(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := httpsOrLocalURLs(tc.uris, tc.allowLoopbackHTTP, tc.allowPrivateScheme); got != tc.want {
+			if got := httpsOrLocalURLs(tc.uris, tc.allowLoopbackHTTP, false, tc.allowPrivateScheme); got != tc.want {
 				t.Fatalf("httpsOrLocalURLs(%v, loopback=%v, private=%v) = %v, want %v",
 					tc.uris, tc.allowLoopbackHTTP, tc.allowPrivateScheme, got, tc.want)
 			}

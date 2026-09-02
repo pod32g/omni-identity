@@ -86,6 +86,7 @@ security:
   max_login_username_bytes: 320
   max_login_password_bytes: 1024
   allow_loopback_http_redirects: true
+  allow_private_network_http_redirects: false   # homelab: http:// redirects to private IPs / *.home.arpa etc.
   max_failed_logins: 5
   lockout_duration: 15m
   password_min_length: 12
@@ -150,7 +151,7 @@ The `security`, `cookies`, `uploads`, and identity (`issuer`/`public_url`) value
 **seeded from config on first start**, then become editable from
 **Admin → Settings** and apply **live** (no restart): token/refresh TTLs, lockout
 threshold + duration, rate-limit window, pre-hash IP budget, password-verification
-concurrency, login field caps, redirect URI loopback policy, password minimum
+concurrency, login field caps, redirect URI loopback / private-network policy, password minimum
 length, session lifetime + idle timeout, logo upload size, the cookie `Secure`
 flag, and the issuer/public URL. A "Reset to config defaults"
 action re-seeds from the current config. Infrastructure that binds at startup —
@@ -164,6 +165,16 @@ SVG is intentionally rejected because browsers treat it as active content.
 > discovery endpoint URLs are derived from it. Non-loopback `http://` issuer and
 > public URLs are rejected unless `allow_insecure_http` / `OMNI_ALLOW_INSECURE_HTTP`
 > is explicitly enabled.
+
+> Client **redirect URIs** have their own policy, editable live in Admin →
+> Settings → OAuth client policy. `https://` is always accepted; `http://` is
+> accepted for loopback (`allow_loopback_http_redirects`, on by default) and,
+> for homelabs that have not deployed TLS yet, for private-network hosts
+> (`allow_private_network_http_redirects` /
+> `OMNI_SECURITY_ALLOW_PRIVATE_NETWORK_HTTP_REDIRECTS`, **off by default**):
+> RFC 1918 / ULA / link-local / 100.64.0.0/10 addresses, single-label hostnames,
+> and names under `.home.arpa`, `.internal`, `.local`, `.localdomain`, `.lan`,
+> `.home`, `.corp`. An `http://` redirect to a public host is never accepted.
 
 ### Directory / LDAP
 

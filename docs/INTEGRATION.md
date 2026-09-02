@@ -17,7 +17,10 @@ create a client and record:
 - **Client type**: `public` (SPA / native / mobile — PKCE required, no secret) or
   `confidential` (server-side app that can keep a secret)
 - **Allowed redirect URIs** — exact, absolute `https://` URLs. There is no
-  wildcard matching; every callback URL must be listed verbatim.
+  wildcard matching; every callback URL must be listed verbatim. `http://` is
+  accepted for loopback addresses, and for private-network hosts (private IPs,
+  `*.home.arpa`, `*.internal`, `*.local`, `*.lan`) when the admin has enabled
+  the private-network policy in Settings; public `http://` hosts are refused.
 - Optional display metadata shown on the login page: **Display name**, **Logo
   URL**, **Homepage URL**.
 - Optional **Post-logout redirect URIs** for RP-initiated logout.

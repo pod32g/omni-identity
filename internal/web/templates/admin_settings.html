@@ -63,6 +63,10 @@
             Allow loopback HTTP redirect URIs <span class="muted">(localhost, 127.0.0.1, and ::1 only)</span>
           </label>
           <label class="field inline">
+            <input type="checkbox" name="allow_private_network_http_redirects" {{if .Settings.AllowPrivateNetworkHTTPRedirect}}checked{{end}}>
+            Allow private-network HTTP redirect URIs <span class="muted">(homelabs without TLS: private IPs such as 192.168.x.x / 10.x.x.x, and names under .home.arpa, .internal, .local, .lan; never public hosts)</span>
+          </label>
+          <label class="field inline">
             <input type="checkbox" name="allow_private_scheme_redirects" {{if .Settings.AllowPrivateSchemeRedirect}}checked{{end}}>
             Allow private-use URI scheme redirects <span class="muted">(native apps, public clients only, e.g. com.example.app://callback)</span>
           </label>
