@@ -113,6 +113,8 @@ type fileConfig struct {
 	RefreshInterval   string   `yaml:"refresh_interval"`
 	QR                string   `yaml:"qr"`
 	BrokerAudiences   []string `yaml:"broker_audiences"`
+	KeyBackend        string   `yaml:"key_backend"`
+	TPMDevice         string   `yaml:"tpm_device"`
 }
 
 // commonFlags registers the shared flags and returns a resolver applying
@@ -130,6 +132,8 @@ func commonFlags(fs *flag.FlagSet) func() (enrollment.Config, error) {
 	offline := fs.String("offline-validity", "", "how long offline login stays valid after the last trust refresh (default 168h)")
 	fs.StringVar(&cfg.LoginShell, "login-shell", "", "shell for provisioned accounts (default /bin/bash)")
 	refresh := fs.String("refresh-interval", "", "cap on the daemon's renewal/trust-refresh interval (default: half the device token lifetime)")
+	fs.StringVar(&cfg.KeyBackend, "key-backend", "", "where the device key lives: file (default) or tpm")
+	fs.StringVar(&cfg.TPMDevice, "tpm-device", "", "TPM for --key-backend tpm: /dev/tpmrm0 (default) or tcp://host:port (software TPM)")
 	noQR := fs.Bool("no-qr", false, "do not print a QR code under the sign-in link")
 	qrLight := fs.Bool("qr-light", false, "render the QR code for a light terminal background")
 	return func() (enrollment.Config, error) {
@@ -165,6 +169,11 @@ func commonFlags(fs *flag.FlagSet) func() (enrollment.Config, error) {
 			}
 		}
 		cfg.LoginShell = pick(cfg.LoginShell, "OMNI_ENROLLMENT_LOGIN_SHELL", fc.LoginShell, "")
+		cfg.KeyBackend = pick(cfg.KeyBackend, "OMNI_ENROLLMENT_KEY_BACKEND", fc.KeyBackend, enrollment.KeyBackendFile)
+		cfg.TPMDevice = pick(cfg.TPMDevice, "OMNI_ENROLLMENT_TPM_DEVICE", fc.TPMDevice, "")
+		if cfg.KeyBackend != enrollment.KeyBackendFile && cfg.KeyBackend != enrollment.KeyBackendTPM {
+			return cfg, fmt.Errorf("key_backend must be file or tpm (got %q)", cfg.KeyBackend)
+		}
 		cfg.BrokerAudiences = fc.BrokerAudiences
 		if v := os.Getenv("OMNI_ENROLLMENT_BROKER_AUDIENCES"); v != "" {
 			cfg.BrokerAudiences = strings.Fields(strings.ReplaceAll(v, ",", " "))

@@ -55,6 +55,10 @@ type Config struct {
 	QR string
 	// BrokerAudiences enables the local token broker for these client ids.
 	BrokerAudiences []string
+	// KeyBackend is file (default) or tpm; TPMDevice names the TPM for the
+	// latter (default /dev/tpmrm0, or tcp://host:port for a software TPM).
+	KeyBackend string
+	TPMDevice  string
 	// Browser selects RFC 8252 authorization code + PKCE through the system
 	// browser instead of the device grant (needs a browser on this machine).
 	Browser bool
@@ -105,8 +109,12 @@ func (a *Agent) Enroll(ctx context.Context, cfg Config) (*State, error) {
 	if _, err := LoadState(a.StateDir); err == nil {
 		return nil, errors.New("this machine is already enrolled (run `omni-enrollment unenroll` first)")
 	}
-	fmt.Fprintln(a.Out, "Generating device identity...")
-	key, err := GenerateKey(a.StateDir, false)
+	if cfg.KeyBackend == KeyBackendTPM {
+		fmt.Fprintf(a.Out, "Generating device identity in the TPM (%s)...\n", orDefault(cfg.TPMDevice, DefaultTPMDevice))
+	} else {
+		fmt.Fprintln(a.Out, "Generating device identity...")
+	}
+	key, err := GenerateKeyWith(a.StateDir, cfg.KeyBackend, cfg.TPMDevice, false)
 	if err != nil {
 		return nil, err
 	}
@@ -116,8 +124,8 @@ func (a *Agent) Enroll(ctx context.Context, cfg Config) (*State, error) {
 		return nil, err
 	}
 	meta := LocalMetadata(cfg.Name)
-	fmt.Fprintf(a.Out, "\nDevice:\n    name:        %s\n    hostname:    %s\n    platform:    %s (%s)\n    fingerprint: %s\n\n",
-		meta.Name, meta.Hostname, meta.Platform, meta.Architecture, key.Fingerprint())
+	fmt.Fprintf(a.Out, "\nDevice:\n    name:        %s\n    hostname:    %s\n    platform:    %s (%s)\n    key:         %s (%s)\n    fingerprint: %s\n\n",
+		meta.Name, meta.Hostname, meta.Platform, meta.Architecture, key.Algorithm(), orDefault(cfg.KeyBackend, KeyBackendFile), key.Fingerprint())
 
 	var tok *TokenResponse
 	if cfg.Browser {
@@ -163,6 +171,7 @@ func (a *Agent) Enroll(ctx context.Context, cfg Config) (*State, error) {
 		Name: dev.Name, OwnerSub: dev.OwnerSub, OwnerUsername: dev.OwnerUsername, EnrolledAt: enrolledAt,
 		Status: dev.Status, LastCheckedAt: time.Now().UTC(),
 		AllowInsecureHTTP: cfg.AllowInsecureHTTP, CAFile: cfg.CAFile,
+		KeyBackend: orDefault(cfg.KeyBackend, KeyBackendFile), TPMDevice: cfg.TPMDevice,
 	}
 	if err := SaveState(a.StateDir, st); err != nil {
 		return nil, err
@@ -180,6 +189,13 @@ func (a *Agent) Enroll(ctx context.Context, cfg Config) (*State, error) {
 		}
 	}
 	return st, nil
+}
+
+func orDefault(v, def string) string {
+	if v == "" {
+		return def
+	}
+	return v
 }
 
 func (a *Agent) policy() LoginPolicy {
@@ -259,15 +275,28 @@ func (a *Agent) RotateKey(ctx context.Context) (*State, error) {
 	if err != nil {
 		return nil, fmt.Errorf("authenticate with current key: %w", err)
 	}
-	newKey, priv, err := NewEphemeralKey()
-	if err != nil {
-		return nil, err
+	var (
+		newKey Signer
+		commit func() error
+	)
+	if st.KeyBackend == KeyBackendTPM {
+		k, err := GenerateTPMKey(st.TPMDevice)
+		if err != nil {
+			return nil, err
+		}
+		newKey, commit = k, func() error { return CommitTPMKey(a.StateDir, k) }
+	} else {
+		k, priv, err := NewEphemeralKey()
+		if err != nil {
+			return nil, err
+		}
+		newKey, commit = k, func() error { return CommitKey(a.StateDir, priv) }
 	}
 	dev, err := client.RotateKey(ctx, tok.AccessToken, st.DeviceID, newKey)
 	if err != nil {
 		return nil, fmt.Errorf("rotate key: %w", err)
 	}
-	if err := CommitKey(a.StateDir, priv); err != nil {
+	if err := commit(); err != nil {
 		return nil, fmt.Errorf("server accepted the new key but it could not be saved locally; re-enroll: %w", err)
 	}
 	st.Fingerprint = dev.Fingerprint
@@ -398,6 +427,11 @@ func Describe(st *State, rt *Status) string {
 	fmt.Fprintf(&b, "Issuer:      %s\n", st.Issuer)
 	fmt.Fprintf(&b, "Owner:       %s\n", st.OwnerUsername)
 	fmt.Fprintf(&b, "Fingerprint: %s\n", st.Fingerprint)
+	if st.KeyBackend == KeyBackendTPM {
+		fmt.Fprintf(&b, "Key:         TPM 2.0 (%s)\n", orDefault(st.TPMDevice, DefaultTPMDevice))
+	} else {
+		fmt.Fprintf(&b, "Key:         software file\n")
+	}
 	fmt.Fprintf(&b, "Enrolled:    %s\n", st.EnrolledAt.Local().Format(time.RFC1123))
 	fmt.Fprintf(&b, "Status:      %s (last checked %s)\n", st.Status, ago(st.LastCheckedAt))
 	if rt != nil {

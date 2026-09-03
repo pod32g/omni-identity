@@ -50,6 +50,31 @@ const keyFileName = "device.key"
 // ErrNoKey is returned by LoadKey when no key has been generated yet.
 var ErrNoKey = errors.New("no device key found")
 
+// GenerateKeyWith creates the device key with the chosen backend and persists
+// it in dir. For the TPM backend, tpmDevice names the TPM (empty = default).
+func GenerateKeyWith(dir, backend, tpmDevice string, overwrite bool) (Signer, error) {
+	switch backend {
+	case "", KeyBackendFile:
+		return GenerateKey(dir, overwrite)
+	case KeyBackendTPM:
+		if !overwrite {
+			if _, err := os.Stat(filepath.Join(dir, tpmBlobFile)); err == nil {
+				return nil, fmt.Errorf("%s already exists (use rotate-key or unenroll first)", filepath.Join(dir, tpmBlobFile))
+			}
+		}
+		k, err := GenerateTPMKey(tpmDevice)
+		if err != nil {
+			return nil, err
+		}
+		if err := CommitTPMKey(dir, k); err != nil {
+			return nil, err
+		}
+		return k, nil
+	default:
+		return nil, fmt.Errorf("unknown key backend %q (file or tpm)", backend)
+	}
+}
+
 // GenerateKey creates a fresh Ed25519 key in dir (creating dir 0700), refusing
 // to overwrite an existing key unless overwrite is set.
 func GenerateKey(dir string, overwrite bool) (Signer, error) {
@@ -61,6 +86,9 @@ func GenerateKey(dir string, overwrite bool) (Signer, error) {
 		if _, err := os.Stat(path); err == nil {
 			return nil, fmt.Errorf("%s already exists (use rotate-key or unenroll first)", path)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, tpmBlobFile)); err == nil && !overwrite {
+		return nil, fmt.Errorf("a TPM key already exists in %s (use rotate-key or unenroll first)", dir)
 	}
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -86,8 +114,18 @@ func writeKey(path string, priv ed25519.PrivateKey) error {
 	return os.Rename(tmp, path)
 }
 
-// LoadKey reads the device key from dir.
+// Key backends.
+const (
+	KeyBackendFile = "file" // software Ed25519 key in the state dir (default)
+	KeyBackendTPM  = "tpm"  // ECDSA P-256 key resident in a TPM 2.0
+)
+
+// LoadKey reads the device key from dir: the TPM blobs when present,
+// otherwise the software key.
 func LoadKey(dir string) (Signer, error) {
+	if _, err := os.Stat(filepath.Join(dir, tpmBlobFile)); err == nil {
+		return LoadTPMKey(dir)
+	}
 	path := filepath.Join(dir, keyFileName)
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {

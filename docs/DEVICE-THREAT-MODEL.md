@@ -189,7 +189,13 @@ file key later, at which point a copied filesystem is inert.
 alternating; DPoP `jti` collisions from two clones can trip the replay guard.
 No automatic clone detection is claimed.
 
-*Not solved:* physical theft of an unencrypted, unlocked machine. Stated
+*Mitigation available now:* enrolling with `--key-backend tpm` binds the key
+to the machine's TPM 2.0, so a copied filesystem cannot sign for the device;
+the private key never leaves the TPM. The offline-login local secret and
+cache are not yet TPM-sealed (future work).
+
+*Not solved:* physical theft of an unencrypted, unlocked machine with a
+software key, or an attacker who can drive the live TPM as root. Stated
 plainly.
 
 ### 4.10 Offline credential theft (Phase 6)

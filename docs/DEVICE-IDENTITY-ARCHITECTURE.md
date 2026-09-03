@@ -112,10 +112,21 @@ Supporting tables:
   Omni's JWT stack and has no parameter-choice footguns. **ES256 (P-256)** and
   **RS256** are accepted so a future TPM 2.0 or Secure Enclave key (which will
   typically be P-256 or RSA) drops in without a server change.
-- Private key storage on Linux V1: `/var/lib/omni-enrollment/device.key`
-  (PKCS#8 PEM), directory `0700 root:root`, file `0600`. The key is only ever
-  loaded by the root-owned daemon/CLI. Threat assumptions are in the threat
-  model §4.
+- **Key backend** is selectable (`--key-backend file|tpm`):
+  - *file* (default): a software Ed25519 key at
+    `/var/lib/omni-enrollment/device.key` (PKCS#8 PEM), directory
+    `0700 root:root`, file `0600`, loaded only by the root-owned daemon/CLI.
+  - *tpm*: an ECDSA P-256 key generated **inside a TPM 2.0** under the owner
+    hierarchy's storage root key, with `fixedTPM` + `sensitiveDataOrigin` set.
+    The private half never exists outside the TPM; the daemon stores only the
+    SRK-wrapped private blob and the public area
+    (`/var/lib/omni-enrollment/device.tpm.json`, `0600 root`), which only that
+    TPM can load. Signing (RFC 7523 assertions, DPoP proofs) goes through
+    `TPM2_Sign`; the key surfaces as a `crypto.Signer` with alg `ES256`, which
+    Omni already accepts. Device: `/dev/tpmrm0` by default, or
+    `tcp://host:port` for a software TPM (swtpm) in testing.
+  The private key never reaches Omni in either case. Threat assumptions are in
+  the threat model §4.
 - The client code hides the key behind a `Signer` interface
   (`Public() JWK`, `Sign(alg, data)`), so a TPM-backed implementation can be
   added later without touching the protocol code.
@@ -442,7 +453,10 @@ No device ids, hostnames, users, or fingerprints as labels.
 
 ## 12. Known limitations (V1)
 
-- Software keys only; a copied filesystem is a cloned device (threat model §4).
+- With the software key backend, a copied filesystem is a cloned device
+  (threat model §4). With `--key-backend tpm` the wrapped blob is inert on any
+  other machine, so a copied filesystem cannot sign — this is the mitigation
+  for §4.9.
 - Revocation of already-issued JWTs is bounded by their TTL.
 - No attestation; `trust_level` is a label, not a measurement.
 - One built-in enrollment client; third-party enrollment clients are not a

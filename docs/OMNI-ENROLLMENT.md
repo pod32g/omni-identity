@@ -78,7 +78,7 @@ sudo systemctl enable --now omni-enrollment
 
 | Command | What it does |
 |---|---|
-| `enroll --issuer URL [--name N] [--no-qr\|--qr-light] [--browser]` | Generate the key and run the enrollment ceremony. Refuses if already enrolled. `--browser` authorizes through this machine's browser (RFC 8252 loopback redirect, authorization code + PKCE) instead of showing a code for another device. |
+| `enroll --issuer URL [--name N] [--no-qr\|--qr-light] [--browser] [--key-backend file\|tpm]` | Generate the key and run the enrollment ceremony. Refuses if already enrolled. `--browser` authorizes through this machine's browser (RFC 8252 loopback redirect, authorization code + PKCE) instead of showing a code for another device. `--key-backend tpm` holds the device key in the TPM 2.0. |
 | `status [--json]` | Show the enrollment record and the daemon's last renewal / error. Works offline. |
 | `renew` | Obtain one device token now (RFC 7523 jwt-bearer grant). Exit 1 if Omni refuses (revoked) or is unreachable. |
 | `rotate-key` | Generate a new key, register it (signed by both old and new key), then commit it locally. |
@@ -93,7 +93,8 @@ consoles and SSH; graphical greeters always get the plain URL and code.
 
 | Path | Mode | Contents |
 |---|---|---|
-| `/var/lib/omni-enrollment/device.key` | `0600 root` | Ed25519 private key (PKCS#8 PEM). **Never leaves the machine.** |
+| `/var/lib/omni-enrollment/device.key` | `0600 root` | Ed25519 private key (PKCS#8 PEM), software backend. **Never leaves the machine.** |
+| `/var/lib/omni-enrollment/device.tpm.json` | `0600 root` | TPM backend: SRK-wrapped private blob + public area. Useless without that TPM. |
 | `/var/lib/omni-enrollment/device.json` | `0600 root` | device id, fingerprint, issuer, owner, last known status. No secrets. |
 | `/run/omni-enrollment/status.json` | `0644` | daemon view: status, reachability, last renewal, token expiry, last error. No tokens. |
 | `/run/omni-enrollment/pam.sock` | `0600 root` | PAM conversation socket (`pam_omni.so`). |
@@ -148,9 +149,19 @@ immediately; outstanding device tokens expire within `device_token_ttl`
 (default 1 h). A revoked key can never be re-enrolled; run `unenroll` then
 `enroll` to start over with a new key.
 
-## Hardware-backed keys (future)
+## Hardware-backed keys (TPM 2.0)
 
-The key sits behind the `enrollment.Signer` interface (sign, public JWK,
-fingerprint). A TPM 2.0 or Secure Enclave implementation only has to satisfy
-that interface and register a signing method with the JWT library; the
-protocol accepts `ES256`/`RS256` keys already.
+Enroll with the key generated and held inside the machine's TPM so a copied
+filesystem cannot impersonate the device:
+
+```bash
+sudo omni-enrollment enroll --issuer https://identity.example --key-backend tpm
+# --tpm-device /dev/tpmrm0 (default) or tcp://host:port for a software TPM
+```
+
+The device gets an ECDSA P-256 key (`ES256`, already accepted by Omni) whose
+private half never leaves the TPM; only the SRK-wrapped blob and public area
+are stored, in `device.tpm.json`. `rotate-key` keeps using the TPM. The key
+backend is recorded in `device.json` (`key_backend`, `tpm_device`), so the
+daemon and rotation use it automatically. Secure Enclave/Keychain on Apple
+platforms would slot in the same way behind the `enrollment.Signer` interface.

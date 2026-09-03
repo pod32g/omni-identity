@@ -28,6 +28,9 @@ NoNewPrivileges=yes
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# The TPM key backend needs the TPM device; harmless when using the file backend.
+DeviceAllow=/dev/tpmrm0 rw
+DeviceAllow=/dev/tpm0 rw
 CapabilityBoundingSet=
 ReadWritePaths=/var/lib/omni-enrollment /run/omni-enrollment /home
 

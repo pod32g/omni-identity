@@ -43,6 +43,39 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  tpm-key:
+    # Exercise the TPM 2.0 device-key backend against a software TPM (swtpm).
+    # Runs on the self-hosted runner for main only; informational, not a gate.
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, omni-identity]
+    timeout-minutes: 15
+    concurrency:
+      group: tpm-key
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: TPM key backend against swtpm
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+          GO_IMAGE="$(sed -nE 's/^FROM (golang:[^ ]+) AS build/\1/p' Dockerfile | head -1)"
+          CACHE="$HOME/.cache/omni-tpm-go"; mkdir -p "$CACHE/mod" "$CACHE/build"
+          # Cross-compile the enrollment test binary with the pinned toolchain.
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src -v "$work:$work" \
+            -v "$CACHE/mod:/tmp/gomod" -v "$CACHE/build:/tmp/gocache" \
+            -e HOME=/tmp -e GOMODCACHE=/tmp/gomod -e GOCACHE=/tmp/gocache -e GOFLAGS=-buildvcs=false \
+            -e CGO_ENABLED=0 "$GO_IMAGE" go test -c -o "$work/enrollment.test" ./internal/enrollment/
+          # Run it against a software TPM.
+          docker build -q -t omni-tpm-runner - <<'DOCKER'
+          FROM ubuntu:24.04
+          RUN apt-get update && apt-get install -y --no-install-recommends swtpm swtpm-tools && rm -rf /var/lib/apt/lists/*
+          DOCKER
+          docker run --rm -v "$work/enrollment.test:/enrollment.test:ro" omni-tpm-runner sh -c '\
+            mkdir -p /tmp/tpmstate && \
+            swtpm socket --tpm2 --tpmstate dir=/tmp/tpmstate --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --flags not-need-init,startup-clear --daemon && \
+            sleep 1 && OMNI_TEST_TPM=tcp://127.0.0.1:2321 /enrollment.test -test.run TestTPMKeyLifecycle -test.v'
+          rm -rf "$work"
+
   deploy:
     needs: [build, design-system, linux-login-poc]
     if: github.ref == 'refs/heads/main'   # only main deploys

@@ -27,6 +27,10 @@ type State struct {
 	// issuer (private-network testing only).
 	AllowInsecureHTTP bool   `json:"allow_insecure_http,omitempty"`
 	CAFile            string `json:"ca_file,omitempty"`
+	// KeyBackend records where the device key lives (file | tpm) and, for a
+	// TPM, which device; rotation keeps using the same backend.
+	KeyBackend string `json:"key_backend,omitempty"`
+	TPMDevice  string `json:"tpm_device,omitempty"`
 }
 
 const stateFileName = "device.json"
@@ -71,7 +75,7 @@ func SaveState(dir string, st *State) error {
 
 // RemoveState deletes device.json and the key (unenroll).
 func RemoveState(dir string) error {
-	for _, f := range []string{stateFileName, keyFileName} {
+	for _, f := range []string{stateFileName, keyFileName, tpmBlobFile} {
 		if err := os.Remove(filepath.Join(dir, f)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
