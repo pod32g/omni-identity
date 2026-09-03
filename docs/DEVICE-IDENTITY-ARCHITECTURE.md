@@ -225,6 +225,31 @@ registered literal-loopback `http://` redirects — and only for those. Steps
 5–6 are identical. The device grant stays primary because it works from a VM
 console, an SSH session, and a display-manager prompt alike.
 
+### 5.5 Front ends: terminal, local page, launcher
+
+The ceremony above is exposed twice by the same code path
+(`enrollment.BeginEnrollment` → `Wait`):
+
+| Front end | Invocation | Notes |
+|---|---|---|
+| Local page (**default**) | `omni-enrollment [--issuer URL]`, or `omni-enrollment gui` | Serves an HTML page on `127.0.0.1:<ephemeral>`, opens it in the user's browser, shows the verification link, user code, and QR code, then the device card with renew / rotate / unenroll. |
+| Terminal | `omni-enrollment enroll` | Prints the same link, code, and a half-block QR; for SSH, consoles, scripts, and the PoC. `--browser` selects §5.4. |
+| Desktop launcher | `endpoint/desktop` | `.desktop` entry → `pkexec omni-enrollment --exit-when-idle 2m`; polkit asks for an administrator password, the page opens as the desktop user, and the process exits after the tab is closed. |
+
+The local page is a front end, not a protocol: it never handles Omni
+credentials (approval always happens on Omni's own `/device` page, in a
+normal signed-in browser session) and it adds no server-side endpoint. Its
+own surface is bounded as follows: it binds to the loopback interface only;
+the printed URL carries a one-time 192-bit token that becomes a
+`SameSite=Strict`, `HttpOnly` cookie; every state-changing request must also
+carry that token in an `X-Omni-GUI` header, so a page on another origin
+cannot drive it even with the cookie present; the `Host` header must be a
+loopback name; responses carry a restrictive CSP and `no-store`; and the
+process can stop itself when idle. Under `sudo`/`pkexec` the browser is
+launched as the invoking desktop user (from `SUDO_USER` / `PKEXEC_UID`) with
+that user's session environment, never as root. Threats are in
+[DEVICE-THREAT-MODEL.md §4.17](DEVICE-THREAT-MODEL.md).
+
 ---
 
 ## 6. Device authentication (RFC 7523 JWT-bearer grant)

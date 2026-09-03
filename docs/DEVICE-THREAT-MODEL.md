@@ -262,6 +262,52 @@ identity does not raise or lower this risk.
 
 ---
 
+### 4.17 Local enrollment page and desktop launcher
+
+*Surface:* `omni-enrollment` (no command) runs an HTTP server as root on the
+loopback interface and opens it in a browser; `endpoint/desktop` starts that
+process through `pkexec` from the application menu.
+
+*Attack:* a web page open in the same browser, or another local user, drives
+the page to enroll, rotate, or unenroll the device; a local process on a
+different host name reaches it; a launched instance is left running as root;
+the browser (and its profile) runs as root.
+
+*Controls:*
+
+- Listens on `127.0.0.1` / `::1` only; the Host header must be a loopback
+  name (403 otherwise), which also defeats DNS-rebinding.
+- The launch URL carries a one-time 192-bit token. It is exchanged for a
+  `SameSite=Strict`, `HttpOnly` cookie on first visit and removed from the
+  URL; without the cookie nothing is served. Every `POST` must additionally
+  carry the token in an `X-Omni-GUI` header, which only script on the page's
+  own origin can add, so a cross-origin form or fetch fails with 403 even
+  with the cookie present. Comparisons are constant-time.
+- Restrictive CSP (`default-src 'self'`, `frame-ancestors 'none'`),
+  `X-Frame-Options: DENY`, `Cache-Control: no-store` on every response; no
+  external resources.
+- Approval itself never happens on the local page: the user signs in on
+  Omni's `/device` page in a normal session (with its own CSRF and identity
+  wording, §4.3, §4.12), so the local page holds no Omni credential and no
+  token; it holds the same state the CLI holds (device key, record).
+- `--exit-when-idle` (used by the launcher) stops the server when no browser
+  has talked to it for the period and no approval is pending. Ctrl-C or
+  session end stops it otherwise.
+- Under `sudo`/`pkexec` the browser is opened as the invoking desktop user
+  (`SUDO_USER` / `PKEXEC_UID`, uid ≠ 0) with that session's display
+  variables; root never runs a browser. The polkit policy pins the executable
+  path (`org.freedesktop.policykit.exec.path`) and requires `auth_admin`
+  (`auth_admin_keep` for the active session), so a non-administrator cannot
+  launch it and the launcher cannot be pointed at another binary.
+- Other local users cannot reach the page without the token: the URL is
+  printed to the launching terminal (or handed straight to the browser) and
+  is not written to any world-readable file.
+
+*Residual:* a compromised browser profile of the desktop user that already
+has the cookie could drive the page for as long as it runs; the same profile
+could equally approve devices on Omni. Bounded by the idle exit and by every
+action being visible under *My Devices*.
+
 ## 5. Residual risks (accepted, V1)
 
 1. Software device keys are clonable by root or by disk theft without FDE.
@@ -286,4 +332,5 @@ identity does not raise or lower this risk.
 | 18–20 | Revocation stops new credentials; issued ones expire | revoke → jwt-bearer fails, refresh fails, API with old token fails |
 | — | Public-key substitution | enrollment with a DPoP key ≠ `cnf.jkt` → 401 |
 | — | CSRF on approve/revoke | missing token → 403 |
+| — | Local page: foreign Host, missing cookie, missing CSRF header → 403; idle exit; browser opened as the desktop user | `internal/enrollment/gui_test.go`, `internal/enrollment/openuser_test.go`, PoC `endpoint/poc/scripts/gui-enroll.sh` |
 | — | Existing OIDC flows unchanged | existing suite + assertion that `authorization_code` tokens have no device claims |

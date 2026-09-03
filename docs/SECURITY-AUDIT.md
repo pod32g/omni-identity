@@ -96,3 +96,20 @@ enrollment resistance, §9 revocation semantics), [PASSKEYS.md](PASSKEYS.md)
 §5 offline credential). Security-relevant regression tests:
 `internal/pop/pop_test.go`, `internal/web/device_flow_test.go`,
 `internal/web/webauthn_test.go`, `internal/enrollment/{agent,login}_test.go`.
+
+**Local enrollment page and desktop launcher (2026-09-03).** The default
+`omni-enrollment` command now serves a page on the loopback interface as
+root. Its surface and controls are analysed in
+[DEVICE-THREAT-MODEL.md §4.17](DEVICE-THREAT-MODEL.md) and summarised in
+[DEVICE-IDENTITY-ARCHITECTURE.md §5.5](DEVICE-IDENTITY-ARCHITECTURE.md):
+loopback bind and Host check, one-time token → `SameSite=Strict` cookie plus
+a per-request `X-Omni-GUI` header on every `POST`, restrictive CSP,
+`--exit-when-idle`, browser launched as the desktop user rather than root,
+and a polkit policy that pins the executable path and requires an
+administrator. No new server-side endpoint was added; approval still happens
+on Omni's `/device` page. Regression tests:
+`internal/enrollment/gui_test.go` (token/cookie/header guards, idle exit,
+launcher–policy consistency), `internal/enrollment/openuser_test.go`
+(no root environment leaks into the user's browser session), and the gating
+PoC step `endpoint/poc/scripts/gui-enroll.sh` (foreign Host, missing cookie,
+and header-less `POST` refused on a real Ubuntu endpoint).
