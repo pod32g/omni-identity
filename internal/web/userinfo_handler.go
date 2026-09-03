@@ -40,6 +40,10 @@ func (s *Server) handleUserinfo(w http.ResponseWriter, r *http.Request) {
 		claims["preferred_username"] = user.Username
 		claims["name"] = user.Username
 	}
+	// Membership is not personal data and is not scope-gated.
+	if groups := userGroups(user); len(groups) > 0 {
+		claims["groups"] = groups
+	}
 	writeJSON(w, http.StatusOK, claims)
 }
 

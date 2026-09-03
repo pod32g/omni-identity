@@ -181,7 +181,7 @@ Otherwise it shows the branded "You've signed out" page.
 - Never collect or store the user's Omni Identity password in your application.
 
 
-## Optional claims: `amr`, `device_id`, `device_trust`
+## Optional claims: `amr`, `device_id`, `device_trust`, `groups`
 
 ID tokens now carry the standard `amr` claim (RFC 8176 values such as
 `["pwd","otp","mfa"]` or `["webauthn","user","mfa"]` for a passkey with user
@@ -195,3 +195,11 @@ them. When present they are asserted by Omni after a proof of possession of
 the device key. See
 [DEVICE-IDENTITY-ARCHITECTURE.md §7](DEVICE-IDENTITY-ARCHITECTURE.md) for the
 exact rules and [PASSKEYS.md](PASSKEYS.md) for the `amr` values.
+
+`groups` lists the user's memberships. Omni has no group model, so in V1 the
+only value is `admins`, derived from the user's administrator flag; the claim
+is **absent** (not an empty list) for everyone else. It appears on ID tokens,
+access tokens (including RFC 8693 exchanged tokens), and `/userinfo`
+regardless of scope — membership is not personal data. A relying party such as
+an access gateway can grant its own administrator role on
+`"admins" ∈ groups` without a second directory.

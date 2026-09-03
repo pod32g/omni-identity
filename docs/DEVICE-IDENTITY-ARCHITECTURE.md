@@ -418,9 +418,10 @@ device; the subject token is a live refresh token bound to that same device
 and key; the audience is a registered, enabled client; the scope is within
 both the user's grant and the audience's allowed scopes. The issued token is
 a normal access token for that audience with `act: {sub: <device_id>}`,
-`device_id`, `device_trust`, and `amr` — the RFC 8693 delegation shape, so a
+`device_id`, `device_trust`, `amr`, and `groups` (`["admins"]` for an
+administrator, absent otherwise) — the RFC 8693 delegation shape, so a
 resource server can distinguish "alice via her enrolled laptop" from a plain
-user token. It is a bearer with the normal short TTL because the local app
+user token and tell whether she administers Omni. It is a bearer with the normal short TTL because the local app
 holds no device key.
 
 Endpoint side, the broker socket (`/run/omni-enrollment/broker.sock`) is

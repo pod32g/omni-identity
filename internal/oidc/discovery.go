@@ -71,7 +71,7 @@ func BuildDiscovery(issuer string) DiscoveryDocument {
 		ClaimsSupported: []string{
 			"sub", "iss", "aud", "exp", "iat",
 			"email", "email_verified", "preferred_username", "name",
-			"auth_time", "amr", "device_id", "device_trust", "act",
+			"auth_time", "amr", "device_id", "device_trust", "act", "groups",
 		},
 		DPoPSigningAlgValuesSupported: []string{"EdDSA", "ES256", "RS256"},
 	}

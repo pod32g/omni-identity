@@ -116,6 +116,7 @@ func (s *Server) grantTokenExchange(w http.ResponseWriter, r *http.Request) {
 	if rt.AMR != "" {
 		extra["amr"] = tokens.AMRList(rt.AMR)
 	}
+	extra = withGroups(extra, user)
 	access, err := s.issuer.IssueAccessTokenWithClaims(user.ID, target.ClientID, scope, extra)
 	if err != nil {
 		oauthError(w, http.StatusInternalServerError, "server_error", "could not issue token")

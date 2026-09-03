@@ -329,7 +329,7 @@ func (s *Server) grantRefreshToken(w http.ResponseWriter, r *http.Request) {
 // buildAccessAndID signs an access token and, when openid is granted, an ID
 // token carrying the supplied authentication time plus any bindings in tc.
 func (s *Server) buildAccessAndID(client *model.Client, user *model.User, scope, nonce string, authTime time.Time, tc tokenContext) (tokenResponse, error) {
-	extra := tc.extra()
+	extra := withGroups(tc.extra(), user)
 	access, err := s.issuer.IssueAccessTokenWithClaims(user.ID, client.ClientID, scope, extra)
 	if err != nil {
 		return tokenResponse{}, err
@@ -399,6 +399,31 @@ func (s *Server) authenticateClient(r *http.Request) (*model.Client, bool) {
 		}
 	}
 	return client, true
+}
+
+// userGroups renders the user's memberships as the groups claim. Omni has no
+// group model; the only membership is the administrator flag, so V1 yields
+// ["admins"] for administrators and nil (claim absent) for everyone else.
+func userGroups(u *model.User) []string {
+	if u != nil && u.IsAdmin {
+		return []string{"admins"}
+	}
+	return nil
+}
+
+// withGroups returns extra plus the groups claim when the user has any. It
+// never mutates extra (which may be nil).
+func withGroups(extra tokens.Extra, u *model.User) tokens.Extra {
+	groups := userGroups(u)
+	if len(groups) == 0 {
+		return extra
+	}
+	out := tokens.Extra{}
+	for k, v := range extra {
+		out[k] = v
+	}
+	out["groups"] = groups
+	return out
 }
 
 // profileFromUser maps a user to ID-token identity claims. Admin-provisioned
