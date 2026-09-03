@@ -44,7 +44,7 @@ jobs:
       - run: npm test
 
   deploy:
-    needs: [build, design-system]
+    needs: [build, design-system, linux-login-poc]
     if: github.ref == 'refs/heads/main'   # only main deploys
     runs-on: [self-hosted, omni-identity]
     concurrency:
@@ -207,13 +207,13 @@ jobs:
           echo "deploy: success"
 
   linux-login-poc:
-    # Scenarios 26-35 of the device-identity brief: enroll a disposable Ubuntu
-    # container, log in over SSH/PAM through Omni, go offline, use the
-    # break-glass account, reconnect, revoke. Runs on the self-hosted Ubuntu
-    # runner after the deploy (never for pull-request code), with a throwaway
-    # Omni container on a private network. Informational: it does not gate
-    # the deploy until it has proven stable.
-    needs: [deploy]
+    # Deploy gate: scenarios 26-35 of the device-identity brief. Builds the
+    # candidate image under its own tag (never touching the host's
+    # omni-identity:latest), enrolls a disposable Ubuntu container, logs in
+    # over SSH/PAM through that Omni, goes offline, uses the break-glass
+    # account, reconnects, revokes. Runs on the self-hosted Ubuntu runner for
+    # main only (never pull-request code); the throwaway Omni stays on a
+    # private Docker network published to loopback.
     if: github.ref == 'refs/heads/main'
     runs-on: [self-hosted, omni-identity]
     timeout-minutes: 25
@@ -222,11 +222,13 @@ jobs:
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-      - name: Run the Linux login proof of concept
+      - name: Build the candidate image (layers are reused by the deploy build)
+        run: docker build -t omni-identity:poc .
+      - name: Run the Linux login proof of concept against it
         env:
           OMNI_POC_PORT: "18080"
-          # The deploy just built this image on this host; run the throwaway
-          # Omni from it (private network, loopback-only publish) rather than
-          # needing a Go toolchain or a host port.
-          OMNI_POC_IMAGE: omni-identity:latest
+          OMNI_POC_IMAGE: omni-identity:poc
         run: endpoint/poc/run-poc.sh
+      - name: Drop the candidate tag
+        if: always()
+        run: docker rmi omni-identity:poc || true
