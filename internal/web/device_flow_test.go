@@ -987,6 +987,14 @@ func TestTokenExchangeForLocalBroker(t *testing.T) {
 	if _, bound := c["cnf"]; bound {
 		t.Error("brokered token must be a plain bearer for the local app")
 	}
+	// The exchanged token reports the original sign-in time, not the exchange.
+	stored, err := srv.db.GetRefreshTokenByHash(context.Background(), hashToken(refresh))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if at, _ := c["auth_time"].(float64); stored.AuthTime.IsZero() || int64(at) != stored.AuthTime.Unix() {
+		t.Errorf("auth_time = %v, want %d", c["auth_time"], stored.AuthTime.Unix())
+	}
 	// The issued token works at userinfo for its audience's scopes.
 	req := httptest.NewRequest(http.MethodGet, "/userinfo", nil)
 	req.Header.Set("Authorization", "Bearer "+resp["access_token"].(string))

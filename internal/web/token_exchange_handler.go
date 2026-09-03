@@ -116,6 +116,12 @@ func (s *Server) grantTokenExchange(w http.ResponseWriter, r *http.Request) {
 	if rt.AMR != "" {
 		extra["amr"] = tokens.AMRList(rt.AMR)
 	}
+	// The exchange is not a fresh authentication: the token reports when the
+	// user actually signed in, so a resource server can apply its own
+	// freshness policy.
+	if !rt.AuthTime.IsZero() {
+		extra["auth_time"] = rt.AuthTime.Unix()
+	}
 	extra = withGroups(extra, user)
 	access, err := s.issuer.IssueAccessTokenWithClaims(user.ID, target.ClientID, scope, extra)
 	if err != nil {
