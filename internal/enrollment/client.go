@@ -375,6 +375,30 @@ func (c *Client) Me(ctx context.Context, deviceToken string) (*Device, error) {
 	return &out, nil
 }
 
+// UserLookup is the answer to an enrolled device's username lookup.
+type UserLookup struct {
+	Sub      string `json:"sub"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+}
+
+// LookupUser resolves an Omni username to its stable subject (NSS bridge).
+// Unknown or disabled users yield an OAuthError with code "not_found".
+func (c *Client) LookupUser(ctx context.Context, deviceToken, username string) (*UserLookup, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Issuer+"/api/v1/users/lookup?username="+url.QueryEscape(username), nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.authorize(req, deviceToken); err != nil {
+		return nil, err
+	}
+	var out UserLookup
+	if err := c.doJSON(req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // RotateKey replaces the registered key with newKey (docs §8). The current
 // Signer authenticates the request; newKey signs the proof.
 func (c *Client) RotateKey(ctx context.Context, deviceToken, deviceID string, newKey Signer) (*Device, error) {

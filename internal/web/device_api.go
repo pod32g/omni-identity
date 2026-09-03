@@ -232,6 +232,25 @@ func (s *Server) handleEnrollDevice(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, deviceToJSON(dev, user.Username))
 }
 
+// handleDeviceUserLookup answers GET /api/v1/users/lookup?username=… for an
+// enrolled device: the NSS bridge on the endpoint needs a user's stable
+// subject (to derive a uid) before that user has ever logged in there. Only
+// active devices may ask, the answer is the minimum the endpoint needs, and
+// unknown or disabled users are indistinguishable (404).
+func (s *Server) handleDeviceUserLookup(w http.ResponseWriter, r *http.Request, dev *model.Device) {
+	name := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("username")))
+	if name == "" || len(name) > 64 {
+		apiError(w, http.StatusBadRequest, "invalid_request", "username is required")
+		return
+	}
+	u, err := s.db.GetUserByUsername(r.Context(), name)
+	if err != nil || u.Disabled {
+		apiError(w, http.StatusNotFound, "not_found", "no such user")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"sub": u.ID, "username": u.Username, "email": u.Email})
+}
+
 // requireDevice wraps a device-API handler: the request must carry a valid
 // device token for an active device (and a DPoP proof when bound).
 func (s *Server) requireDevice(next func(http.ResponseWriter, *http.Request, *model.Device)) http.HandlerFunc {

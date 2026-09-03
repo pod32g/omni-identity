@@ -84,6 +84,17 @@ func newTestIssuer(t *testing.T) *testIssuer {
 	return &testIssuer{URL: base, DB: db, User: u, SID: sess.ID, srv: hs}
 }
 
+// seedIssuerUser creates another Omni user and returns its id.
+func seedIssuerUser(t *testing.T, ti *testIssuer, name string) string {
+	t.Helper()
+	now := time.Now().UTC().Truncate(time.Second)
+	u := &model.User{ID: uuid.NewString(), Username: name, Email: name + "@example.com", PasswordHash: "x", CreatedAt: now, UpdatedAt: now}
+	if err := ti.DB.CreateUser(context.Background(), u); err != nil {
+		t.Fatal(err)
+	}
+	return u.ID
+}
+
 // approvePending waits for a pending device code to appear and approves it as
 // the seeded user through the real /device/confirm page.
 func (ti *testIssuer) approvePending(t *testing.T) {

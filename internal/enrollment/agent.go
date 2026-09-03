@@ -9,6 +9,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,11 +20,20 @@ type Agent struct {
 	Out        io.Writer
 	// Transport overrides the HTTP transport (tests only).
 	Transport http.RoundTripper
-	// Provisioner creates local accounts (SystemProvisioner in the CLI; a fake
-	// in tests). nil disables owner pre-provisioning.
-	Provisioner Provisioner
+	// Accounts answers whether a name is a pre-existing local account and
+	// whether a uid is taken (PasswdFile in the CLI; a fake in tests). nil
+	// disables owner pre-provisioning.
+	Accounts LocalAccounts
 	// Policy is the login policy used for pre-provisioning.
 	Policy LoginPolicy
+	// NoHome disables home-directory creation (tests).
+	NoHome bool
+
+	// Device-token cache shared by the daemon's NSS bridge.
+	tokMu      sync.Mutex
+	tok        string
+	tokExpires time.Time
+	logf       func(string, ...any)
 }
 
 // Config is what the CLI resolves from flags/env/config file.
@@ -156,11 +166,11 @@ func (a *Agent) Enroll(ctx context.Context, cfg Config) (*State, error) {
 		return nil, err
 	}
 	fmt.Fprintf(a.Out, "Enrolled as %s (device id %s).\n", dev.OwnerUsername, dev.ID)
-	if a.Provisioner != nil {
-		if err := a.EnsureOwnerAccount(st, a.Provisioner, a.policy()); err != nil {
-			fmt.Fprintf(a.Out, "warning: could not pre-provision the local account for %s: %v\n", dev.OwnerUsername, err)
+	if a.Accounts != nil {
+		if err := a.EnsureOwnerAccount(st, a.Accounts); err != nil {
+			fmt.Fprintf(a.Out, "warning: could not prepare the local identity for %s: %v\n", dev.OwnerUsername, err)
 		} else {
-			fmt.Fprintf(a.Out, "Local account %s is ready; sign in with `ssh %s@<host>` to finish setup.\n", dev.OwnerUsername, dev.OwnerUsername)
+			fmt.Fprintf(a.Out, "Identity %s is ready on this machine; sign in with `ssh %s@<host>` to finish setup.\n", dev.OwnerUsername, dev.OwnerUsername)
 		}
 	}
 	return st, nil
@@ -278,12 +288,12 @@ func (a *Agent) Unenroll(ctx context.Context) error {
 
 // DaemonOptions tunes RunDaemon.
 type DaemonOptions struct {
-	Provisioner Provisioner
-	Policy      LoginPolicy
+	Accounts LocalAccounts
+	Policy   LoginPolicy
 	// RefreshEvery caps the renewal interval (0 = half the device-token
 	// lifetime). Also drives the per-user trust refresh.
 	RefreshEvery time.Duration
-	// ServePAM starts the PAM socket (Linux login integration).
+	// ServePAM starts the PAM and NSS sockets (Linux login integration).
 	ServePAM bool
 }
 
@@ -296,23 +306,27 @@ func (a *Agent) RunDaemon(ctx context.Context, opt DaemonOptions, logf func(stri
 	if _, err := LoadState(a.StateDir); err != nil {
 		return err
 	}
-	if opt.Provisioner == nil {
-		opt.Provisioner = SystemProvisioner{}
+	if opt.Accounts == nil {
+		opt.Accounts = PasswdFile{}
 	}
 	if opt.Policy.OfflineValidity <= 0 {
 		opt.Policy = DefaultLoginPolicy
 	}
+	a.logf = logf
 	if st, err := LoadState(a.StateDir); err == nil {
-		// sshd resolves the user before PAM runs, so the owner's account must
-		// already exist for a first SSH login (docs/LINUX-LOGIN-ARCHITECTURE.md §4).
-		if err := a.EnsureOwnerAccount(st, opt.Provisioner, opt.Policy); err != nil {
-			logf("pre-provision owner account: %v", err)
+		if err := a.EnsureOwnerAccount(st, opt.Accounts); err != nil {
+			logf("prepare owner identity: %v", err)
 		}
 	}
 	if opt.ServePAM {
 		go func() {
-			if err := a.ServePAM(ctx, opt.Provisioner, opt.Policy, logf); err != nil {
+			if err := a.ServePAM(ctx, opt.Accounts, opt.Policy, logf); err != nil {
 				logf("pam socket: %v", err)
+			}
+		}()
+		go func() {
+			if err := a.ServeNSS(ctx, opt.Accounts, opt.Policy, logf); err != nil {
+				logf("nss socket: %v", err)
 			}
 		}()
 	}

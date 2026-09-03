@@ -31,7 +31,8 @@ OMNI_POC_IMAGE=omni-identity:latest endpoint/poc/run-poc.sh  # Omni from an imag
 | Start Omni natively on `127.0.0.1:18080` with public URL `http://host.docker.internal:18080` (insecure-HTTP opt-in), bootstrap `admin` and `alice` through the real setup wizard and admin UI | — | `PASS: admin + alice created` |
 | `omni-enrollment enroll` in the endpoint; the code is approved *as alice* through the real `/device` pages (the `approve.sh` script stands in for her phone) | 7–12 | enrollment transcript, `omni-enrollment status` |
 | Start `omni-enrollment daemon --refresh-interval 15s` (no systemd in a container) | 13–14 | socket present |
-| `ssh alice@localhost` via PAM keyboard-interactive: URL + code shown by PAM, approved, ID token verified, `useradd` provisioning, local offline password chosen | **26, 27** | `uid=2xxxxx(alice)` from the SSH session, `getent passwd alice` |
+| `ssh alice@localhost` via PAM keyboard-interactive: URL + code shown by PAM, approved, ID token verified, identity served by `libnss_omni` (no `/etc/passwd` entry), home created, local offline password chosen | **26, 27** | `uid=2xxxxx(alice)` from the SSH session, `getent passwd alice` |
+| `ssh bob@localhost` for a user who has never touched the machine: NSS asks the daemon, the daemon asks Omni, the login proceeds | **26 (non-owner)** | `uid=2xxxxx(bob)` |
 | `docker network disconnect` (the container loses all connectivity, including to the host): SSH login with the local password; wrong password refused | **28–31** | `PASS: offline login OK` |
 | Daemon killed **and** network down: `ssh omni-recovery@localhost` (PAM → `pam_unix`) + `sudo` | **32** | `PASS: omni-recovery logged in over SSH via pam_unix` |
 | Reconnect: daemon renews the device token and refreshes alice's trust (device-bound refresh token) | **33, 34** | daemon log lines |
@@ -48,8 +49,9 @@ revocation, passkeys) are covered by `go test ./...`; see
 2. On a fresh Fedora/Ubuntu VM: download the agent and the PAM/systemd sources
    from **Account → Enroll a device** on your server and follow its install
    commands ([OMNI-ENROLLMENT.md](OMNI-ENROLLMENT.md), `endpoint/pam/Makefile`),
-   create the break-glass user (§3), and add to `/etc/pam.d/sshd` (and, if
-   desired, `login`, `gdm-password`) **above** the `pam_unix` lines:
+   create the break-glass user (§3), append `omni` to the `passwd:` and
+   `group:` lines of `/etc/nsswitch.conf`, and add to `/etc/pam.d/sshd` (and,
+   if desired, `login`, `gdm-password`) **above** the `pam_unix` lines:
    ```
    auth     sufficient pam_omni.so
    account  sufficient pam_omni.so
@@ -102,9 +104,9 @@ root-equivalent credential and keep it in the household's password manager.
 
 ## 5. What the PoC does not show
 
-GDM/desktop greeter (text prompts should render, untested), NSS-level
-lookups beyond `files`, group/sudo mapping, TPM-sealed cache, screen-lock
-specifics. None affects the answer to the PoC question.
+GDM/desktop greeter (text prompts should render, untested), group/sudo
+mapping, TPM-sealed cache, screen-lock specifics. None affects the answer to
+the PoC question.
 
 ## 6. Future Omni-OS integration notes
 

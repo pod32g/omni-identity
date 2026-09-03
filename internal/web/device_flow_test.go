@@ -477,6 +477,40 @@ func TestDeviceAPIRequiresBoundProof(t *testing.T) {
 	}
 }
 
+func TestDeviceUserLookupForNSS(t *testing.T) {
+	srv := testServer(t)
+	alice := createUser(t, srv, "alice", "pw", false)
+	bob := createUser(t, srv, "bob", "pw", false)
+	disabled := createUser(t, srv, "carol", "pw", false)
+	_ = srv.db.SetUserDisabled(context.Background(), disabled.ID, true)
+	key := newDeviceKey(t)
+	id := enrollDevice(t, srv, alice, key, "laptop")
+	access := decodeJSON(t, deviceToken(t, srv, id, key, true))["access_token"].(string)
+	lookup := func(name string, withProof bool) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/users/lookup?username="+name, nil)
+		req.Header.Set("Authorization", "DPoP "+access)
+		if withProof {
+			key.dpop(t, req, access)
+		}
+		return do(srv, req)
+	}
+	rr := lookup("Bob", true)
+	if rr.Code != 200 || decodeJSON(t, rr)["sub"] != bob.ID {
+		t.Errorf("lookup bob = %d %s", rr.Code, rr.Body.String())
+	}
+	for _, name := range []string{"nobody", "carol"} {
+		if rr := lookup(name, true); rr.Code != http.StatusNotFound {
+			t.Errorf("%s = %d, want 404", name, rr.Code)
+		}
+	}
+	if rr := lookup("bob", false); rr.Code != http.StatusUnauthorized {
+		t.Errorf("lookup without proof = %d", rr.Code)
+	}
+	if rr := do(srv, httptest.NewRequest(http.MethodGet, "/api/v1/users/lookup?username=bob", nil)); rr.Code != http.StatusUnauthorized {
+		t.Errorf("anonymous lookup = %d", rr.Code)
+	}
+}
+
 func TestDeviceKeyRotation(t *testing.T) {
 	srv := testServer(t)
 	alice := createUser(t, srv, "alice", "pw", false)

@@ -159,6 +159,13 @@ architecture doc requires per-app authorization before it ever does).
 
 Same as 4.7. Nothing on the endpoint hands tokens to applications in V1.
 
+The NSS socket (`nss.sock`) is world-connectable by necessity (any process
+resolves names) but read-only: it answers name/uid queries from the cache and
+performs at most 30 online username lookups a minute, with negative caching.
+What it can leak is whether a username exists in Omni — information the
+device, as a trusted principal, is entitled to, and that `getent` on any
+directory-joined machine exposes the same way. It never returns secrets.
+
 ### 4.9 Device cloning (filesystem copy or stolen disk)
 
 *Attack:* copy `/var/lib/omni-enrollment` to another machine.

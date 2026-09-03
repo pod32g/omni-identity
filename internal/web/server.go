@@ -191,6 +191,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /device/confirm", s.requireUser(s.handleDeviceConfirm))
 	s.mux.HandleFunc("POST /api/v1/devices", s.handleEnrollDevice)
 	s.mux.HandleFunc("GET /api/v1/devices/me", s.requireDevice(s.handleDeviceMe))
+	s.mux.HandleFunc("GET /api/v1/users/lookup", s.requireDevice(s.handleDeviceUserLookup))
 	s.mux.HandleFunc("POST /api/v1/devices/me/key", s.requireDevice(s.handleDeviceRotateKey))
 	s.mux.HandleFunc("POST /api/v1/devices/me/unenroll", s.requireDevice(s.handleDeviceUnenroll))
 

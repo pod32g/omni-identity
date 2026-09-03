@@ -16,11 +16,11 @@ working offline, and never lock the owner out?*
 | Component | Role | Touched by this design? |
 |---|---|---|
 | **PAM** (`libpam`, `/etc/pam.d/*`) | Pluggable *authentication*: a service (`login`, `sshd`, `gdm-password`, `sudo`) runs a stack of modules; each can converse with the user through the service's conversation function. | **Yes — one small module is added to the stack.** Nothing is replaced. |
-| **NSS** (`/etc/nsswitch.conf`, `passwd`/`group` sources) | *Identity lookup*: name ↔ uid/gid/home/shell. `files` reads `/etc/passwd`. | **No.** Users are provisioned as ordinary local accounts, so `files` already answers. |
+| **NSS** (`/etc/nsswitch.conf`, `passwd`/`group` sources) | *Identity lookup*: name ↔ uid/gid/home/shell. `files` reads `/etc/passwd`. | **Yes — one small source is added** (`libnss_omni`, after `files`). Nothing is replaced; `/etc/passwd` keeps every local account. |
 | **SSSD** | Daemon providing NSS + PAM for LDAP/AD/IPA and, since 2.10, a generic OAuth2 *IdP* backend. | Evaluated, not used (§2). |
 | **systemd-logind** | Session tracking, seats, `XDG_RUNTIME_DIR`, via `pam_systemd`. | **No.** Runs unchanged after PAM succeeds. |
 | **Display managers** (GDM, SDDM, LightDM) | Drive PAM through their own greeter; render `PAM_TEXT_INFO` and prompts as text. | **No changes.** Text prompts are enough for the PoC; QR rendering is a greeter feature, not an identity one. |
-| **`useradd`/`shadow`** | Local account database. | Used, not replaced: Omni users become real local accounts with a locked password field. |
+| **`useradd`/`shadow`** | Local account database. | Untouched. Omni users are not written to `/etc/passwd`; the NSS source answers for them from the daemon's cache. |
 
 Hard rule from the brief, honoured: PAM, NSS, logind, the display manager,
 `/etc/passwd`, and the UID model are neither replaced nor reimplemented.
@@ -49,8 +49,10 @@ Hard rule from the brief, honoured: PAM, NSS, logind, the display manager,
   │ pam_omni.so  │◀───────────────────▶│ /run/omni-enrollment/pam.sock│◀────────▶│ RFC 8628    │
   │ (relay only) │  line protocol      │  device key + device token │          │ + device    │
   └──────────────┘                     │  users/<name>.json cache   │          │   token     │
-        │ success                      │  useradd on first login    │          └────────────┘
-        ▼                              └───────────────────────────┘
+  ┌──────────────┐  name/uid lookups   │  home dir on first login   │          │ + user      │
+  │ libnss_omni  │◀───────────────────▶│ /run/omni-enrollment/nss.sock│          │   lookup    │
+  └──────────────┘  (read-only)        └───────────────────────────┘          └────────────┘
+        │ success
   pam_unix (local accounts, break-glass) … pam_systemd → session
 ```
 
@@ -77,7 +79,9 @@ Hard rule from the brief, honoured: PAM, NSS, logind, the display manager,
    It verifies the ID token signature against the issuer's JWKS and requires
    `preferred_username` to equal the PAM username and `device_id` to equal
    its own device id (an approval by another account is refused).
-5. **Provisioning** (§4): if no local account exists, `useradd` creates one.
+5. **Provisioning** (§4): the identity (uid derived from `sub`, home, shell)
+   is recorded in the daemon's cache — from now on `libnss_omni` answers for
+   it — and the home directory is created from `/etc/skel`.
 6. **Offline enrolment** (§5): on first login, the user chooses a *local
    password* for offline use. Its Argon2id hash, the identity mapping, and
    the refresh token are written to the root-only cache.
@@ -151,27 +155,27 @@ deliberately boring.
 
 | Linux field | Value | Rationale |
 |---|---|---|
-| login name | Omni `preferred_username` | Must pass `useradd` name rules (lowercase, `[a-z_][a-z0-9_-]*`, ≤ 32); otherwise the login is refused with a clear message. Case-insensitive match against the PAM username. |
-| uid = gid | `200000 + fnv1a32(sub) mod 100000`, probing upward on collision with a different account | Deterministic from the stable Omni `sub`, so the same user gets the same uid on every enrolled machine (shared home directories stay consistent); range above typical local (1000+) and SSSD (typically ≥ 100000 configurable) allocations. The mapping is recorded in the cache so a probe result is stable per machine. |
-| home | `/home/<name>`, created by `useradd -m` | Standard. |
+| login name | Omni `preferred_username` | Must pass Linux name rules (lowercase, `[a-z_][a-z0-9_-]*`, ≤ 32); otherwise the login is refused with a clear message. Case-insensitive match against the PAM username. |
+| uid = gid | `200000 + fnv1a32(sub) mod 100000`, probing upward on collision with `/etc/passwd` or another cached user | Deterministic from the stable Omni `sub`, so the same user gets the same uid on every enrolled machine (shared home directories stay consistent); range above typical local (1000+) and SSSD allocations. The allocation is recorded in the cache so a probe result is stable per machine. |
+| home | `/home/<name>`, created by the daemon (0700, `/etc/skel`) on first login | Standard. |
 | shell | `/bin/bash` (configurable `login_shell`) | Standard. |
 | gecos | `Omni Identity <sub>` | Makes the origin visible in `getent passwd`. |
-| password field | `!` (locked) | Only `pam_omni` can authenticate the account; `pam_unix` always fails for it. |
-| groups | none beyond the private group | Group/sudo policy is deliberately out of scope (not an MDM). Operators add groups locally. |
+| password field | `*` | The identity is served by NSS, never written to `/etc/passwd`/`shadow`; only `pam_omni` can authenticate it. |
+| groups | the private group only | Group/sudo policy is deliberately out of scope (not an MDM). Operators add groups locally (`gpasswd -a <name> <group>` works: supplementary membership lives in `/etc/group`). |
 
-**When the account is created.** OpenSSH resolves the login name with
-`getpwnam` *before* running PAM and refuses to authenticate a user that did
-not exist at that moment (it aborts with an internal error if PAM says yes for
-an "invalid" user). Just-in-time creation during a first SSH login therefore
-cannot work without an NSS module. The PoC keeps the "no NSS module" rule by
-**pre-provisioning the enrolling owner** at enrollment time and at every
-daemon start (`EnsureOwnerAccount`): the account and a cache entry without a
-local password are created from the owner's `sub`/`username`, so the first
-SSH login already finds the user. Other Omni users are created at their first
-login through services that run PAM before the lookup (`login`, GDM), or by an
-operator running `omni-enrollment pam-test <user>` once. A thin NSS module
-querying the daemon (with a server-side username→sub lookup) is the
-general fix and is listed as future work.
+**How the system learns the identity.** `libnss_omni` (a glibc NSS source
+listed after `files` for `passwd` and `group`) resolves names and ids through
+the daemon's read-only socket `/run/omni-enrollment/nss.sock`. The daemon
+answers from its user cache; for a name it has never seen it asks Omni once
+(`GET /api/v1/users/lookup`, authenticated with the device token, budgeted at
+30 lookups a minute, negative results remembered for a minute) and caches the
+identity. This is what makes a *first* SSH login work: sshd resolves the user
+with `getpwnam` before running PAM, and an identity that only exists in Omni
+now resolves. Names present in `/etc/passwd` are never answered, so a local
+account can never be shadowed by an Omni user of the same name. The enrolling
+owner's identity is cached at enrollment time so it resolves even before the
+first lookup. Offline, cached identities keep resolving; unknown names return
+"not found" without waiting on the network.
 
 Accounts are never deleted automatically; a revoked user simply cannot log
 in. Deleting the account and its home is an operator decision.
@@ -214,6 +218,7 @@ Newline-delimited UTF-8 lines over a Unix stream socket. No JSON in C.
 |---|---|---|
 | module → daemon | `AUTH <user> <service> <rhost\|->` | start an authentication |
 | module → daemon | `ACCT <user> <service>` | account check |
+| nss → daemon (`nss.sock`, world-connectable, read-only) | `PWNAM <name>` / `PWUID <uid>` / `GRNAM <name>` / `GRGID <gid>` | identity lookup; reply `PW <name> <uid> <gid> <home> <shell> <gecos>` / `GR <name> <gid>` / `NONE` |
 | daemon → module | `I <text>` / `W <text>` | info / error message |
 | daemon → module | `P <text>` / `E <text>` | prompt, echo off / on |
 | module → daemon | `A <text>` | answer to the last prompt |
@@ -228,14 +233,13 @@ first-time online logins over SSH.
 
 ## 7. Scope statement
 
-Implemented in the PoC: online login, provisioning, offline login with a
-local password, trust refresh, revocation propagation, break-glass. Tested
+Implemented in the PoC: online login, NSS-served identities (first-time SSH
+login for any Omni user), offline login with a local password, trust refresh,
+revocation propagation, break-glass. Tested
 with `sshd` and `login` in a disposable container; GDM is expected to work
 because only standard PAM text prompts are used, but is not exercised.
 
-Not implemented: NSS module (needed for first-time SSH login of users other
-than the enrolling owner, see §4), group mapping, sudo policy, home-directory
-encryption, screen-lock integration beyond PAM, QR codes in *graphical*
-greeters (consoles and SSH have them), TPM sealing, an `sssd-idp` profile,
-and an authd broker. None of these are needed
+Not implemented: group mapping, sudo policy, home-directory encryption,
+screen-lock integration beyond PAM, QR codes in *graphical* greeters
+(consoles and SSH have them), an `sssd-idp` profile, and an authd broker. None of these are needed
 to answer the PoC question.

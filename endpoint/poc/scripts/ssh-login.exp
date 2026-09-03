@@ -32,6 +32,8 @@ expect {
     -re {New local password: ?} { send "$localpw\r"; exp_continue }
     -re {Retype local password: ?} { send "$localpw\r"; exp_continue }
     -re {uid=[0-9]+\([a-z_-]+\)} {
+        # sanity: the session runs as the requested user
+        if {[string first "($user)" $expect_out(0,string)] < 0} { puts "\n\[poc\] wrong user: $expect_out(0,string)"; exit 6 }
         puts "\n\[poc\] login OK: $expect_out(0,string)"
         if {$mode eq "expect-fail"} { exit 3 }
         exit 0

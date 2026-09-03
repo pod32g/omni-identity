@@ -21,14 +21,15 @@ StateDirectoryMode=0700
 RuntimeDirectory=omni-enrollment
 RuntimeDirectoryMode=0755
 ProtectSystem=strict
-ProtectHome=yes
+# The daemon creates users' home directories on first login.
+ProtectHome=no
 PrivateTmp=yes
 NoNewPrivileges=yes
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 CapabilityBoundingSet=
-ReadWritePaths=/var/lib/omni-enrollment /run/omni-enrollment
+ReadWritePaths=/var/lib/omni-enrollment /run/omni-enrollment /home
 
 [Install]
 WantedBy=multi-user.target

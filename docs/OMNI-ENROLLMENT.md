@@ -96,6 +96,9 @@ consoles and SSH; graphical greeters always get the plain URL and code.
 | `/var/lib/omni-enrollment/device.key` | `0600 root` | Ed25519 private key (PKCS#8 PEM). **Never leaves the machine.** |
 | `/var/lib/omni-enrollment/device.json` | `0600 root` | device id, fingerprint, issuer, owner, last known status. No secrets. |
 | `/run/omni-enrollment/status.json` | `0644` | daemon view: status, reachability, last renewal, token expiry, last error. No tokens. |
+| `/run/omni-enrollment/pam.sock` | `0600 root` | PAM conversation socket (`pam_omni.so`). |
+| `/run/omni-enrollment/nss.sock` | `0666` | read-only identity lookups (`libnss_omni`). |
+| `/var/lib/omni-enrollment/users/<name>.json` | `0600 root` | per-user identity (uid, home) and offline cache; see the Linux login docs. |
 
 The agent refuses to load a key file that is readable by other users.
 
@@ -109,9 +112,9 @@ re-checked every 15 min; the operator must re-enroll.
 
 It holds the device token in memory only. It does not run remote commands,
 enforce policy, collect inventory, or talk to anything but the configured
-issuer. The Linux login integration (Phase 6) will read `status.json` and talk
-to the daemon over a root-only Unix socket; that is the extent of its local
-surface.
+issuer. The Linux login integration talks to the daemon over two Unix sockets: the
+root-only PAM socket and the read-only NSS socket; that is the extent of its
+local surface.
 
 ## Revocation from the user's side
 

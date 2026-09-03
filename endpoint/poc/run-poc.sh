@@ -37,6 +37,7 @@ fi
 SETUP_TOKEN="$(openssl rand -hex 16)"
 ADMIN_PW="Adm1n-$(openssl rand -hex 6)"
 ALICE_PW="Al1ce-$(openssl rand -hex 6)"
+BOB_PW="B0b-$(openssl rand -hex 6)"
 RECOVERY_PW="Rec0very-$(openssl rand -hex 6)"
 LOCAL_PW="local-offline-pw-$(openssl rand -hex 3)"
 ARCH="$(docker version --format '{{.Server.Arch}}')"
@@ -136,7 +137,9 @@ post --data-urlencode "setup_token=$SETUP_TOKEN" --data-urlencode "username=admi
      --data-urlencode "email=admin@example.com" --data-urlencode "password=$ADMIN_PW" "$ISSUER_LOCAL/setup"
 post --data-urlencode "username=alice" --data-urlencode "email=alice@example.com" \
      --data-urlencode "password=$ALICE_PW" "$ISSUER_LOCAL/admin/users"
-pass "admin + alice created"
+post --data-urlencode "username=bob" --data-urlencode "email=bob@example.com" \
+     --data-urlencode "password=$BOB_PW" "$ISSUER_LOCAL/admin/users"
+pass "admin + alice + bob created"
 
 step "Starting the endpoint container ($POC_BASE, sshd + pam_omni)"
 docker run -d --name "$EP" --network "$NET" --add-host=host.docker.internal:host-gateway \
@@ -163,12 +166,20 @@ step "Starting the enrollment daemon (renewal + PAM socket)"
 docker exec -d "$EP" sh -c "omni-enrollment daemon --refresh-interval 15s > /var/log/omni-enrollment.log 2>&1"
 sleep 3
 docker exec "$EP" test -S /run/omni-enrollment/pam.sock
-pass "daemon up, /run/omni-enrollment/pam.sock present"
+docker exec "$EP" test -S /run/omni-enrollment/nss.sock
+pass "daemon up, PAM and NSS sockets present"
 
 step "Scenario 26-27: online SSH login as alice through Omni (device-bound device grant)"
-docker exec "$EP" getent passwd alice   # pre-provisioned at enrollment (sshd needs it before PAM)
+docker exec "$EP" getent passwd alice   # identity served by libnss_omni (no /etc/passwd entry)
+docker exec "$EP" grep -q '^alice:' /etc/passwd && { echo "alice must not be in /etc/passwd"; exit 1; }
 docker exec "$EP" /poc/ssh-login.exp alice online "$LOCAL_PW"
-pass "alice authenticated via Omni through PAM; local offline password set"
+docker exec "$EP" sh -c 'stat -c "%U %a %n" /home/alice'
+pass "alice authenticated via Omni through PAM; identity via NSS; home created; local offline password set"
+
+step "Scenario 26 (non-owner): bob's first ever SSH login, resolved through NSS + Omni lookup"
+docker exec "$EP" sh -c 'getent passwd bob | grep -q "^bob:" && ! grep -q "^bob:" /etc/passwd'
+docker exec -e OMNI_USER=bob -e OMNI_PASSWORD="$BOB_PW" "$EP" /poc/ssh-login.exp bob online "$LOCAL_PW"
+pass "bob (never seen on this machine) logged in over SSH via NSS lookup and device-bound login"
 
 step "Scenario 28-31: network disconnected -> offline login with the local password"
 docker network disconnect "$NET" "$EP"

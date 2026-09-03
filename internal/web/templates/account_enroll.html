@@ -57,9 +57,10 @@ sudo omni-enrollment enroll --issuer {{.Issuer}}{{if .Insecure}} --allow-insecur
       <p class="muted">To sign in to that machine with your Omni account (with an offline password for when this server is unreachable), install the PAM module and the systemd unit from the sources tarball, then enable the daemon:</p>
 <pre style="background:var(--bg-sunken);padding:12px;border-radius:var(--r-md);overflow:auto;font-family:var(--font-mono);font-size:12px;line-height:1.5">curl -fsSL {{.Issuer}}/downloads/omni-enrollment-endpoint.tar.gz | tar -xz
 make -C endpoint/pam && sudo make -C endpoint/pam install
+make -C endpoint/nss && sudo make -C endpoint/nss install
 sudo install -m 0644 endpoint/systemd/omni-enrollment.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now omni-enrollment</pre>
-      <p class="t-caption" style="margin:10px 0 0">Then add <code>auth sufficient pam_omni.so</code> and <code>account sufficient pam_omni.so</code> above the <code>pam_unix</code> lines of the PAM services you want (e.g. <code>/etc/pam.d/sshd</code>). Keep a local administrator account: it always authenticates through <code>pam_unix</code>.</p>
+      <p class="t-caption" style="margin:10px 0 0">Then add <code>auth sufficient pam_omni.so</code> and <code>account sufficient pam_omni.so</code> above the <code>pam_unix</code> lines of the PAM services you want (e.g. <code>/etc/pam.d/sshd</code>), and append <code>omni</code> to the <code>passwd:</code> and <code>group:</code> lines of <code>/etc/nsswitch.conf</code> so any Omni user resolves before their first login. Keep a local administrator account: it always authenticates through <code>pam_unix</code>.</p>
     </div>
   </div>
 

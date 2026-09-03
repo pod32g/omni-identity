@@ -89,7 +89,7 @@ func (c *sockConversation) result(v Verdict, user, reason string) {
 
 // ServePAM listens on the root-only Unix socket and answers PAM requests
 // until ctx is cancelled.
-func (a *Agent) ServePAM(ctx context.Context, prov Provisioner, pol LoginPolicy, logf func(string, ...any)) error {
+func (a *Agent) ServePAM(ctx context.Context, accounts LocalAccounts, pol LoginPolicy, logf func(string, ...any)) error {
 	if err := os.MkdirAll(a.RuntimeDir, 0o755); err != nil {
 		return err
 	}
@@ -120,11 +120,11 @@ func (a *Agent) ServePAM(ctx context.Context, prov Provisioner, pol LoginPolicy,
 			logf("pam socket accept: %v", err)
 			continue
 		}
-		go a.handlePAMConn(ctx, conn, prov, pol, logf)
+		go a.handlePAMConn(ctx, conn, accounts, pol, logf)
 	}
 }
 
-func (a *Agent) handlePAMConn(ctx context.Context, conn net.Conn, prov Provisioner, pol LoginPolicy, logf func(string, ...any)) {
+func (a *Agent) handlePAMConn(ctx context.Context, conn net.Conn, accounts LocalAccounts, pol LoginPolicy, logf func(string, ...any)) {
 	defer conn.Close()
 	if uc, ok := conn.(*net.UnixConn); ok {
 		if err := requireRootPeer(uc); err != nil {
@@ -158,11 +158,11 @@ func (a *Agent) handlePAMConn(ctx context.Context, conn net.Conn, prov Provision
 		}
 		cctx, cancel := context.WithTimeout(ctx, 12*time.Minute)
 		defer cancel()
-		v := a.Login(cctx, c, lc, prov, pol)
+		v := a.Login(cctx, c, lc, accounts, pol)
 		logf("pam auth user=%s service=%s verdict=%d", user, lc.Service, v)
 		c.result(v, user, "authentication failed")
 	case "ACCT":
-		v := a.Account(user, prov, pol)
+		v := a.Account(user, accounts, pol)
 		c.result(v, user, "account revoked")
 	default:
 		c.result(VerdictFail, "", "unknown request")

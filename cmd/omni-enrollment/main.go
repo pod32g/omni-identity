@@ -198,7 +198,7 @@ func envOr(key, def string) string {
 
 func agentFor(cfg enrollment.Config) *enrollment.Agent {
 	return &enrollment.Agent{StateDir: cfg.StateDir, RuntimeDir: cfg.RuntimeDir, Out: os.Stdout,
-		Provisioner: enrollment.SystemProvisioner{}, Policy: cfg.Policy()}
+		Accounts: enrollment.PasswdFile{}, Policy: cfg.Policy()}
 }
 
 func signalContext() (context.Context, context.CancelFunc) {
@@ -314,7 +314,7 @@ func runDaemon(args []string) error {
 	log.SetFlags(0)
 	log.Printf("omni-enrollment daemon %s starting (state %s)", version, cfg.StateDir)
 	return agentFor(cfg).RunDaemon(ctx, enrollment.DaemonOptions{
-		Provisioner: enrollment.SystemProvisioner{}, Policy: cfg.Policy(),
+		Accounts: enrollment.PasswdFile{}, Policy: cfg.Policy(),
 		RefreshEvery: cfg.RefreshInterval, ServePAM: true,
 	}, log.Printf)
 }
@@ -335,7 +335,7 @@ func runPAMTest(args []string) error {
 	ctx, stop := signalContext()
 	defer stop()
 	v := agentFor(cfg).Login(ctx, terminalConversation{}, enrollment.LoginContext{Username: fs.Arg(0), Service: "pam-test"},
-		enrollment.SystemProvisioner{}, cfg.Policy())
+		enrollment.PasswdFile{}, cfg.Policy())
 	switch v {
 	case enrollment.VerdictOK:
 		fmt.Println("verdict: OK")

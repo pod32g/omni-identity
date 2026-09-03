@@ -13,7 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       openssh-server libpam0g-dev gcc make expect curl ca-certificates sudo iproute2 \
     && rm -rf /var/lib/apt/lists/*
 COPY endpoint/pam/ /src/pam/
-RUN make -C /src/pam && make -C /src/pam install && rm -rf /src
+COPY endpoint/nss/ /src/nss/
+RUN make -C /src/pam && make -C /src/pam install \
+    && make -C /src/nss && make -C /src/nss install && rm -rf /src \
+    && sed -i -E 's/^(passwd|group):(.*)$/\1:\2 omni/' /etc/nsswitch.conf && grep -E '^(passwd|group):' /etc/nsswitch.conf
 COPY omni-enrollment-linux-${TARGETARCH} /usr/local/bin/omni-enrollment
 COPY endpoint/poc/pam.d-sshd /etc/pam.d/sshd
 COPY endpoint/poc/sshd_omni.conf /etc/ssh/sshd_config.d/omni.conf

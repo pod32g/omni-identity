@@ -62,17 +62,6 @@ type Conversation interface {
 	Prompt(text string, echo bool) (string, error)
 }
 
-// Provisioner creates local accounts. The Linux implementation runs useradd;
-// tests use a fake.
-type Provisioner interface {
-	// Lookup reports whether a local account exists and, if so, its uid.
-	Lookup(name string) (uid int, exists bool, err error)
-	// UIDInUse reports whether a uid is already allocated (to any name).
-	UIDInUse(uid int) (bool, error)
-	// Create makes the account with a locked password field.
-	Create(name string, uid, gid int, home, shell, gecos string) error
-}
-
 // Verdict is the PAM outcome.
 type Verdict int
 
@@ -223,7 +212,7 @@ func (a *Agent) offlineAllowed(uc *UserCache, now time.Time, pol LoginPolicy) (b
 
 // Login runs the whole PAM conversation for one user and returns the verdict.
 // It is the only place where the online and offline paths meet.
-func (a *Agent) Login(ctx context.Context, conv Conversation, lc LoginContext, prov Provisioner, pol LoginPolicy) Verdict {
+func (a *Agent) Login(ctx context.Context, conv Conversation, lc LoginContext, accounts LocalAccounts, pol LoginPolicy) Verdict {
 	name := strings.ToLower(strings.TrimSpace(lc.Username))
 	if !validLinuxName.MatchString(name) {
 		return VerdictIgnore
@@ -233,11 +222,10 @@ func (a *Agent) Login(ctx context.Context, conv Conversation, lc LoginContext, p
 		conv.Error("omni: could not read the local credential cache")
 		return VerdictFail
 	}
-	if uc == nil {
-		// A local account we do not manage (root, omni-recovery, …): not ours.
-		if _, exists, _ := prov.Lookup(name); exists {
-			return VerdictIgnore
-		}
+	// A pre-existing local account (root, omni-recovery, …) is never ours,
+	// even if an Omni user shares the name.
+	if local, _ := accounts.IsLocalAccount(name); local {
+		return VerdictIgnore
 	}
 	now := time.Now().UTC()
 
@@ -248,16 +236,17 @@ func (a *Agent) Login(ctx context.Context, conv Conversation, lc LoginContext, p
 		}
 		if pw != "" {
 			if verifyLocalSecret(pw, uc.SecretHash) {
+				a.ensureHome(uc)
 				return VerdictOK
 			}
 			conv.Error("Invalid local password.")
 			return VerdictFail
 		}
 	}
-	return a.onlineLogin(ctx, conv, name, uc, prov, pol, now, qrForService(lc.Service))
+	return a.onlineLogin(ctx, conv, name, uc, accounts, pol, now, qrForService(lc.Service))
 }
 
-func (a *Agent) onlineLogin(ctx context.Context, conv Conversation, name string, uc *UserCache, prov Provisioner, pol LoginPolicy, now time.Time, showQR bool) Verdict {
+func (a *Agent) onlineLogin(ctx context.Context, conv Conversation, name string, uc *UserCache, accounts LocalAccounts, pol LoginPolicy, now time.Time, showQR bool) Verdict {
 	st, _, client, err := a.Open()
 	if err != nil {
 		conv.Error("omni: this machine is not enrolled")
@@ -337,34 +326,13 @@ func (a *Agent) onlineLogin(ctx context.Context, conv Conversation, name string,
 		return VerdictFail
 	}
 
-	// Provision the local account on first login.
-	uid, exists, err := prov.Lookup(name)
-	if err != nil {
-		conv.Error("omni: account lookup failed")
-		return VerdictFail
-	}
-	if !exists {
-		uid = uidFor(sub)
-		for i := 0; i < 1000; i++ {
-			inUse, err := prov.UIDInUse(uid)
-			if err != nil {
-				conv.Error("omni: uid lookup failed")
-				return VerdictFail
-			}
-			if !inUse {
-				break
-			}
-			uid++
-		}
-		home := "/home/" + name
-		if err := prov.Create(name, uid, uid, home, pol.LoginShell, "Omni Identity "+sub); err != nil {
-			conv.Error("omni: could not create the local account: " + err.Error())
+	// First login: allocate the identity (served to the system by libnss_omni).
+	if uc == nil {
+		uid, err := allocateUID(sub, accounts, a)
+		if err != nil {
+			conv.Error("omni: could not allocate a uid: " + err.Error())
 			return VerdictFail
 		}
-		conv.Info("Local account " + name + " created.")
-	}
-
-	if uc == nil {
 		uc = &UserCache{Username: name, Sub: sub, UID: uid, GID: uid, Home: "/home/" + name}
 	}
 	if uc.SecretHash == "" {
@@ -382,7 +350,40 @@ func (a *Agent) onlineLogin(ctx context.Context, conv Conversation, name string,
 		conv.Error("omni: could not save the offline credential cache")
 		return VerdictFail
 	}
+	a.ensureHome(uc)
 	return VerdictOK
+}
+
+// ensureHome creates the user's home directory (0700, owned by the user)
+// with the /etc/skel contents on first login. Failures are logged, not
+// fatal: the session can still start and pam_mkhomedir may also handle it.
+func (a *Agent) ensureHome(uc *UserCache) {
+	if uc.Home == "" || a.NoHome {
+		return
+	}
+	if _, err := os.Stat(uc.Home); err == nil {
+		return
+	}
+	if err := os.MkdirAll(uc.Home, 0o700); err != nil {
+		if a.logf != nil {
+			a.logf("home %s: %v", uc.Home, err)
+		}
+		return
+	}
+	if entries, err := os.ReadDir("/etc/skel"); err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			if b, err := os.ReadFile(filepath.Join("/etc/skel", e.Name())); err == nil {
+				_ = os.WriteFile(filepath.Join(uc.Home, e.Name()), b, 0o644)
+				_ = os.Chown(filepath.Join(uc.Home, e.Name()), uc.UID, uc.GID)
+			}
+		}
+	}
+	if err := os.Chown(uc.Home, uc.UID, uc.GID); err != nil && a.logf != nil {
+		a.logf("chown %s: %v", uc.Home, err)
+	}
 }
 
 // chooseLocalSecret asks the user for the machine-local offline password.
@@ -411,61 +412,36 @@ func (a *Agent) chooseLocalSecret(conv Conversation, uc *UserCache, pol LoginPol
 	return false
 }
 
-// EnsureOwnerAccount creates the enrolling user's local account (and a cache
-// entry without a local password) ahead of their first login. sshd looks the
-// user up with getpwnam before running PAM and refuses to authenticate an
-// unknown user even when PAM succeeds, so just-in-time creation during the
-// first SSH login is impossible without an NSS module; pre-provisioning the
-// owner keeps the PoC free of one. Other users are provisioned at their first
-// console login (docs/LINUX-LOGIN-ARCHITECTURE.md §4).
-func (a *Agent) EnsureOwnerAccount(st *State, prov Provisioner, pol LoginPolicy) error {
-	if prov == nil || st == nil || st.OwnerUsername == "" || st.OwnerSub == "" {
+// EnsureOwnerAccount records the enrolling user's identity (uid, home) ahead
+// of their first login so libnss_omni can answer for them immediately: sshd
+// looks the user up before running PAM. It never overwrites an existing
+// entry and refuses names that already exist in /etc/passwd.
+func (a *Agent) EnsureOwnerAccount(st *State, accounts LocalAccounts) error {
+	if accounts == nil || st == nil || st.OwnerUsername == "" || st.OwnerSub == "" {
 		return nil
 	}
 	name := strings.ToLower(st.OwnerUsername)
 	if !validLinuxName.MatchString(name) {
 		return fmt.Errorf("%w: %q", errBadUsername, st.OwnerUsername)
 	}
-	if pol.LoginShell == "" {
-		pol = DefaultLoginPolicy
+	if uc, err := a.LoadUserCache(name); err != nil || uc != nil {
+		return err
 	}
-	uc, err := a.LoadUserCache(name)
+	if local, err := accounts.IsLocalAccount(name); err != nil || local {
+		if local {
+			return fmt.Errorf("local account %q already exists and is not Omni-managed", name)
+		}
+		return err
+	}
+	uid, err := allocateUID(st.OwnerSub, accounts, a)
 	if err != nil {
 		return err
 	}
-	uid, exists, err := prov.Lookup(name)
-	if err != nil {
-		return err
-	}
-	if exists && uc == nil {
-		// A pre-existing local account of the same name is not ours to take over.
-		return fmt.Errorf("local account %q already exists and is not Omni-managed", name)
-	}
-	if !exists {
-		uid = uidFor(st.OwnerSub)
-		for i := 0; i < 1000; i++ {
-			inUse, err := prov.UIDInUse(uid)
-			if err != nil {
-				return err
-			}
-			if !inUse {
-				break
-			}
-			uid++
-		}
-		if err := prov.Create(name, uid, uid, "/home/"+name, pol.LoginShell, "Omni Identity "+st.OwnerSub); err != nil {
-			return err
-		}
-	}
-	if uc == nil {
-		uc = &UserCache{Username: name, Sub: st.OwnerSub, UID: uid, GID: uid, Home: "/home/" + name, DeviceID: st.DeviceID}
-		return a.SaveUserCache(uc)
-	}
-	return nil
+	return a.SaveUserCache(&UserCache{Username: name, Sub: st.OwnerSub, UID: uid, GID: uid, Home: "/home/" + name, DeviceID: st.DeviceID})
 }
 
 // Account implements the PAM account check: managed users must not be revoked.
-func (a *Agent) Account(name string, prov Provisioner, pol LoginPolicy) Verdict {
+func (a *Agent) Account(name string, accounts LocalAccounts, pol LoginPolicy) Verdict {
 	name = strings.ToLower(strings.TrimSpace(name))
 	uc, err := a.LoadUserCache(name)
 	if err != nil || uc == nil {

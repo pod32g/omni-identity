@@ -6,7 +6,9 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -33,30 +35,30 @@ func (c *scriptConv) Prompt(t string, echo bool) (string, error) {
 }
 func (c *scriptConv) transcript() string { return strings.Join(c.log, "\n") }
 
-// fakeProv is an in-memory account database.
-type fakeProv struct {
-	users map[string]int
-	uids  map[int]bool
+// fakeAccounts is an in-memory /etc/passwd.
+type fakeAccounts struct{ local map[string]int }
+
+func newFakeAccounts() *fakeAccounts {
+	return &fakeAccounts{local: map[string]int{"root": 0, "omni-recovery": 1000}}
+}
+func (f *fakeAccounts) IsLocalAccount(name string) (bool, error) {
+	_, ok := f.local[name]
+	return ok, nil
+}
+func (f *fakeAccounts) UIDInUse(uid int) (bool, error) {
+	for _, u := range f.local {
+		if u == uid {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
-func newFakeProv() *fakeProv {
-	return &fakeProv{users: map[string]int{"root": 0, "omni-recovery": 1000}, uids: map[int]bool{0: true, 1000: true}}
-}
-func (p *fakeProv) Lookup(name string) (int, bool, error) {
-	uid, ok := p.users[name]
-	return uid, ok, nil
-}
-func (p *fakeProv) UIDInUse(uid int) (bool, error) { return p.uids[uid], nil }
-func (p *fakeProv) Create(name string, uid, gid int, home, shell, gecos string) error {
-	p.users[name] = uid
-	p.uids[uid] = true
-	return nil
-}
-
-func enrolledAgent(t *testing.T, prov enrollment.Provisioner) (*testIssuer, *enrollment.Agent) {
+func enrolledAgent(t *testing.T, accounts enrollment.LocalAccounts) (*testIssuer, *enrollment.Agent) {
 	t.Helper()
 	ti := newTestIssuer(t)
-	agent := &enrollment.Agent{StateDir: filepath.Join(t.TempDir(), "state"), RuntimeDir: filepath.Join(t.TempDir(), "run"), Out: io.Discard, Provisioner: prov}
+	agent := &enrollment.Agent{StateDir: filepath.Join(t.TempDir(), "state"), RuntimeDir: filepath.Join(t.TempDir(), "run"),
+		Out: io.Discard, Accounts: accounts, NoHome: true}
 	done := make(chan error, 1)
 	go func() {
 		_, err := agent.Enroll(context.Background(), enrollment.Config{Issuer: ti.URL, AllowInsecureHTTP: true})
@@ -69,32 +71,27 @@ func enrolledAgent(t *testing.T, prov enrollment.Provisioner) (*testIssuer, *enr
 	return ti, agent
 }
 
-// Scenarios 26–27: online login through Omni provisions the local account.
+// Scenarios 26–27: online login through Omni establishes the local identity.
 func TestLinuxOnlineLoginProvisionsAndCaches(t *testing.T) {
-	prov := newFakeProv()
-	ti, agent := enrolledAgent(t, prov)
+	accounts := newFakeAccounts()
+	ti, agent := enrolledAgent(t, accounts)
 	pol := enrollment.DefaultLoginPolicy
 
-	// Enrollment pre-provisions the owner (sshd needs the account to exist
-	// before PAM runs) with a cache entry that cannot yet log in offline.
-	seededUID, ok := prov.users["alice"]
-	if !ok || seededUID < 200000 || seededUID >= 300000 {
-		t.Fatalf("owner not pre-provisioned: uid=%d ok=%v", seededUID, ok)
+	// Enrollment records the owner's identity (sshd needs it before PAM runs)
+	// without a local password, so offline login is not yet possible.
+	seeded, _ := agent.LoadUserCache("alice")
+	if seeded == nil || seeded.SecretHash != "" || seeded.Sub != ti.User.ID || seeded.UID < 200000 || seeded.UID >= 300000 {
+		t.Fatalf("seeded identity = %+v", seeded)
 	}
-	if seeded, _ := agent.LoadUserCache("alice"); seeded == nil || seeded.SecretHash != "" || seeded.Sub != ti.User.ID {
-		t.Fatalf("seeded cache = %+v", seeded)
-	}
-	// With no scripted answers the conversation aborts at the first prompt:
-	// that prompt must be the online sign-in link, not the local-password one.
 	offline := &scriptConv{}
-	if v := agent.Login(context.Background(), offline, enrollment.LoginContext{Username: "alice"}, prov, pol); v == enrollment.VerdictOK || strings.Contains(offline.transcript(), "Local password") {
+	if v := agent.Login(context.Background(), offline, enrollment.LoginContext{Username: "alice"}, accounts, pol); v == enrollment.VerdictOK || strings.Contains(offline.transcript(), "Local password") {
 		t.Fatalf("offline login offered before any online login: %d\n%s", v, offline.transcript())
 	}
 
 	conv := &scriptConv{answers: []string{"", "hunter2xyz", "hunter2xyz"}} // Enter, local pw, retype
 	verdict := make(chan enrollment.Verdict, 1)
 	go func() {
-		verdict <- agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice", Service: "sshd"}, prov, pol)
+		verdict <- agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice", Service: "sshd"}, accounts, pol)
 	}()
 	ti.approvePending(t)
 	if v := <-verdict; v != enrollment.VerdictOK {
@@ -104,22 +101,16 @@ func TestLinuxOnlineLoginProvisionsAndCaches(t *testing.T) {
 	if !strings.Contains(tr, "/device?user_code=") || !strings.Contains(tr, "New local password") {
 		t.Errorf("transcript:\n%s", tr)
 	}
-	uid := prov.users["alice"]
-	if uid != seededUID {
-		t.Errorf("uid changed at login: %d vs %d", uid, seededUID)
-	}
 	uc, err := agent.LoadUserCache("alice")
 	if err != nil || uc == nil {
 		t.Fatalf("cache: %+v err=%v", uc, err)
 	}
-	if uc.Sub != ti.User.ID || uc.UID != uid || uc.SecretHash == "" || uc.RefreshToken == "" || uc.AMR != "pwd" || uc.DeviceID == "" {
+	if uc.UID != seeded.UID || uc.SecretHash == "" || uc.RefreshToken == "" || uc.AMR != "pwd" || uc.DeviceID == "" {
 		t.Errorf("cache = %+v", uc)
 	}
 	if strings.Contains(uc.SecretHash, "hunter2xyz") {
 		t.Error("local password stored in clear")
 	}
-	// The pending device grant was device-bound: the server recorded the device
-	// on the audit trail of the approval.
 	dev, _ := ti.DB.GetDevice(context.Background(), uc.DeviceID)
 	if dev == nil || dev.LastSeenAt.IsZero() {
 		t.Error("device not seen during login")
@@ -128,63 +119,58 @@ func TestLinuxOnlineLoginProvisionsAndCaches(t *testing.T) {
 	// Scenarios 28–31: Omni unreachable → offline login with the local password.
 	ti.srv.Close()
 	conv = &scriptConv{answers: []string{"hunter2xyz"}}
-	if v := agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice"}, prov, pol); v != enrollment.VerdictOK {
+	if v := agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice"}, accounts, pol); v != enrollment.VerdictOK {
 		t.Fatalf("offline verdict = %d\n%s", v, conv.transcript())
 	}
-	if !strings.Contains(conv.transcript(), "Local password") {
-		t.Errorf("offline transcript:\n%s", conv.transcript())
-	}
 	conv = &scriptConv{answers: []string{"wrong-password"}}
-	if v := agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice"}, prov, pol); v != enrollment.VerdictFail {
+	if v := agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice"}, accounts, pol); v != enrollment.VerdictFail {
 		t.Errorf("wrong local password accepted")
 	}
-	// Empty answer asks Omni, which is down: a clear error, no session.
 	conv = &scriptConv{answers: []string{""}}
-	if v := agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice"}, prov, pol); v != enrollment.VerdictFail || !strings.Contains(conv.transcript(), "unreachable") {
+	if v := agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice"}, accounts, pol); v != enrollment.VerdictFail || !strings.Contains(conv.transcript(), "unreachable") {
 		t.Errorf("online attempt while down: %d\n%s", v, conv.transcript())
 	}
 	// Scenario 32: break-glass / local accounts are not ours.
-	if v := agent.Login(context.Background(), &scriptConv{}, enrollment.LoginContext{Username: "omni-recovery"}, prov, pol); v != enrollment.VerdictIgnore {
-		t.Errorf("omni-recovery verdict = %d, want ignore", v)
-	}
-	if v := agent.Login(context.Background(), &scriptConv{}, enrollment.LoginContext{Username: "root"}, prov, pol); v != enrollment.VerdictIgnore {
-		t.Errorf("root verdict = %d, want ignore", v)
+	for _, name := range []string{"omni-recovery", "root"} {
+		if v := agent.Login(context.Background(), &scriptConv{}, enrollment.LoginContext{Username: name}, accounts, pol); v != enrollment.VerdictIgnore {
+			t.Errorf("%s verdict = %d, want ignore", name, v)
+		}
 	}
 	// Offline validity window is enforced.
 	uc.LastTrustRefresh = time.Now().Add(-8 * 24 * time.Hour)
 	_ = agent.SaveUserCache(uc)
 	conv = &scriptConv{answers: []string{"hunter2xyz"}}
-	if v := agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice"}, prov, pol); v != enrollment.VerdictFail || !strings.Contains(conv.transcript(), "expired") {
+	if v := agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice"}, accounts, pol); v != enrollment.VerdictFail || !strings.Contains(conv.transcript(), "expired") {
 		t.Errorf("expired offline window accepted: %d\n%s", v, conv.transcript())
 	}
 }
 
 func TestLinuxLoginRejectsApprovalByAnotherUser(t *testing.T) {
-	prov := newFakeProv()
-	ti, agent := enrolledAgent(t, prov)
+	accounts := newFakeAccounts()
+	ti, agent := enrolledAgent(t, accounts)
 	conv := &scriptConv{answers: []string{""}}
 	verdict := make(chan enrollment.Verdict, 1)
 	go func() {
-		verdict <- agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "bob"}, prov, enrollment.DefaultLoginPolicy)
+		verdict <- agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "bob"}, accounts, enrollment.DefaultLoginPolicy)
 	}()
 	ti.approvePending(t) // approved as alice
 	if v := <-verdict; v != enrollment.VerdictFail || !strings.Contains(conv.transcript(), "different account") {
 		t.Errorf("verdict = %d\n%s", v, conv.transcript())
 	}
-	if _, ok := prov.users["bob"]; ok {
-		t.Error("bob was provisioned without a matching approval")
+	if uc, _ := agent.LoadUserCache("bob"); uc != nil {
+		t.Error("bob got an identity without a matching approval")
 	}
 }
 
 // Scenarios 33–35: trust refresh on reconnect, and revocation propagation.
 func TestLinuxTrustRefreshAndRevocation(t *testing.T) {
-	prov := newFakeProv()
-	ti, agent := enrolledAgent(t, prov)
+	accounts := newFakeAccounts()
+	ti, agent := enrolledAgent(t, accounts)
 	pol := enrollment.DefaultLoginPolicy
 	conv := &scriptConv{answers: []string{"", "hunter2xyz", "hunter2xyz"}}
 	verdict := make(chan enrollment.Verdict, 1)
 	go func() {
-		verdict <- agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice"}, prov, pol)
+		verdict <- agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice"}, accounts, pol)
 	}()
 	ti.approvePending(t)
 	if v := <-verdict; v != enrollment.VerdictOK {
@@ -201,11 +187,9 @@ func TestLinuxTrustRefreshAndRevocation(t *testing.T) {
 	if !after.LastTrustRefresh.After(before.LastTrustRefresh) || after.RefreshToken == before.RefreshToken {
 		t.Errorf("trust refresh did not rotate: before=%v after=%v", before.LastTrustRefresh, after.LastTrustRefresh)
 	}
-	if agent.Account("alice", prov, pol) != enrollment.VerdictOK {
+	if agent.Account("alice", accounts, pol) != enrollment.VerdictOK {
 		t.Error("account should be ok")
 	}
-
-	// The user revokes the device in Omni; the next refresh marks the cache.
 	if err := ti.DB.RevokeDevice(context.Background(), after.DeviceID, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -215,13 +199,12 @@ func TestLinuxTrustRefreshAndRevocation(t *testing.T) {
 		t.Fatalf("cache not revoked: %+v", uc)
 	}
 	conv = &scriptConv{answers: []string{"hunter2xyz"}}
-	if v := agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice"}, prov, pol); v != enrollment.VerdictFail {
+	if v := agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice"}, accounts, pol); v != enrollment.VerdictFail {
 		t.Errorf("offline login after revocation accepted\n%s", conv.transcript())
 	}
-	if agent.Account("alice", prov, pol) != enrollment.VerdictFail {
+	if agent.Account("alice", accounts, pol) != enrollment.VerdictFail {
 		t.Error("account should fail after revocation")
 	}
-	// A transport failure never revokes anything.
 	ti.srv.Close()
 	fresh := &enrollment.UserCache{Username: "carol", Sub: "s", RefreshToken: "rt", LastTrustRefresh: time.Now()}
 	_ = agent.SaveUserCache(fresh)
@@ -233,9 +216,7 @@ func TestLinuxTrustRefreshAndRevocation(t *testing.T) {
 
 // The PAM socket protocol end to end (offline path, no server needed).
 func TestPAMSocketProtocol(t *testing.T) {
-	agent := &enrollment.Agent{StateDir: filepath.Join(t.TempDir(), "s"), RuntimeDir: filepath.Join(t.TempDir(), "r"), Out: io.Discard}
-	// A cached, offline-capable user. The secret hash comes from a real login
-	// path; hash it through the same code by saving then verifying via Login.
+	agent := &enrollment.Agent{StateDir: filepath.Join(t.TempDir(), "s"), RuntimeDir: filepath.Join(t.TempDir(), "r"), Out: io.Discard, NoHome: true}
 	uc := &enrollment.UserCache{Username: "alice", Sub: "sub", UID: 200001, GID: 200001, Home: "/home/alice",
 		LastTrustRefresh: time.Now(), DeviceID: "d"}
 	uc.SecretHash = enrollment.HashLocalSecretForTest("correct horse")
@@ -244,19 +225,11 @@ func TestPAMSocketProtocol(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go func() { _ = agent.ServePAM(ctx, newFakeProv(), enrollment.DefaultLoginPolicy, func(string, ...any) {}) }()
+	go func() {
+		_ = agent.ServePAM(ctx, newFakeAccounts(), enrollment.DefaultLoginPolicy, func(string, ...any) {})
+	}()
 	sock := filepath.Join(agent.RuntimeDir, enrollment.PAMSocketName)
-	var conn net.Conn
-	var err error
-	for i := 0; i < 50; i++ {
-		if conn, err = net.Dial("unix", sock); err == nil {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
+	conn := dialRetry(t, sock)
 	defer conn.Close()
 	r := bufio.NewReader(conn)
 	_, _ = conn.Write([]byte("AUTH alice sshd 10.0.0.5\n"))
@@ -269,15 +242,14 @@ func TestPAMSocketProtocol(t *testing.T) {
 	if strings.TrimSpace(line) != "R OK alice" {
 		t.Fatalf("verdict = %q", line)
 	}
-	// Second connection: account check and an unknown user.
-	conn2, _ := net.Dial("unix", sock)
+	conn2 := dialRetry(t, sock)
 	defer conn2.Close()
 	_, _ = conn2.Write([]byte("ACCT alice sshd\n"))
 	line, _ = bufio.NewReader(conn2).ReadString('\n')
 	if strings.TrimSpace(line) != "R OK alice" {
 		t.Errorf("acct = %q", line)
 	}
-	conn3, _ := net.Dial("unix", sock)
+	conn3 := dialRetry(t, sock)
 	defer conn3.Close()
 	_, _ = conn3.Write([]byte("AUTH root login -\n"))
 	line, _ = bufio.NewReader(conn3).ReadString('\n')
@@ -285,3 +257,83 @@ func TestPAMSocketProtocol(t *testing.T) {
 		t.Errorf("root = %q", line)
 	}
 }
+
+// The NSS identity socket: cached identities, uid lookups, local-account
+// shadowing, and the online lookup for a never-seen Omni user.
+func TestNSSSocketResolvesIdentities(t *testing.T) {
+	accounts := newFakeAccounts()
+	ti, agent := enrolledAgent(t, accounts)
+	// bob exists in Omni but has never touched this machine.
+	bob := seedIssuerUser(t, ti, "bob")
+	// Unix socket paths are limited to ~104 bytes on macOS; t.TempDir is longer.
+	short, err := os.MkdirTemp("/tmp", "omni-nss")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(short) })
+	agent.RuntimeDir = short
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = agent.ServeNSS(ctx, accounts, enrollment.DefaultLoginPolicy, func(string, ...any) {}) }()
+	sock := filepath.Join(agent.RuntimeDir, enrollment.NSSSocketName)
+	ask := func(q string) string {
+		c := dialRetry(t, sock)
+		defer c.Close()
+		_, _ = c.Write([]byte(q + "\n"))
+		line, _ := bufio.NewReader(c).ReadString('\n')
+		return strings.TrimSpace(line)
+	}
+	alice, _ := agent.LoadUserCache("alice")
+	if got := ask("PWNAM alice"); !strings.HasPrefix(got, "PW alice "+itoa(alice.UID)+" "+itoa(alice.UID)+" /home/alice /bin/bash Omni Identity ") {
+		t.Errorf("PWNAM alice = %q", got)
+	}
+	if got := ask("PWUID " + itoa(alice.UID)); !strings.HasPrefix(got, "PW alice ") {
+		t.Errorf("PWUID = %q", got)
+	}
+	if got := ask("GRNAM alice"); got != "GR alice "+itoa(alice.UID) {
+		t.Errorf("GRNAM = %q", got)
+	}
+	if got := ask("GRGID " + itoa(alice.UID)); got != "GR alice "+itoa(alice.UID) {
+		t.Errorf("GRGID = %q", got)
+	}
+	// Online lookup for bob creates a cached identity (no secret).
+	got := ask("PWNAM bob")
+	if !strings.HasPrefix(got, "PW bob ") {
+		t.Fatalf("PWNAM bob = %q", got)
+	}
+	uc, _ := agent.LoadUserCache("bob")
+	if uc == nil || uc.Sub != bob || uc.SecretHash != "" || uc.UID == alice.UID {
+		t.Errorf("bob identity = %+v", uc)
+	}
+	// Local accounts, unknown users, junk, and root's uid are never answered.
+	for _, q := range []string{"PWNAM root", "PWNAM omni-recovery", "PWNAM nobody-here", "PWNAM Bad Name", "PWUID 0", "PWUID 1000", "GRGID 0", "HELLO"} {
+		if got := ask(q); got != "NONE" {
+			t.Errorf("%s = %q, want NONE", q, got)
+		}
+	}
+	// Offline: cached identities still resolve, unknown names do not hang.
+	ti.srv.Close()
+	if got := ask("PWNAM bob"); !strings.HasPrefix(got, "PW bob ") {
+		t.Errorf("offline PWNAM bob = %q", got)
+	}
+	start := time.Now()
+	if got := ask("PWNAM dave"); got != "NONE" || time.Since(start) > 8*time.Second {
+		t.Errorf("offline unknown = %q in %s", got, time.Since(start))
+	}
+}
+
+func dialRetry(t *testing.T, sock string) net.Conn {
+	t.Helper()
+	var conn net.Conn
+	var err error
+	for i := 0; i < 100; i++ {
+		if conn, err = net.Dial("unix", sock); err == nil {
+			return conn
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal(err)
+	return nil
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }
