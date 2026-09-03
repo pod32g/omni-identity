@@ -1,0 +1,20 @@
+# The "disposable Linux VM" of the PoC: Debian stable (slim) with sshd, the pam_omni
+# module built from source, the omni-enrollment agent, and the expect scripts
+# that stand in for a human at the login prompt. No systemd: the daemon is
+# started as a plain background process (the systemd unit is in
+# endpoint/systemd for real installs).
+FROM debian:stable-slim
+ARG TARGETARCH
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      openssh-server libpam0g-dev gcc make expect curl ca-certificates sudo iproute2 \
+    && rm -rf /var/lib/apt/lists/*
+COPY endpoint/pam/ /src/pam/
+RUN make -C /src/pam && make -C /src/pam install && rm -rf /src
+COPY omni-enrollment-linux-${TARGETARCH} /usr/local/bin/omni-enrollment
+COPY endpoint/poc/pam.d-sshd /etc/pam.d/sshd
+COPY endpoint/poc/sshd_omni.conf /etc/ssh/sshd_config.d/omni.conf
+COPY endpoint/poc/scripts/ /poc/
+RUN chmod 0755 /poc/*.sh /poc/*.exp && ssh-keygen -A && mkdir -p /run/sshd \
+    && useradd -m -s /bin/bash -G sudo omni-recovery
+CMD ["/poc/entrypoint.sh"]

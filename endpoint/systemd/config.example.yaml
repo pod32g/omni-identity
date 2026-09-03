@@ -1,0 +1,9 @@
+# /etc/omni-enrollment/config.yaml — optional; flags and OMNI_ENROLLMENT_* env
+# override these values.
+issuer: https://identity.example
+# client_id: omni-enrollment
+# state_dir: /var/lib/omni-enrollment
+# runtime_dir: /run/omni-enrollment
+# name: omni-laptop
+# ca_file: /etc/omni-enrollment/ca.pem
+# allow_insecure_http: false   # private-network testing only

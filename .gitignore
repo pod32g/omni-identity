@@ -33,3 +33,6 @@ design-system/.storybook-out/
 .design-sync/node_modules
 .ds-sync/
 ds-bundle/
+
+# omni-enrollment cross-compiled agents (make build-enrollment)
+omni-enrollment-linux-*

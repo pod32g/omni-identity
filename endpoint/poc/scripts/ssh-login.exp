@@ -1,0 +1,46 @@
+#!/usr/bin/expect -f
+# Drives an SSH login through PAM. Usage:
+#   ssh-login.exp USER online  LOCALPW   (first login: approves via approve.sh, sets local password)
+#   ssh-login.exp USER offline LOCALPW   (uses the local password only)
+#   ssh-login.exp USER expect-fail PW    (expects the login to be refused; PW may be a wrong local password or "" to force the online path)
+set user [lindex $argv 0]
+set mode [lindex $argv 1]
+set localpw [lindex $argv 2]
+set timeout 180
+log_user 1
+spawn ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o PreferredAuthentications=keyboard-interactive -o NumberOfPasswordPrompts=1 \
+    $user@localhost id
+expect {
+    -re {user_code=([A-Z]{4}-[A-Z]{4})} {
+        set code $expect_out(1,string)
+        puts "\n\[poc\] approving code $code"
+        exec /poc/approve.sh $code
+        expect -re {Press Enter after approving: ?}
+        send "\r"
+        exp_continue
+    }
+    -re {Local password \(leave empty[^:]*: ?} {
+        if {$mode eq "online"} { send "\r" } else { send "$localpw\r" }
+        exp_continue
+    }
+    -re {\(alice@localhost\) Password: ?} {
+        # pam_unix fallback prompt after pam_omni refused: the account is locked.
+        send "\r"
+        exp_continue
+    }
+    -re {New local password: ?} { send "$localpw\r"; exp_continue }
+    -re {Retype local password: ?} { send "$localpw\r"; exp_continue }
+    -re {uid=[0-9]+\([a-z_-]+\)} {
+        puts "\n\[poc\] login OK: $expect_out(0,string)"
+        if {$mode eq "expect-fail"} { exit 3 }
+        exit 0
+    }
+    -re {Permission denied|Invalid local password|revoked|unreachable|no longer trusted|different account} {
+        puts "\n\[poc\] login refused: $expect_out(0,string)"
+        if {$mode eq "expect-fail"} { exit 0 }
+        exit 2
+    }
+    timeout { puts "\n\[poc\] timeout"; exit 4 }
+    eof { puts "\n\[poc\] eof"; if {$mode eq "expect-fail"} { exit 0 }; exit 5 }
+}

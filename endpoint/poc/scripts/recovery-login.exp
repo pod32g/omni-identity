@@ -1,0 +1,20 @@
+#!/usr/bin/expect -f
+# Break-glass: the local administrator authenticates over SSH through PAM with
+# pam_unix alone (pam_omni returns PAM_IGNORE for accounts it does not manage
+# and when the daemon is down), then escalates with sudo.
+# Usage: recovery-login.exp PASSWORD
+set pw [lindex $argv 0]
+set timeout 60
+# -tt allocates a tty so sudo reads the password without echoing it.
+spawn ssh -tt -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o PreferredAuthentications=keyboard-interactive -o NumberOfPasswordPrompts=1 \
+    omni-recovery@localhost "id && sudo sh -c 'echo SUDO_AS_\$(id -un)'"
+expect {
+    -re {\[sudo\] password for omni-recovery: ?} { send "$pw\r"; exp_continue }
+    -re {[Pp]assword: ?} { send "$pw\r"; exp_continue }
+    -re {uid=1000\(omni-recovery\)} { exp_continue }
+    "SUDO_AS_root" { puts "\n\[poc\] break-glass OK (pam_unix login + sudo)"; exit 0 }
+    -re {Permission denied|incorrect} { puts "\n\[poc\] break-glass FAILED"; exit 2 }
+    timeout { puts "\n\[poc\] break-glass timeout"; exit 4 }
+    eof { puts "\n\[poc\] break-glass eof"; exit 5 }
+}

@@ -1,0 +1,10 @@
+# PAM stack for sshd in the PoC. pam_omni relays the conversation to the
+# omni-enrollment daemon; it returns PAM_IGNORE for accounts it does not manage
+# (root, omni-recovery) and when the daemon is down, so pam_unix — the
+# break-glass path — is always reachable and is never bypassed for local users.
+auth     sufficient pam_omni.so
+auth     required   pam_unix.so nullok
+account  sufficient pam_omni.so
+account  required   pam_unix.so
+session  required   pam_permit.so
+session  optional   pam_mkhomedir.so

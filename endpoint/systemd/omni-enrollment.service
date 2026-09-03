@@ -1,0 +1,34 @@
+# Omni Enrollment agent: keeps this machine's device credential fresh and
+# publishes /run/omni-enrollment/status.json. Enroll first with
+#   sudo omni-enrollment enroll --issuer https://identity.example
+[Unit]
+Description=Omni Identity device enrollment agent
+Documentation=https://github.com/pod32g/omni-identity/blob/main/docs/OMNI-ENROLLMENT.md
+After=network-online.target
+Wants=network-online.target
+# Do not start until the machine has been enrolled.
+ConditionPathExists=/var/lib/omni-enrollment/device.json
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/omni-enrollment daemon
+Restart=on-failure
+RestartSec=10s
+# The device key must stay root-only; the daemon runs as root and hardens itself.
+User=root
+StateDirectory=omni-enrollment
+StateDirectoryMode=0700
+RuntimeDirectory=omni-enrollment
+RuntimeDirectoryMode=0755
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/omni-enrollment /run/omni-enrollment
+
+[Install]
+WantedBy=multi-user.target

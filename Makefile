@@ -5,11 +5,18 @@ LDFLAGS  = -ldflags "-X main.version=$(VERSION)"
 # CGO is required by the SQLite driver (mattn/go-sqlite3).
 export CGO_ENABLED := 1
 
-.PHONY: build test test-postgres vet fmt run tidy clean docker compose-up compose-down
+.PHONY: build build-enrollment test test-postgres vet fmt run tidy clean docker compose-up compose-down
 
 ## build: compile the single binary
 build:
 	go build $(LDFLAGS) -o $(BINARY) $(PKG)
+
+## build-enrollment: compile the omni-enrollment endpoint agent for Linux
+## (pure Go: no CGO, cross-compiles from any host). ARCH=amd64|arm64.
+ARCH ?= $(shell go env GOARCH)
+build-enrollment:
+	CGO_ENABLED=0 GOOS=linux GOARCH=$(ARCH) go build \
+		-ldflags "-X main.version=$(VERSION)" -o omni-enrollment-linux-$(ARCH) ./cmd/omni-enrollment
 
 ## test: run the full test suite (SQLite backend)
 test:
