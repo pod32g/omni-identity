@@ -16,13 +16,14 @@ import (
 
 // RFC 8628 parameters.
 const (
-	deviceCodeTTL          = 10 * time.Minute
-	deviceCodeInterval     = 5 // seconds between polls
-	deviceCodeMaxAttempts  = 10
-	userCodeAlphabet       = "BCDFGHJKLMNPQRSTVWXZ" // RFC 8628 §6.1: no vowels, no ambiguous glyphs
-	userCodeLength         = 8
-	maxDeviceNameLength    = 64
-	maxDevicePlatformField = 32
+	deviceCodeTTL           = 10 * time.Minute
+	deviceCodeInterval      = 5 // seconds between polls
+	deviceCodeMaxAttempts   = 10
+	deviceGrantMaxPerWindow = 60                     // device_authorization requests per IP per rate-limit window
+	userCodeAlphabet        = "BCDFGHJKLMNPQRSTVWXZ" // RFC 8628 §6.1: no vowels, no ambiguous glyphs
+	userCodeLength          = 8
+	maxDeviceNameLength     = 64
+	maxDevicePlatformField  = 32
 )
 
 var errDPoPReplay = errors.New("dpop: proof jti already used")
@@ -52,6 +53,14 @@ func (s *Server) handleDeviceAuthorization(w http.ResponseWriter, r *http.Reques
 		oauthClientAuthError(w)
 		return
 	}
+	// Each request parks a row for up to 10 minutes; bound how many one source
+	// can create (the sweeper reclaims them, this keeps the burst small).
+	policy := s.settings.Current()
+	if !s.deviceGrantRate.Allowed(clientIP(r), deviceGrantMaxPerWindow, policy.RateLimitWindow) {
+		oauthError(w, http.StatusTooManyRequests, "slow_down", "too many device authorization requests from this address")
+		return
+	}
+	s.deviceGrantRate.Fail(clientIP(r), policy.RateLimitWindow)
 
 	scope := strings.TrimSpace(r.PostFormValue("scope"))
 	if scope == "" {

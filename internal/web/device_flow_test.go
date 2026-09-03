@@ -746,6 +746,18 @@ func TestDiscoveryAdvertisesDeviceCapabilities(t *testing.T) {
 	}
 }
 
+func TestDeviceAuthorizationIsRateLimitedPerIP(t *testing.T) {
+	srv := testServer(t)
+	form := url.Values{"client_id": {model.EnrollmentClientID}, "scope": {"openid"}}
+	var last *httptest.ResponseRecorder
+	for i := 0; i < deviceGrantMaxPerWindow+1; i++ {
+		last = do(srv, formReq("/oauth2/device_authorization", form))
+	}
+	if last.Code != http.StatusTooManyRequests {
+		t.Errorf("request %d = %d, want 429", deviceGrantMaxPerWindow+1, last.Code)
+	}
+}
+
 func TestInvalidDPoPProofAtTokenEndpointIsRejected(t *testing.T) {
 	srv := testServer(t)
 	req := formReq("/oauth2/token", url.Values{"grant_type": {"client_credentials"}, "client_id": {"x"}})

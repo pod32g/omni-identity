@@ -26,31 +26,32 @@ const sessionTTL = 12 * time.Hour
 
 // Server holds shared dependencies and the route mux.
 type Server struct {
-	cfg            *config.Config
-	db             *store.DB
-	sessions       *auth.SessionManager
-	keys           *tokens.KeyManager
-	issuer         *tokens.Issuer
-	tmpl           *templates
-	branding       *brandingService
-	settings       *settingsService
-	loginRate      *rateLimiter
-	loginIPRate    *rateLimiter
-	mfaRate        *rateLimiter
-	forgotRate     *rateLimiter
-	deviceCodeRate *rateLimiter // /device user-code guessing budget per IP
-	wa             webauthnRP   // cached WebAuthn relying party for the live public URL
-	downloads      *downloadsService
-	verifyMu       sync.Mutex
-	verifyActive   int
-	mailer         email.Sender
-	enc            *crypto.Encryptor
-	connectors     []authn.PasswordConnector // external auth sources (e.g. LDAP); empty by default
-	directory      authn.DirectoryManager    // write-capable directory client; nil unless LDAP+bind configured. Exposure gated live by the ldap_manage_enabled setting
-	metrics        *metrics
-	logLevel       *slog.LevelVar // dynamic log level applied live from settings; nil in tests
-	mux            *http.ServeMux
-	handler        http.Handler
+	cfg             *config.Config
+	db              *store.DB
+	sessions        *auth.SessionManager
+	keys            *tokens.KeyManager
+	issuer          *tokens.Issuer
+	tmpl            *templates
+	branding        *brandingService
+	settings        *settingsService
+	loginRate       *rateLimiter
+	loginIPRate     *rateLimiter
+	mfaRate         *rateLimiter
+	forgotRate      *rateLimiter
+	deviceCodeRate  *rateLimiter // /device user-code guessing budget per IP
+	deviceGrantRate *rateLimiter // /oauth2/device_authorization budget per IP
+	wa              webauthnRP   // cached WebAuthn relying party for the live public URL
+	downloads       *downloadsService
+	verifyMu        sync.Mutex
+	verifyActive    int
+	mailer          email.Sender
+	enc             *crypto.Encryptor
+	connectors      []authn.PasswordConnector // external auth sources (e.g. LDAP); empty by default
+	directory       authn.DirectoryManager    // write-capable directory client; nil unless LDAP+bind configured. Exposure gated live by the ldap_manage_enabled setting
+	metrics         *metrics
+	logLevel        *slog.LevelVar // dynamic log level applied live from settings; nil in tests
+	mux             *http.ServeMux
+	handler         http.Handler
 }
 
 // BindLogLevel attaches the process log-level var (created at startup) so the
@@ -131,19 +132,20 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 	sessions.SetConfigProvider(settings)
 
 	s := &Server{
-		cfg:            cfg,
-		db:             db,
-		sessions:       sessions,
-		keys:           km,
-		issuer:         issuer,
-		tmpl:           tmpl,
-		branding:       newBrandingService(db.GetBranding),
-		settings:       settings,
-		loginRate:      newRateLimiter(),
-		loginIPRate:    newRateLimiter(),
-		mfaRate:        newRateLimiter(),
-		forgotRate:     newRateLimiter(),
-		deviceCodeRate: newRateLimiter(),
+		cfg:             cfg,
+		db:              db,
+		sessions:        sessions,
+		keys:            km,
+		issuer:          issuer,
+		tmpl:            tmpl,
+		branding:        newBrandingService(db.GetBranding),
+		settings:        settings,
+		loginRate:       newRateLimiter(),
+		loginIPRate:     newRateLimiter(),
+		mfaRate:         newRateLimiter(),
+		forgotRate:      newRateLimiter(),
+		deviceCodeRate:  newRateLimiter(),
+		deviceGrantRate: newRateLimiter(),
 		mailer: &email.SMTPSender{
 			Host: cfg.SMTP.Host, Port: cfg.SMTP.Port, Username: cfg.SMTP.Username,
 			Password: cfg.SMTP.Password, From: cfg.SMTP.From, StartTLS: cfg.SMTP.StartTLS,
