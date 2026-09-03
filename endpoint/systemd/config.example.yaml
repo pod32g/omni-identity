@@ -8,6 +8,7 @@ issuer: https://identity.example
 # ca_file: /etc/omni-enrollment/ca.pem
 # allow_insecure_http: false   # private-network testing only
 # qr: dark            # QR code under sign-in links on consoles/SSH: dark (default) | light | off
+# qr_greeters: false  # also send the QR text to graphical greeters (GDM, SDDM, LightDM); best effort
 # offline_validity: 168h
 # login_shell: /bin/bash
 # broker_audiences: [omni-metrics, omni-logging]   # local token broker; empty = off

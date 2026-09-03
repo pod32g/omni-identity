@@ -70,7 +70,8 @@ Hard rule from the brief, honoured: PAM, NSS, logind, the display manager,
    `https://identity.example/device?user_code=BCDF-GHJK`* — on any phone or
    laptop. On a console or SSH session the same link is also drawn as a
    half-block QR code (`qr: dark|light|off`); graphical greeters, which use
-   proportional fonts, get the text only. Omni's page shows *"Sign in on **omni-vm** (linux), enrolled by
+   proportional fonts, get the text only unless `qr_greeters: true` opts
+   them in (best effort, depends on the greeter's font fallback). Omni's page shows *"Sign in on **omni-vm** (linux), enrolled by
    alice"*; the user authenticates with password / LDAP / TOTP / passkey and
    approves.
 4. The daemon polls the token endpoint with the device token + DPoP and

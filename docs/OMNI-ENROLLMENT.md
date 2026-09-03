@@ -105,13 +105,37 @@ the exact ceremony the CLI runs.
 The page binds to 127.0.0.1 only; the printed URL carries a one-time token
 that becomes a cookie, every action also needs that token in a request
 header (so a web page in the same browser cannot drive it), and the Host
-header must be loopback. Stop it with Ctrl-C when done.
+header must be loopback. Stop it with Ctrl-C when done, or pass
+`--exit-when-idle 2m` to have it quit once the tab is closed.
+
+Under `sudo` or `pkexec` the agent opens the page **as the desktop user**
+(from `SUDO_USER` / `PKEXEC_UID`) with that session's `DISPLAY`,
+`WAYLAND_DISPLAY`, `XAUTHORITY`, and D-Bus address, so the tab lands in
+your own browser rather than in root's. If no browser opens, the URL is
+printed anyway; paste it into any browser on the same machine.
+
+### Desktop launcher
+
+`endpoint/desktop` (also in the endpoint tarball on the *Enroll a device*
+page) contains a `.desktop` entry, a polkit policy, and an icon:
+
+```bash
+sudo make -C endpoint/desktop install
+```
+
+adds **Omni Enrollment** to the application menu. Launching it asks for an
+administrator password through the desktop's own polkit dialog
+(`auth_admin_keep`, so the prompt is not repeated for a few minutes), starts
+`omni-enrollment --exit-when-idle 2m` as root, opens the page in your
+browser, and exits two minutes after the tab is closed. The policy pins the
+executable to `/usr/local/bin/omni-enrollment`; edit both files if you
+install the binary elsewhere.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `gui [--issuer URL] [--listen 127.0.0.1:0] [--no-open]` | Local web page to enroll and manage this device (see above). **Default:** running `omni-enrollment` with no command, or with flags only, is the same as `gui`. |
+| `gui [--issuer URL] [--listen 127.0.0.1:0] [--no-open] [--exit-when-idle D]` | Local web page to enroll and manage this device (see above). **Default:** running `omni-enrollment` with no command, or with flags only, is the same as `gui`. |
 | `enroll --issuer URL [--name N] [--no-qr\|--qr-light] [--browser] [--key-backend file\|tpm]` | Generate the key and run the enrollment ceremony. Refuses if already enrolled. `--browser` authorizes through this machine's browser (RFC 8252 loopback redirect, authorization code + PKCE) instead of showing a code for another device. `--key-backend tpm` holds the device key in the TPM 2.0. |
 | `status [--json]` | Show the enrollment record and the daemon's last renewal / error. Works offline. |
 | `renew` | Obtain one device token now (RFC 7523 jwt-bearer grant). Exit 1 if Omni refuses (revoked) or is unreachable. |
@@ -121,7 +145,12 @@ header must be loopback. Stop it with Ctrl-C when done.
 
 Configuration precedence: flag > `OMNI_ENROLLMENT_*` environment > `/etc/omni-enrollment/config.yaml`.
 The QR code (`qr: dark|light|off`) also applies to the Linux login prompt on
-consoles and SSH; graphical greeters always get the plain URL and code.
+consoles and SSH. Graphical greeters (GDM, SDDM, LightDM) get the plain URL
+and code unless `qr_greeters: true` (or `--qr-greeters`,
+`OMNI_ENROLLMENT_QR_GREETERS=1`) is set, which sends them the same text QR.
+That is best effort: greeters draw prompts in proportional fonts, and
+whether the block glyphs line up depends on the greeter's font fallback, so
+try it on one machine before enabling it fleet-wide.
 
 ## Files
 

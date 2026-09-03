@@ -118,6 +118,11 @@ func OpenBrowser(target string) error {
 	case "windows":
 		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", target)
 	default:
+		// Under sudo/pkexec, open the page as the desktop user: root has no
+		// display session or browser profile of its own.
+		if u := desktopUser(); u != nil {
+			return openAsUser(u, target)
+		}
 		cmd = exec.Command("xdg-open", target)
 	}
 	return cmd.Start()

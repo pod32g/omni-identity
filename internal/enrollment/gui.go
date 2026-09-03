@@ -40,11 +40,20 @@ type GUI struct {
 	token string
 	tmpl  *template.Template
 
-	mu      sync.Mutex
-	enroll  *Enrollment
-	phase   string // idle | waiting | done | error
-	message string
-	waitCtx context.CancelFunc
+	// IdleTimeout, when set, stops the server once no browser has talked to
+	// it for that long and no enrollment is waiting for approval. The
+	// desktop launcher uses it so a closed tab does not leave a root
+	// process behind. Zero means serve until the context ends.
+	IdleTimeout time.Duration
+
+	mu       sync.Mutex
+	enroll   *Enrollment
+	phase    string // idle | waiting | done | error
+	message  string
+	waitCtx  context.CancelFunc
+	lastSeen time.Time
+	done     chan struct{}
+	doneOnce sync.Once
 }
 
 // NewGUI prepares the front end for an agent with the default enrollment
@@ -58,7 +67,25 @@ func NewGUI(a *Agent, cfg Config) (*GUI, error) {
 	if _, err := rand.Read(b); err != nil {
 		return nil, err
 	}
-	return &GUI{agent: a, cfg: cfg, token: base64.RawURLEncoding.EncodeToString(b), tmpl: tmpl, phase: "idle"}, nil
+	return &GUI{agent: a, cfg: cfg, token: base64.RawURLEncoding.EncodeToString(b), tmpl: tmpl, phase: "idle", done: make(chan struct{})}, nil
+}
+
+// Done is closed when the server has stopped, whether because the context
+// ended or because IdleTimeout elapsed.
+func (g *GUI) Done() <-chan struct{} { return g.done }
+
+func (g *GUI) touch() {
+	g.mu.Lock()
+	g.lastSeen = time.Now()
+	g.mu.Unlock()
+}
+
+// idle reports whether nothing has used the page for IdleTimeout and no
+// approval is pending.
+func (g *GUI) idle() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.phase != "waiting" && time.Since(g.lastSeen) > g.IdleTimeout
 }
 
 // Serve listens on addr (loopback) and returns the URL to open. It serves
@@ -76,14 +103,36 @@ func (g *GUI) Serve(ctx context.Context, addr string) (string, error) {
 		return "", err
 	}
 	srv := &http.Server{Handler: g.handler(), ReadHeaderTimeout: 10 * time.Second}
-	go func() {
-		<-ctx.Done()
+	g.touch()
+	stop := func() {
 		g.mu.Lock()
 		if g.waitCtx != nil {
 			g.waitCtx()
 		}
 		g.mu.Unlock()
 		_ = srv.Close()
+		g.doneOnce.Do(func() { close(g.done) })
+	}
+	go func() {
+		if g.IdleTimeout <= 0 {
+			<-ctx.Done()
+			stop()
+			return
+		}
+		tick := time.NewTicker(min(g.IdleTimeout/4+time.Millisecond, 5*time.Second))
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				stop()
+				return
+			case <-tick.C:
+				if g.idle() {
+					stop()
+					return
+				}
+			}
+		}
 	}()
 	go func() { _ = srv.Serve(l) }()
 	return fmt.Sprintf("http://%s/?t=%s", l.Addr().String(), g.token), nil
@@ -135,6 +184,7 @@ func (g *GUI) guard(next http.Handler) http.Handler {
 			http.Error(w, "forbidden: missing CSRF header", http.StatusForbidden)
 			return
 		}
+		g.touch()
 		next.ServeHTTP(w, r)
 	})
 }

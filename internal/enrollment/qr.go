@@ -69,3 +69,15 @@ func qrForService(service string) bool {
 	}
 	return false
 }
+
+// greeterService recognises the PAM services of graphical display managers.
+// With LoginPolicy.QRGreeters the QR text is sent to them too; whether it
+// scans depends on the greeter's font (GNOME's message label falls back to a
+// monospace face for block glyphs, but that is best effort).
+func greeterService(service string) bool {
+	switch service {
+	case "gdm-password", "gdm", "gdm-launch-environment", "lightdm", "lightdm-greeter", "sddm", "lxdm", "xdm", "greetd", "kde":
+		return true
+	}
+	return false
+}

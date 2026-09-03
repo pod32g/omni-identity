@@ -3,10 +3,12 @@ package enrollment_test
 import (
 	"context"
 	"encoding/json"
+	"encoding/xml"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -127,5 +129,75 @@ func TestGUIEnrollsAndManagesTheDevice(t *testing.T) {
 	}
 	if v := status(); v["Enrolled"] != false {
 		t.Errorf("still enrolled: %v", v)
+	}
+}
+
+// The desktop launcher exits by itself once the page is no longer used, so a
+// closed tab never leaves a root process behind.
+func TestGUIExitsWhenIdle(t *testing.T) {
+	agent := &enrollment.Agent{StateDir: filepath.Join(t.TempDir(), "s"), RuntimeDir: filepath.Join(t.TempDir(), "r"), Out: io.Discard}
+	gui, err := enrollment.NewGUI(agent, enrollment.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gui.IdleTimeout = 300 * time.Millisecond
+	launch, err := gui.Serve(context.Background(), "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := http.Get(launch); err != nil {
+		t.Fatalf("first visit: %v", err)
+	}
+	select {
+	case <-gui.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("GUI kept running after the idle timeout")
+	}
+	if _, err := http.Get(launch); err == nil {
+		t.Error("server still answering after Done")
+	}
+}
+
+// The launcher, polkit policy, and agent must agree on the binary path and
+// the idle flag, or double-clicking the icon does nothing visible.
+func TestDesktopLauncherFilesAgree(t *testing.T) {
+	dir := filepath.Join("..", "..", "endpoint", "desktop")
+	policyRaw, err := os.ReadFile(filepath.Join(dir, "com.omni-identity.enrollment.policy"))
+	if err != nil {
+		t.Skip("endpoint/desktop not present:", err)
+	}
+	var policy struct {
+		Actions []struct {
+			ID        string `xml:"id,attr"`
+			Annotates []struct {
+				Key   string `xml:"key,attr"`
+				Value string `xml:",chardata"`
+			} `xml:"annotate"`
+		} `xml:"action"`
+	}
+	if err := xml.Unmarshal(policyRaw, &policy); err != nil || len(policy.Actions) != 1 {
+		t.Fatalf("policy: %v (%d actions)", err, len(policy.Actions))
+	}
+	execPath := ""
+	for _, a := range policy.Actions[0].Annotates {
+		if a.Key == "org.freedesktop.policykit.exec.path" {
+			execPath = a.Value
+		}
+	}
+	desktop, err := os.ReadFile(filepath.Join(dir, "omni-enrollment.desktop"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Exec=pkexec " + execPath + " --exit-when-idle "
+	if execPath == "" || !strings.Contains(string(desktop), want) {
+		t.Errorf("launcher Exec must start with %q:\n%s", want, desktop)
+	}
+	for _, line := range []string{"Terminal=false", "Icon=omni-enrollment", "Type=Application"} {
+		if !strings.Contains(string(desktop), line+"\n") {
+			t.Errorf("launcher missing %q", line)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "omni-enrollment.svg")); err != nil {
+		t.Error("icon missing:", err)
 	}
 }

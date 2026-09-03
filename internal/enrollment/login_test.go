@@ -422,3 +422,30 @@ func parseUnverified(raw string) (map[string]any, error) {
 	var m map[string]any
 	return m, json.Unmarshal(b, &m)
 }
+
+// Graphical greeters get the QR text only when the operator opts in
+// (qr_greeters), since their proportional fonts may not render it.
+func TestGreeterQRIsOptIn(t *testing.T) {
+	for _, optIn := range []bool{false, true} {
+		accounts := newFakeAccounts()
+		ti, agent := enrolledAgent(t, accounts)
+		pol := enrollment.DefaultLoginPolicy
+		pol.QRGreeters = optIn
+		conv := &scriptConv{answers: []string{"", "hunter2xyz", "hunter2xyz"}}
+		verdict := make(chan enrollment.Verdict, 1)
+		go func() {
+			verdict <- agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice", Service: "gdm-password"}, accounts, pol)
+		}()
+		ti.approvePending(t)
+		if v := <-verdict; v != enrollment.VerdictOK {
+			t.Fatalf("optIn=%v verdict = %d\n%s", optIn, v, conv.transcript())
+		}
+		tr := conv.transcript()
+		if !strings.Contains(tr, "/device?user_code=") {
+			t.Errorf("optIn=%v: link missing\n%s", optIn, tr)
+		}
+		if got := strings.Contains(tr, "█"); got != optIn {
+			t.Errorf("optIn=%v: QR present=%v\n%s", optIn, got, tr)
+		}
+	}
+}

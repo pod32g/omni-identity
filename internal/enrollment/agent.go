@@ -53,6 +53,9 @@ type Config struct {
 	// QR controls the terminal QR code under the verification URL: dark
 	// (default), light, or off.
 	QR string
+	// QRGreeters also sends the QR text to graphical greeters (GDM, SDDM,
+	// LightDM), which render prompts in proportional fonts; off by default.
+	QRGreeters bool
 	// BrokerAudiences enables the local token broker for these client ids.
 	BrokerAudiences []string
 	// KeyBackend is file (default) or tpm; TPMDevice names the TPM for the
@@ -85,6 +88,7 @@ func (c Config) Policy() LoginPolicy {
 	if c.QR != "" {
 		pol.QR = c.QR
 	}
+	pol.QRGreeters = c.QRGreeters
 	return pol
 }
 

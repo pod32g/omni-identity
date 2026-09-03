@@ -165,6 +165,12 @@ docker exec "$EP" omni-enrollment status
 DEVICE_ID="$(docker exec "$EP" omni-enrollment status --json | sed -n 's/.*"device_id":"\([^"]*\)".*/\1/p' | head -1)"
 pass "device $DEVICE_ID enrolled to alice; private key stayed in /var/lib/omni-enrollment"
 
+step "Graphical enrollment: the default command's local page, driven over HTTP (curl stands in for the browser)"
+docker exec "$EP" /poc/gui-enroll.sh
+GUI_DEVICES="$(curl -fsS -b "$JAR" "$ISSUER_LOCAL/admin/devices" | grep -c 'omni-gui' || true)"
+[[ "$GUI_DEVICES" -ge 1 ]] || { echo "omni-gui device not visible in the admin inventory"; exit 1; }
+pass "GUI enrolled and unenrolled a second device as alice; foreign Host and header-less POSTs were refused"
+
 step "Starting the enrollment daemon (renewal + PAM socket)"
 docker exec -d -e OMNI_ENROLLMENT_BROKER_AUDIENCES=omni-metrics "$EP" sh -c "omni-enrollment daemon --refresh-interval 15s > /var/log/omni-enrollment.log 2>&1"
 sleep 3

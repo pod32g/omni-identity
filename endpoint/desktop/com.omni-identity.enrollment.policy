@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- Lets a desktop user start omni-enrollment as root from the launcher after
+     authenticating as an administrator (polkit's own dialog). The agent must
+     run as root because the device key lives in /var/lib/omni-enrollment. -->
+<policyconfig>
+  <vendor>Omni Identity</vendor>
+  <vendor_url>https://github.com/pod32g/omni-identity</vendor_url>
+  <action id="com.omni-identity.enrollment.run">
+    <description>Enroll or manage this device with Omni Identity</description>
+    <message>Authentication is required to enroll or manage this computer's device identity</message>
+    <icon_name>omni-enrollment</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/omni-enrollment</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+</policyconfig>

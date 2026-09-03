@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <title>Omni Enrollment</title>
+  <path d="M32 4 L54 12 V30 C54 44 44 54 32 60 C20 54 10 44 10 30 V12 Z" fill="#1f2937" stroke="#4f46e5" stroke-width="3" stroke-linejoin="round"/>
+  <circle cx="27" cy="30" r="7" fill="none" stroke="#a5b4fc" stroke-width="3.5"/>
+  <path d="M33 30 H46 M41 30 V36 M46 30 V35" fill="none" stroke="#a5b4fc" stroke-width="3.5" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=Omni Enrollment
+Comment=Enroll this computer with Omni Identity and manage its device identity
+# pkexec asks for an administrator password through the desktop's own dialog
+# (policy in com.omni-identity.enrollment.policy), then the agent opens its
+# local page in your browser and exits by itself once the tab is closed.
+Exec=pkexec /usr/local/bin/omni-enrollment --exit-when-idle 2m
+Icon=omni-enrollment
+Terminal=false
+Categories=System;Settings;Security;
+Keywords=identity;enroll;device;omni;login;

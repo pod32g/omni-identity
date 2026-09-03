@@ -31,6 +31,7 @@ type LoginPolicy struct {
 	LoginShell      string
 	MinLocalSecret  int
 	QR              string // QRDark | QRLight | QROff for console/SSH prompts
+	QRGreeters      bool   // also send the QR text to graphical greeters (GDM etc.), best effort
 }
 
 // DefaultLoginPolicy is a homelab-friendly default: a week offline.
@@ -245,7 +246,8 @@ func (a *Agent) Login(ctx context.Context, conv Conversation, lc LoginContext, a
 			return VerdictFail
 		}
 	}
-	return a.onlineLogin(ctx, conv, name, uc, accounts, pol, now, qrForService(lc.Service))
+	showQR := qrForService(lc.Service) || (pol.QRGreeters && greeterService(lc.Service))
+	return a.onlineLogin(ctx, conv, name, uc, accounts, pol, now, showQR)
 }
 
 func (a *Agent) onlineLogin(ctx context.Context, conv Conversation, name string, uc *UserCache, accounts LocalAccounts, pol LoginPolicy, now time.Time, showQR bool) Verdict {

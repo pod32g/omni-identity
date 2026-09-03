@@ -47,6 +47,7 @@ sha256sum omni-enrollment                     # compare with the table above
 sudo install -m 0755 omni-enrollment /usr/local/bin/omni-enrollment
 sudo omni-enrollment --issuer {{.Issuer}}{{if .Insecure}} --allow-insecure-http{{end}}</pre>
       <p class="muted" style="margin-top:12px">That opens a local page in the machine's browser: press <strong>Enroll this device</strong>, then approve it here signed in as <strong>{{with .Me}}{{.Username}}{{end}}</strong>, or scan the QR code with your phone. The device then appears under <a href="/account/devices">My Devices</a>.</p>
+      <p class="muted" style="margin-top:12px">For a menu entry, unpack the endpoint sources above and run <code>sudo make -C endpoint/desktop install</code>: "Omni Enrollment" then appears in the application menu and asks for an administrator password through the desktop's own dialog.</p>
       <p class="muted" style="margin-top:12px">No display, or working over SSH? <code>sudo omni-enrollment enroll --issuer {{.Issuer}}</code> runs the same steps in the terminal and prints the link, the code, and a QR code. Add <code>--browser</code> to approve in that machine's browser directly instead of using a code.</p>
       {{if .Insecure}}<div class="alert warn" style="margin-top:12px">This server's issuer uses plain <code>http://</code>. The agent refuses that unless <code>--allow-insecure-http</code> is passed; use it only on a private network you trust.</div>{{end}}
     </div>

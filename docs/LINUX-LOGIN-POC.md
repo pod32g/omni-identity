@@ -30,6 +30,7 @@ OMNI_POC_IMAGE=omni-identity:latest endpoint/poc/run-poc.sh  # Omni from an imag
 | Build `omni-identity` for the host and `omni-endpoint:poc` (Ubuntu 24.04 + sshd + `pam_omni.so` compiled from `endpoint/pam` + `omni-enrollment`) | — | image id |
 | Start Omni natively on `127.0.0.1:18080` with public URL `http://host.docker.internal:18080` (insecure-HTTP opt-in), bootstrap `admin` and `alice` through the real setup wizard and admin UI | — | `PASS: admin + alice created` |
 | `omni-enrollment enroll` in the endpoint; the code is approved *as alice* through the real `/device` pages (the `approve.sh` script stands in for her phone) | 7–12 | enrollment transcript, `omni-enrollment status` |
+| `omni-enrollment` with no command (the graphical page) enrolls a second device `omni-gui` over its loopback HTTP API with curl standing in for the browser: one-time URL → cookie, CSRF header, QR served, code approved *as alice*, then unenrolled from the same page; a foreign `Host` and a header-less POST are refused | GUI | `PASS: GUI enrolled and unenrolled …` |
 | Start `omni-enrollment daemon --refresh-interval 15s` (no systemd in a container) | 13–14 | socket present |
 | `ssh alice@localhost` via PAM keyboard-interactive: URL + code shown by PAM, approved, ID token verified, identity served by `libnss_omni` (no `/etc/passwd` entry), home created, local offline password chosen | **26, 27** | `uid=2xxxxx(alice)` from the SSH session, `getent passwd alice` |
 | `ssh bob@localhost` for a user who has never touched the machine: NSS asks the daemon, the daemon asks Omni, the login proceeds | **26 (non-owner)** | `uid=2xxxxx(bob)` |
@@ -104,8 +105,11 @@ root-equivalent credential and keep it in the household's password manager.
 
 ## 5. What the PoC does not show
 
-GDM/desktop greeter (text prompts should render, untested), group/sudo
-mapping, TPM-sealed cache, screen-lock specifics. None affects the answer to
+GDM/desktop greeter (text prompts should render, untested; the opt-in
+`qr_greeters` QR text is likewise untested on a real greeter), the desktop
+launcher (`endpoint/desktop`, polkit dialog + browser opened as the desktop
+user; unit-tested for consistency only), group/sudo mapping, TPM-sealed
+cache, screen-lock specifics. None affects the answer to
 the PoC question.
 
 ## 6. Future Omni-OS integration notes

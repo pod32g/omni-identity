@@ -134,6 +134,7 @@ type fileConfig struct {
 	LoginShell        string   `yaml:"login_shell"`
 	RefreshInterval   string   `yaml:"refresh_interval"`
 	QR                string   `yaml:"qr"`
+	QRGreeters        bool     `yaml:"qr_greeters"`
 	BrokerAudiences   []string `yaml:"broker_audiences"`
 	KeyBackend        string   `yaml:"key_backend"`
 	TPMDevice         string   `yaml:"tpm_device"`
@@ -158,6 +159,7 @@ func commonFlags(fs *flag.FlagSet) func() (enrollment.Config, error) {
 	fs.StringVar(&cfg.TPMDevice, "tpm-device", "", "TPM for --key-backend tpm: /dev/tpmrm0 (default) or tcp://host:port (software TPM)")
 	noQR := fs.Bool("no-qr", false, "do not print a QR code under the sign-in link")
 	qrLight := fs.Bool("qr-light", false, "render the QR code for a light terminal background")
+	qrGreeters := fs.Bool("qr-greeters", false, "also send the QR text to graphical greeters such as GDM (best effort; OMNI_ENROLLMENT_QR_GREETERS)")
 	return func() (enrollment.Config, error) {
 		var fc fileConfig
 		if raw, err := os.ReadFile(*configPath); err == nil {
@@ -212,6 +214,10 @@ func commonFlags(fs *flag.FlagSet) func() (enrollment.Config, error) {
 		case enrollment.QROff, enrollment.QRDark, enrollment.QRLight:
 		default:
 			return cfg, fmt.Errorf("qr must be one of off, dark, light (got %q)", cfg.QR)
+		}
+		cfg.QRGreeters = *qrGreeters || fc.QRGreeters
+		if v := os.Getenv("OMNI_ENROLLMENT_QR_GREETERS"); v != "" {
+			cfg.QRGreeters = v == "1" || strings.EqualFold(v, "true") || strings.EqualFold(v, "yes")
 		}
 		var derr error
 		if v := pick(*offline, "OMNI_ENROLLMENT_OFFLINE_VALIDITY", fc.OfflineValidity, ""); v != "" {
@@ -365,6 +371,7 @@ func runGUI(args []string) error {
 	resolve := commonFlags(fs)
 	listen := fs.String("listen", "127.0.0.1:0", "loopback address to serve the page on")
 	noOpen := fs.Bool("no-open", false, "print the URL instead of opening a browser")
+	idle := fs.Duration("exit-when-idle", 0, "exit after no browser activity for this long (e.g. 2m); 0 = run until Ctrl-C")
 	_ = fs.Parse(args)
 	cfg, err := resolve()
 	if err != nil {
@@ -376,6 +383,7 @@ func runGUI(args []string) error {
 	if err != nil {
 		return err
 	}
+	gui.IdleTimeout = *idle
 	url, err := gui.Serve(ctx, *listen)
 	if err != nil {
 		return err
@@ -386,7 +394,11 @@ func runGUI(args []string) error {
 			fmt.Fprintln(os.Stderr, "could not open a browser:", err)
 		}
 	}
-	<-ctx.Done()
+	select {
+	case <-ctx.Done():
+	case <-gui.Done():
+		fmt.Println("no browser activity; exiting")
+	}
 	return nil
 }
 
