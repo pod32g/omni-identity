@@ -139,12 +139,14 @@ func TestDPoPProofRejectsWrongTypAndTamper(t *testing.T) {
 	good, _ := NewProof(key, "POST", "https://x/y", "", now)
 	parts := strings.Split(good, ".")
 	sig := []byte(parts[2])
-	// Flip the last character to a definitely-different base64url char (avoid
-	// the flaky "replace with a value it might already be" trick).
-	if sig[len(sig)-1] == 'A' {
-		sig[len(sig)-1] = 'B'
+	// Flip the FIRST character of the signature. The last character only
+	// carries four significant bits (64 bytes -> 86 base64url chars), so a
+	// flip there can change padding bits alone, which the lenient decoder
+	// ignores and the signature still verifies (a 1-in-16 flake).
+	if sig[0] == 'A' {
+		sig[0] = 'B'
 	} else {
-		sig[len(sig)-1] = 'A'
+		sig[0] = 'A'
 	}
 	tampered := parts[0] + "." + parts[1] + "." + string(sig)
 	if _, err := VerifyProof(tampered, ProofOptions{HTM: "POST", HTU: "https://x/y"}); err == nil {
