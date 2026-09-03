@@ -282,6 +282,7 @@ func (s *Server) handleAdminApproveDevice(w http.ResponseWriter, r *http.Request
 	}
 	s.audit(r, evtDeviceApproved, auditEntry{actorUserID: actorID(r), success: true,
 		detail: "device=" + id + " owner=" + dev.OwnerUserID})
+	s.notifyDeviceApproved(dev)
 	if fromDetail(r) {
 		http.Redirect(w, r, "/admin/devices/"+id, http.StatusSeeOther)
 		return

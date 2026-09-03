@@ -234,6 +234,7 @@ func (s *Server) handleEnrollDevice(w http.ResponseWriter, r *http.Request) {
 	s.metrics.recordDeviceEnrollment("success")
 	s.audit(r, evtDeviceEnrollCompleted, auditEntry{actorUserID: user.ID, username: user.Username,
 		clientID: vt.Audience, success: true, detail: "device=" + dev.ID + " alg=" + dev.PublicKeyAlgorithm + " status=" + dev.Status})
+	s.notifyDeviceEnrolled(dev, user)
 	writeJSON(w, http.StatusCreated, deviceToJSON(dev, user.Username))
 }
 

@@ -888,3 +888,52 @@ func TestInvalidDPoPProofAtTokenEndpointIsRejected(t *testing.T) {
 }
 
 func hashToken(s string) string { return auth.HashToken(s) }
+
+func TestEnrollmentNotificationsWhenSMTPConfigured(t *testing.T) {
+	srv := testServer(t)
+	ms := newMockSender()
+	srv.mailer = ms
+	admin := createUser(t, srv, "root", "pw", true)
+	alice := createUser(t, srv, "alice", "pw", false)
+
+	// Active enrollment: the owner is told, with a revoke link.
+	enrollDevice(t, srv, alice, newDeviceKey(t), "laptop")
+	got := <-ms.sent
+	if got.to != alice.Email || !strings.Contains(got.subject, "laptop") || !strings.Contains(got.body, "/account/devices") || !strings.Contains(got.body, "active") {
+		t.Errorf("owner mail = %+v", got)
+	}
+
+	// Pending enrollment: owner told it is pending, admins asked to approve,
+	// and approval tells the owner again.
+	st, _ := srv.db.GetSettings(context.Background())
+	st.RequireDeviceApproval = true
+	_ = srv.db.UpdateSettings(context.Background(), st)
+	srv.settings.Reload(context.Background())
+	id := enrollDevice(t, srv, alice, newDeviceKey(t), "desktop")
+	var toOwner, toAdmin bool
+	for i := 0; i < 2; i++ {
+		m := <-ms.sent
+		switch m.to {
+		case alice.Email:
+			toOwner = strings.Contains(m.body, "waiting for an administrator")
+		case admin.Email:
+			toAdmin = strings.Contains(m.subject, "awaiting approval") && strings.Contains(m.body, "/admin/devices/"+id)
+		}
+	}
+	if !toOwner || !toAdmin {
+		t.Errorf("pending notifications: owner=%v admin=%v", toOwner, toAdmin)
+	}
+	do(srv, sessionReq(startSession(t, srv, admin.ID), "/admin/devices/"+id+"/approve", nil))
+	if m := <-ms.sent; m.to != alice.Email || !strings.Contains(m.subject, "approved") {
+		t.Errorf("approval mail = %+v", m)
+	}
+
+	// Without SMTP nothing is attempted and enrollment still succeeds.
+	ms.enabled = false
+	enrollDevice(t, srv, alice, newDeviceKey(t), "third")
+	select {
+	case m := <-ms.sent:
+		t.Errorf("mail sent with SMTP disabled: %+v", m)
+	default:
+	}
+}

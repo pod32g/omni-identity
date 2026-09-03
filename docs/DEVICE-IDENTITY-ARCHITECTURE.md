@@ -403,6 +403,10 @@ Audit events: `device.enrollment.started`, `device.enrollment.completed`,
 `device.deleted`, `device.approved`, `device.policy.updated`,
 `device.login.approved` (user-on-device grant approved).
 
+Notifications (when SMTP is configured, best-effort): the owner is emailed on
+every enrollment (with a revoke link) and on approval; administrators are
+emailed when an enrollment awaits approval.
+
 Metrics: `omni_identity_device_enrollments_total{result}`,
 `omni_identity_device_auth_total{result}`, `omni_identity_devices_active`
 (gauge), `omni_identity_device_grants_total{result}` (RFC 8628 outcomes).

@@ -110,9 +110,9 @@ memory or TLS stream. Codes expire in 10 minutes and are single-use.
 Residual: a user who is socially engineered into approving a code they did not
 generate enrolls the attacker's machine under their account. The approval page
 shows the device name/platform and warns to approve only a device you are
-looking at; the new device is listed and emailed nowhere (no SMTP requirement),
-so the user must notice it in *My Devices*. Accepted for V1; notification is a
-possible follow-up.
+looking at; when SMTP is configured the owner is emailed about every new
+device with a revoke link, and administrators can require approval of every
+enrollment. Without SMTP the user must notice it in *My Devices*.
 
 ### 4.4 Public-key substitution
 
@@ -258,7 +258,7 @@ identity does not raise or lower this risk.
    and the device list, not prevented.
 5. No attestation: `device_trust=enrolled` means "a key was registered under
    user authorization", not "the OS is healthy".
-6. No admin notification on new enrollments (no email dependency).
+6. Enrollment notifications depend on SMTP being configured.
 
 ## 6. Security tests required (mapped to the brief's scenarios)
 
