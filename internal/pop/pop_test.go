@@ -1,12 +1,14 @@
 package pop
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -136,7 +138,15 @@ func TestDPoPProofRejectsWrongTypAndTamper(t *testing.T) {
 	}
 	good, _ := NewProof(key, "POST", "https://x/y", "", now)
 	parts := strings.Split(good, ".")
-	tampered := parts[0] + "." + parts[1] + "." + parts[2][:len(parts[2])-2] + "AA"
+	sig := []byte(parts[2])
+	// Flip the last character to a definitely-different base64url char (avoid
+	// the flaky "replace with a value it might already be" trick).
+	if sig[len(sig)-1] == 'A' {
+		sig[len(sig)-1] = 'B'
+	} else {
+		sig[len(sig)-1] = 'A'
+	}
+	tampered := parts[0] + "." + parts[1] + "." + string(sig)
 	if _, err := VerifyProof(tampered, ProofOptions{HTM: "POST", HTU: "https://x/y"}); err == nil {
 		t.Error("tampered signature accepted")
 	}
@@ -195,5 +205,38 @@ func TestAssertionVerifyAndReject(t *testing.T) {
 func TestJTIHashScopedToKey(t *testing.T) {
 	if JTIHash("a", "x") == JTIHash("b", "x") {
 		t.Error("jti hash must be scoped by key thumbprint")
+	}
+}
+
+// opaqueP256 wraps an ECDSA key as a crypto.Signer that hides its private half,
+// standing in for a TPM-resident key.
+type opaqueP256 struct{ k *ecdsa.PrivateKey }
+
+func (o opaqueP256) Public() crypto.PublicKey { return &o.k.PublicKey }
+func (o opaqueP256) Sign(r io.Reader, digest []byte, _ crypto.SignerOpts) ([]byte, error) {
+	return ecdsa.SignASN1(r, o.k, digest)
+}
+
+func TestES256ThroughOpaqueSigner(t *testing.T) {
+	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	now := time.Unix(1_800_000_000, 0)
+	raw, err := NewAssertion(opaqueP256{k}, "fp", "dev-2", "https://id.example", now, time.Minute, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := VerifyAssertion(raw, AssertionOptions{Key: &k.PublicKey, Alg: AlgES256, Audience: "https://id.example", Now: now})
+	if err != nil || a.Subject != "dev-2" {
+		t.Fatalf("verify: %v", err)
+	}
+	// DPoP proofs too, and the standard software path still works.
+	proof, err := NewProof(opaqueP256{k}, "POST", "https://id.example/t", "", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, err := VerifyProof(proof, ProofOptions{Now: now, HTM: "POST", HTU: "https://id.example/t"}); err != nil || p.Alg != AlgES256 {
+		t.Errorf("proof: %v", err)
+	}
+	if _, err := NewAssertion(k, "fp", "dev-2", "https://id.example", now, time.Minute, nil); err != nil {
+		t.Errorf("software ES256: %v", err)
 	}
 }
