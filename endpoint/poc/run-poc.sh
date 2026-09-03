@@ -8,20 +8,32 @@
 #   endpoint/poc/run-poc.sh          # run everything, clean up at the end
 #   endpoint/poc/run-poc.sh --keep   # leave containers running for inspection
 #   POC_BASE=debian:stable-slim endpoint/poc/run-poc.sh   # other endpoint base image
+#   OMNI_POC_IMAGE=omni-identity:latest endpoint/poc/run-poc.sh
+#       # run the throwaway Omni as a container from that image instead of a
+#       # host binary (what the self-hosted CI runner does after a deploy)
 #
-# Works on Docker Desktop (macOS) and on Linux hosts such as the GitHub
-# runner: the endpoint reaches the host's Omni through host.docker.internal,
-# mapped to the host gateway explicitly.
+# Two ways to run the throwaway Omni Identity:
+#   native    — built with the host Go toolchain and bound to loopback (or the
+#               Docker bridge address on Linux); the endpoint reaches it via
+#               host.docker.internal. The developer default.
+#   container — from OMNI_POC_IMAGE on the private PoC network with alias
+#               "omni", published on 127.0.0.1 only. Chosen automatically on a
+#               Linux host without Go. Nothing listens beyond loopback.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 KEEP=0; [[ "${1:-}" == "--keep" ]] && KEEP=1
-NET=omni-poc; EP=omni-poc-endpoint
+NET=omni-poc; EP=omni-poc-endpoint; OMNI=omni-poc-identity
 PORT="${OMNI_POC_PORT:-18080}"
-ISSUER_LOCAL="http://127.0.0.1:${PORT}"            # how this script reaches Omni
-ISSUER="http://host.docker.internal:${PORT}"       # how the endpoint reaches Omni (= public URL)
 WORK="$(mktemp -d)"
 OMNI_PID=""
+OMNI_IMAGE="${OMNI_POC_IMAGE:-}"
+if [[ -z "$OMNI_IMAGE" && "$(uname -s)" == Linux ]] && ! command -v go >/dev/null 2>&1; then
+  OMNI_IMAGE=omni-identity:latest
+fi
+if [[ -z "$OMNI_IMAGE" ]] && ! command -v go >/dev/null 2>&1; then
+  echo "no Go toolchain: install Go, or set OMNI_POC_IMAGE to run Omni from an image" >&2; exit 1
+fi
 SETUP_TOKEN="$(openssl rand -hex 16)"
 ADMIN_PW="Adm1n-$(openssl rand -hex 6)"
 ALICE_PW="Al1ce-$(openssl rand -hex 6)"
@@ -29,10 +41,46 @@ RECOVERY_PW="Rec0very-$(openssl rand -hex 6)"
 LOCAL_PW="local-offline-pw-$(openssl rand -hex 3)"
 ARCH="$(docker version --format '{{.Server.Arch}}')"
 POC_BASE="${POC_BASE:-ubuntu:24.04}"
-# On Linux the container reaches the host via the docker0 gateway, so Omni
-# must listen beyond loopback there; Docker Desktop routes host.docker.internal
-# to loopback, so 127.0.0.1 suffices on macOS.
-HOST_BIND=127.0.0.1; [[ "$(uname -s)" == Linux ]] && HOST_BIND=0.0.0.0
+# Where the throwaway Omni listens (native mode). On Linux the endpoint reaches
+# the host through the Docker bridge gateway (what --add-host host-gateway
+# resolves to), so bind to exactly that address — never 0.0.0.0, the harness
+# may run on a host that also serves production. Docker Desktop routes
+# host.docker.internal to loopback, so 127.0.0.1 suffices on macOS.
+HOST_BIND=127.0.0.1
+if [[ -z "$OMNI_IMAGE" && "$(uname -s)" == Linux ]]; then
+  HOST_BIND="$(docker network inspect bridge -f '{{(index .IPAM.Config 0).Gateway}}')"
+fi
+ISSUER_LOCAL="http://${HOST_BIND}:${PORT}"          # how this script reaches Omni
+ISSUER="http://host.docker.internal:${PORT}"       # how the endpoint reaches Omni (= public URL)
+if [[ -n "$OMNI_IMAGE" ]]; then
+  ISSUER="http://omni:8080"
+fi
+if (echo >"/dev/tcp/${HOST_BIND}/${PORT}") 2>/dev/null; then
+  echo "port ${PORT} on ${HOST_BIND} is already in use; set OMNI_POC_PORT" >&2; exit 1
+fi
+
+# Build Go binaries with the host toolchain when present, otherwise inside
+# the pinned Go builder image (self-hosted runners may have Docker but no Go).
+GO_IMAGE="$(sed -nE 's/^FROM (golang:[^ ]+) AS build/\1/p' Dockerfile | head -1)"
+GO_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/omni-poc-go"
+gobuild() {  # gobuild <output> <package> [KEY=VAL...]
+  local out="$1" pkg="$2"; shift 2
+  if command -v go >/dev/null 2>&1; then
+    env "$@" go build -o "$out" "$pkg"
+    return
+  fi
+  # Builder container runs as the invoking user so nothing root-owned lands in
+  # the checkout or the work dir; module/build caches persist under the
+  # user's cache dir between runs.
+  mkdir -p "$GO_CACHE_DIR/mod" "$GO_CACHE_DIR/build"
+  local envs=()
+  for kv in "$@"; do envs+=(-e "$kv"); done
+  docker run --rm --user "$(id -u):$(id -g)" \
+    -v "$PWD:/src" -w /src -v "$WORK:$WORK" \
+    -v "$GO_CACHE_DIR/mod:/tmp/gomod" -v "$GO_CACHE_DIR/build:/tmp/gocache" \
+    -e HOME=/tmp -e GOMODCACHE=/tmp/gomod -e GOCACHE=/tmp/gocache -e GOFLAGS=-buildvcs=false \
+    ${envs[@]+"${envs[@]}"} "$GO_IMAGE" go build -o "$out" "$pkg"
+}
 
 step() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 pass() { printf '\033[1;32m    PASS: %s\033[0m\n' "$*"; }
@@ -42,12 +90,12 @@ cleanup() {
     echo; echo "!!! PoC failed (exit $rc). Diagnostics:"
     docker logs "$EP" 2>&1 | tail -20 || true
     docker exec "$EP" tail -20 /var/log/omni-enrollment.log 2>/dev/null || true
-    tail -5 "$WORK/omni.log" 2>/dev/null || true
+    if [[ -n "$OMNI_IMAGE" ]]; then docker logs "$OMNI" 2>&1 | tail -5 || true; else tail -5 "$WORK/omni.log" 2>/dev/null || true; fi
   fi
   if [[ $KEEP -eq 1 ]]; then
-    echo; echo "kept: docker exec -it $EP bash   |   Omni (pid $OMNI_PID) at $ISSUER_LOCAL (admin/$ADMIN_PW, alice/$ALICE_PW), log $WORK/omni.log"; return
+    echo; echo "kept: docker exec -it $EP bash   |   Omni at $ISSUER_LOCAL (admin/$ADMIN_PW, alice/$ALICE_PW)"; return
   fi
-  docker rm -f "$EP" >/dev/null 2>&1 || true
+  docker rm -fv "$EP" "$OMNI" >/dev/null 2>&1 || true
   docker network rm "$NET" >/dev/null 2>&1 || true
   [[ -n "$OMNI_PID" ]] && kill "$OMNI_PID" >/dev/null 2>&1 || true
   rm -rf "$WORK"
@@ -60,20 +108,27 @@ JAR="$(mktemp)"
 csrf() { awk '$6=="omni_csrf"{print $7}' "$JAR"; }
 post() { curl -fsS -b "$JAR" -c "$JAR" -o /dev/null --data-urlencode "csrf_token=$(csrf)" "$@"; }
 
-step "Building omni-identity (host) and the endpoint image"
-go build -o "$WORK/omni-identity" ./cmd/omni-identity
-make -s build-enrollment ARCH="$ARCH"
+step "Building the endpoint image${OMNI_IMAGE:+ (Omni from image $OMNI_IMAGE)}"
+[[ -n "$OMNI_IMAGE" ]] || gobuild "$WORK/omni-identity" ./cmd/omni-identity
+gobuild "omni-enrollment-linux-$ARCH" ./cmd/omni-enrollment CGO_ENABLED=0 GOOS=linux GOARCH="$ARCH"
 docker build -q --build-arg BASE="$POC_BASE" -f endpoint/poc/Dockerfile.endpoint -t omni-endpoint:poc . >/dev/null
+docker network create "$NET" >/dev/null 2>&1 || true
+docker rm -fv "$EP" "$OMNI" >/dev/null 2>&1 || true
 
 step "Starting Omni Identity on $ISSUER_LOCAL (public URL $ISSUER)"
-OMNI_SERVER_HOST="$HOST_BIND" OMNI_SERVER_PORT="$PORT" OMNI_SERVER_PUBLIC_URL="$ISSUER" \
-  OMNI_ALLOW_INSECURE_HTTP=true OMNI_COOKIES_SECURE=false OMNI_SETUP_TOKEN="$SETUP_TOKEN" \
-  OMNI_DATABASE_PATH="$WORK/omni.db" "$WORK/omni-identity" serve -config /dev/null > "$WORK/omni.log" 2>&1 &
-OMNI_PID=$!
+if [[ -n "$OMNI_IMAGE" ]]; then
+  docker run -d --name "$OMNI" --network "$NET" --network-alias omni -p "127.0.0.1:${PORT}:8080" \
+    -e OMNI_SERVER_HOST=0.0.0.0 -e OMNI_SERVER_PORT=8080 -e OMNI_SERVER_PUBLIC_URL="$ISSUER" \
+    -e OMNI_ALLOW_INSECURE_HTTP=true -e OMNI_COOKIES_SECURE=false -e OMNI_SETUP_TOKEN="$SETUP_TOKEN" \
+    -e OMNI_DATABASE_PATH=/data/omni.db "$OMNI_IMAGE" >/dev/null
+else
+  OMNI_SERVER_HOST="$HOST_BIND" OMNI_SERVER_PORT="$PORT" OMNI_SERVER_PUBLIC_URL="$ISSUER" \
+    OMNI_ALLOW_INSECURE_HTTP=true OMNI_COOKIES_SECURE=false OMNI_SETUP_TOKEN="$SETUP_TOKEN" \
+    OMNI_DATABASE_PATH="$WORK/omni.db" "$WORK/omni-identity" serve -config /dev/null > "$WORK/omni.log" 2>&1 &
+  OMNI_PID=$!
+fi
 for i in $(seq 1 30); do curl -fsS "$ISSUER_LOCAL/healthz" >/dev/null 2>&1 && break; sleep 1; done
 curl -fsS "$ISSUER_LOCAL/healthz" >/dev/null
-docker network create "$NET" >/dev/null 2>&1 || true
-docker rm -f "$EP" >/dev/null 2>&1 || true
 
 step "Bootstrapping admin and user alice"
 curl -fsS -c "$JAR" -o /dev/null "$ISSUER_LOCAL/setup"

@@ -8,13 +8,19 @@ The PoC uses a **disposable Ubuntu 24.04 container** as the endpoint (a
 container rather than a VM because the developer Mac has Docker but no VM
 tooling; the same files install unchanged on a real Fedora/Ubuntu VM — see
 §2). It exercises brief scenarios 26–35 end to end, is fully automated, and
-runs in CI on every push as the `linux-login-poc` job (Ubuntu runner host,
-Ubuntu container endpoint):
+runs after every deploy of `main` as the `linux-login-poc` job on the
+self-hosted Ubuntu runner (Ubuntu container endpoint). On that shared host
+the throwaway Omni runs as a container from the image the deploy just built
+(`OMNI_POC_IMAGE=omni-identity:latest`) on a private Docker network,
+published on loopback only, and the agent is built inside the pinned Go
+builder image, so nothing is exposed on the LAN and no toolchain is required
+on the runner:
 
 ```bash
 endpoint/poc/run-poc.sh                              # ~5 min on first run (image builds)
 endpoint/poc/run-poc.sh --keep                       # keep the containers to poke at
 POC_BASE=debian:stable-slim endpoint/poc/run-poc.sh  # hosts that cannot pull ubuntu:24.04
+OMNI_POC_IMAGE=omni-identity:latest endpoint/poc/run-poc.sh  # Omni from an image (CI mode)
 ```
 
 ## 1. What the harness does
