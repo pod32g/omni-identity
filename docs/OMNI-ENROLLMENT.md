@@ -78,7 +78,7 @@ sudo systemctl enable --now omni-enrollment
 
 | Command | What it does |
 |---|---|
-| `enroll --issuer URL [--name N] [--no-qr\|--qr-light]` | Generate the key and run the enrollment ceremony. Refuses if already enrolled. |
+| `enroll --issuer URL [--name N] [--no-qr\|--qr-light] [--browser]` | Generate the key and run the enrollment ceremony. Refuses if already enrolled. `--browser` authorizes through this machine's browser (RFC 8252 loopback redirect, authorization code + PKCE) instead of showing a code for another device. |
 | `status [--json]` | Show the enrollment record and the daemon's last renewal / error. Works offline. |
 | `renew` | Obtain one device token now (RFC 7523 jwt-bearer grant). Exit 1 if Omni refuses (revoked) or is unreachable. |
 | `rotate-key` | Generate a new key, register it (signed by both old and new key), then commit it locally. |

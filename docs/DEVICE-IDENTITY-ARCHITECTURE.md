@@ -199,13 +199,15 @@ Why this establishes "authenticated user X explicitly authorized device Y":
 
 ### 5.4 Alternative: authorization code + PKCE with loopback redirect
 
-`omni-enrollment enroll --browser` may implement RFC 8252 §7.3: open the
-system browser at `/oauth2/authorize` with `code_challenge`, listen on
-`http://127.0.0.1:<random port>/callback`, exchange the code with the
-`code_verifier` and a DPoP proof. Server support requires port-agnostic
-loopback matching for registered `http://127.0.0.1/…` URIs (RFC 8252 §7.3).
-Steps 5–6 are identical. The device grant is primary because it works from a
-VM console, an SSH session, and a display-manager prompt alike.
+`omni-enrollment enroll --browser` implements RFC 8252 §7.3: it opens the
+system browser at `/oauth2/authorize` with a `code_challenge`, listens on
+`http://127.0.0.1:<ephemeral port>/callback`, and exchanges the code with the
+`code_verifier` and a DPoP proof, so the access token is device-bound exactly
+as in step 4. The built-in client registers `http://127.0.0.1/callback` and
+`http://[::1]/callback` (migration 0015) and the server ignores the port for
+registered literal-loopback `http://` redirects — and only for those. Steps
+5–6 are identical. The device grant stays primary because it works from a VM
+console, an SSH session, and a display-manager prompt alike.
 
 ---
 

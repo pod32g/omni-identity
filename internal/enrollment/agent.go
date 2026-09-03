@@ -43,6 +43,11 @@ type Config struct {
 	// QR controls the terminal QR code under the verification URL: dark
 	// (default), light, or off.
 	QR string
+	// Browser selects RFC 8252 authorization code + PKCE through the system
+	// browser instead of the device grant (needs a browser on this machine).
+	Browser bool
+	// OpenURL launches the browser for Browser mode (nil = print the URL only).
+	OpenURL func(string) error
 }
 
 func (c Config) qrMode() string {
@@ -102,23 +107,38 @@ func (a *Agent) Enroll(ctx context.Context, cfg Config) (*State, error) {
 	fmt.Fprintf(a.Out, "\nDevice:\n    name:        %s\n    hostname:    %s\n    platform:    %s (%s)\n    fingerprint: %s\n\n",
 		meta.Name, meta.Hostname, meta.Platform, meta.Architecture, key.Fingerprint())
 
-	da, err := client.StartDeviceAuthorization(ctx, ScopeEnroll,
-		map[string]string{"device_name": meta.Name, "device_platform": meta.Platform}, "")
-	if err != nil {
-		return nil, fmt.Errorf("start enrollment: %w", err)
-	}
-	fmt.Fprintf(a.Out, "Authenticate with Omni Identity:\n\n    %s\n\n    (or open %s and enter the code %s)\n\n",
-		da.VerificationURIComplete, da.VerificationURI, da.UserCode)
-	if qr, err := RenderQR(da.VerificationURIComplete, cfg.qrMode()); err == nil && qr != "" {
-		fmt.Fprintln(a.Out, qr)
-	}
-	fmt.Fprint(a.Out, "Waiting for approval...")
-
-	tok, err := client.WaitForDeviceCode(ctx, da, "", func() { fmt.Fprint(a.Out, ".") })
-	fmt.Fprintln(a.Out)
-	if err != nil {
-		_ = RemoveState(a.StateDir)
-		return nil, fmt.Errorf("enrollment was not approved: %w", err)
+	var tok *TokenResponse
+	if cfg.Browser {
+		tok, err = client.AuthorizeViaBrowser(ctx, ScopeEnroll, cfg.OpenURL, func(msg string) {
+			if strings.HasPrefix(msg, "http") {
+				fmt.Fprintf(a.Out, "Authenticate with Omni Identity in your browser:\n\n    %s\n\nWaiting for the browser...\n", msg)
+			} else {
+				fmt.Fprintln(a.Out, msg)
+			}
+		})
+		if err != nil {
+			_ = RemoveState(a.StateDir)
+			return nil, fmt.Errorf("enrollment was not approved: %w", err)
+		}
+	} else {
+		da, err := client.StartDeviceAuthorization(ctx, ScopeEnroll,
+			map[string]string{"device_name": meta.Name, "device_platform": meta.Platform}, "")
+		if err != nil {
+			_ = RemoveState(a.StateDir)
+			return nil, fmt.Errorf("start enrollment: %w", err)
+		}
+		fmt.Fprintf(a.Out, "Authenticate with Omni Identity:\n\n    %s\n\n    (or open %s and enter the code %s)\n\n",
+			da.VerificationURIComplete, da.VerificationURI, da.UserCode)
+		if qr, err := RenderQR(da.VerificationURIComplete, cfg.qrMode()); err == nil && qr != "" {
+			fmt.Fprintln(a.Out, qr)
+		}
+		fmt.Fprint(a.Out, "Waiting for approval...")
+		tok, err = client.WaitForDeviceCode(ctx, da, "", func() { fmt.Fprint(a.Out, ".") })
+		fmt.Fprintln(a.Out)
+		if err != nil {
+			_ = RemoveState(a.StateDir)
+			return nil, fmt.Errorf("enrollment was not approved: %w", err)
+		}
 	}
 	dev, err := client.Enroll(ctx, tok.AccessToken, meta)
 	if err != nil {

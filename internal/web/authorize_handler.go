@@ -280,8 +280,32 @@ func redirectURIAllowed(c *model.Client, uri string) bool {
 		if allowed == uri {
 			return true
 		}
+		if loopbackRedirectMatches(allowed, uri) {
+			return true
+		}
 	}
 	return false
+}
+
+// loopbackRedirectMatches implements RFC 8252 §7.3: for a registered
+// http://127.0.0.1/… or http://[::1]/… redirect URI, native apps listen on an
+// ephemeral port, so the presented URI matches when everything but the port
+// is identical. Only literal loopback IPs qualify (not "localhost", which the
+// RFC advises against because it can resolve elsewhere), only http, and the
+// registered URI must itself carry no port.
+func loopbackRedirectMatches(registered, presented string) bool {
+	ru, err := url.Parse(registered)
+	if err != nil || ru.Scheme != "http" || ru.Port() != "" {
+		return false
+	}
+	if h := ru.Hostname(); h != "127.0.0.1" && h != "::1" {
+		return false
+	}
+	pu, err := url.Parse(presented)
+	if err != nil || pu.Scheme != "http" || pu.Hostname() != ru.Hostname() {
+		return false
+	}
+	return pu.Path == ru.Path && pu.RawQuery == ru.RawQuery && pu.Fragment == "" && pu.User == nil
 }
 
 // postLogoutRedirectAllowed reports whether uri exactly matches one of the

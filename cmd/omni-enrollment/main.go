@@ -83,6 +83,7 @@ func usage() {
 
 Commands:
   enroll      Generate a device key and enroll it under your Omni account
+              (--browser: use this machine's browser instead of a code)
   status      Show enrollment and daemon status
   renew       Obtain a fresh device token once (checks the device is still trusted)
   rotate-key  Replace the device key (requires the current key)
@@ -207,6 +208,7 @@ func signalContext() (context.Context, context.CancelFunc) {
 func runEnroll(args []string) error {
 	fs := flag.NewFlagSet("enroll", flag.ExitOnError)
 	resolve := commonFlags(fs)
+	browser := fs.Bool("browser", false, "authorize through this machine's browser (RFC 8252 loopback redirect) instead of a code on another device")
 	_ = fs.Parse(args)
 	cfg, err := resolve()
 	if err != nil {
@@ -214,6 +216,10 @@ func runEnroll(args []string) error {
 	}
 	if cfg.Issuer == "" {
 		return errors.New("--issuer (or OMNI_ENROLLMENT_ISSUER) is required")
+	}
+	if *browser {
+		cfg.Browser = true
+		cfg.OpenURL = enrollment.OpenBrowser
 	}
 	ctx, stop := signalContext()
 	defer stop()

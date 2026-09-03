@@ -93,9 +93,10 @@ Key facts for the new work:
 - Refresh tokens are hashed at rest (`auth.HashToken` = SHA-256), keyed by
   `(client_id, user_id)`, and carry the original `auth_time`.
 - Redirect URIs are matched exactly. Loopback `http://` is allowed by a live
-  setting, but a loopback URI with a **different port** does not match (RFC
-  8252 §7.3 asks servers to ignore the port for loopback); relevant if the
-  enrollment client ever uses a browser-redirect flow.
+  setting, but a loopback URI with a **different port** did not match (RFC
+  8252 §7.3 asks servers to ignore the port for loopback). Fixed in Phase 3
+  for literal `127.0.0.1` / `[::1]` registrations, which the browser-based
+  enrollment path relies on.
 - Discovery advertises `grant_types_supported` and
   `token_endpoint_auth_methods_supported`; new grants must be added there.
 

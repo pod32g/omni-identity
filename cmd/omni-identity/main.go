@@ -188,6 +188,40 @@ func runServe(args []string) error {
 		"log_shipping", cfg.Logging.Enabled,
 	)
 
+	// Housekeeping: purge expired short-lived rows (sessions, codes, parked
+	// requests, challenges, device codes, WebAuthn ceremonies, replay ids) at
+	// startup and hourly, so SQLite files and Postgres tables do not grow with
+	// every login attempt.
+	go func() {
+		sweep := func() {
+			sctx, cancel := context.WithTimeout(ctx, time.Minute)
+			defer cancel()
+			counts, err := db.SweepExpired(sctx, time.Now())
+			if err != nil {
+				slog.Warn("expiry sweep failed", "error", err.Error())
+				return
+			}
+			var total int64
+			for _, n := range counts {
+				total += n
+			}
+			if total > 0 {
+				slog.Info("expiry sweep", "removed", total)
+			}
+		}
+		sweep()
+		t := time.NewTicker(time.Hour)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				sweep()
+			}
+		}
+	}()
+
 	errCh := make(chan error, 1)
 	go func() {
 		log.Printf("omni-identity serving on %s (issuer %s)", addr, cfg.Security.Issuer)
