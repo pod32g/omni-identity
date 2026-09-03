@@ -1,4 +1,4 @@
-//go:build !linux
+//go:build !linux && !darwin
 
 package enrollment
 
@@ -7,8 +7,8 @@ import (
 	"net"
 )
 
-// peerUID is Linux-only; elsewhere the broker refuses every caller unless a
-// test supplies its own PeerUID.
+// peerUID is Linux- and macOS-only; elsewhere the broker refuses every
+// caller unless a test supplies its own PeerUID.
 func peerUID(*net.UnixConn) (int, error) {
 	return -1, errors.New("peer credentials unsupported on this OS")
 }
