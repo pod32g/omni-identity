@@ -8,20 +8,21 @@ import (
 	"github.com/pod32g/omni-identity/internal/model"
 )
 
-const refreshColumns = `id, token_hash, client_id, user_id, scope, rotated_from, revoked, expires_at, created_at, auth_time`
+const refreshColumns = `id, token_hash, client_id, user_id, scope, rotated_from, revoked, expires_at, created_at, auth_time, amr, device_id, dpop_jkt`
 
 // CreateRefreshToken stores a new refresh token (TokenHash must be set).
 func (d *DB) CreateRefreshToken(ctx context.Context, rt *model.RefreshToken) error {
 	_, err := d.sql.ExecContext(ctx, insertRefreshSQL,
 		rt.ID, rt.TokenHash, rt.ClientID, rt.UserID, rt.Scope, rt.RotatedFrom,
 		rt.Revoked, rt.ExpiresAt.UTC(), rt.CreatedAt.UTC(), rt.AuthTime.UTC(),
+		rt.AMR, rt.DeviceID, rt.DPoPJKT,
 	)
 	return err
 }
 
 const insertRefreshSQL = `
 	INSERT INTO refresh_tokens (` + refreshColumns + `)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 // RotateRefreshToken atomically revokes the presented token (only if currently
 // active) and, when newRT is non-nil, inserts the replacement in the same
@@ -54,6 +55,7 @@ func (d *DB) RotateRefreshToken(ctx context.Context, oldID string, newRT *model.
 			newRT.ID, newRT.TokenHash, newRT.ClientID, newRT.UserID, newRT.Scope,
 			newRT.RotatedFrom, newRT.Revoked, newRT.ExpiresAt.UTC(),
 			newRT.CreatedAt.UTC(), newRT.AuthTime.UTC(),
+			newRT.AMR, newRT.DeviceID, newRT.DPoPJKT,
 		); err != nil {
 			return false, err
 		}
@@ -93,6 +95,7 @@ func scanRefreshToken(s scanner) (*model.RefreshToken, error) {
 	err := s.Scan(
 		&rt.ID, &rt.TokenHash, &rt.ClientID, &rt.UserID, &rt.Scope,
 		&rt.RotatedFrom, &rt.Revoked, &rt.ExpiresAt, &rt.CreatedAt, &rt.AuthTime,
+		&rt.AMR, &rt.DeviceID, &rt.DPoPJKT,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound

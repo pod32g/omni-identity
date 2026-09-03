@@ -43,6 +43,7 @@ type accountPage struct {
 	MFAEnabled     bool
 	Sessions       []sessionView
 	CurrentSession string
+	PasskeyCount   int
 	Error          string
 	Saved          string
 }
@@ -67,12 +68,14 @@ func (s *Server) renderAccount(w http.ResponseWriter, r *http.Request, status in
 			Current:   cur != nil && ss.ID == cur.ID,
 		})
 	}
+	passkeys, _ := s.db.CountWebAuthnCredentials(r.Context(), user.ID)
 	s.tmpl.render(w, status, "account", accountPage{
-		CSRFToken:  auth.CSRFToken(w, r, s.cookieSecure()),
-		Me:         user,
-		Active:     "account",
-		MFAEnabled: user.MFAEnabled,
-		Sessions:   views,
+		CSRFToken:    auth.CSRFToken(w, r, s.cookieSecure()),
+		Me:           user,
+		Active:       "account",
+		MFAEnabled:   user.MFAEnabled,
+		Sessions:     views,
+		PasskeyCount: passkeys,
 		CurrentSession: func() string {
 			if cur != nil {
 				return cur.ID

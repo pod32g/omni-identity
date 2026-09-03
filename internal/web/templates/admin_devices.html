@@ -1,0 +1,60 @@
+{{define "title"}}Devices · Omni Identity{{end}}
+{{define "content"}}
+{{template "shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>Devices <span class="count">{{len .Devices}}</span></h1>
+    <p class="desc">Enrolled endpoints and their owners. {{.Active_}} active.</p>
+  </div>
+</div>
+<div class="page-body">
+  {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+  {{if .Saved}}<div class="alert success">{{.Saved}}</div>{{end}}
+  <div class="panel">
+    {{if .Devices}}
+    <table class="omni">
+      <thead><tr><th>Device</th><th>Owner</th><th>Platform</th><th>Enrolled</th><th>Last seen</th><th>Status</th><th style="width:44px"></th></tr></thead>
+      <tbody>
+        {{range .Devices}}
+        <tr>
+          <td><a href="/admin/devices/{{.ID}}">{{.Name}}</a><div class="t-caption" style="font-family:var(--font-mono)">{{.ShortFP}}…</div></td>
+          <td><a href="/admin/users/{{.OwnerID}}">{{.Owner}}</a></td>
+          <td class="t-secondary">{{.Platform}}{{if .Architecture}} / {{.Architecture}}{{end}}</td>
+          <td class="t-secondary">{{.Enrolled}}</td>
+          <td class="t-secondary">{{.LastSeen}}</td>
+          <td>{{if .IsActive}}<span class="chip ok"><span class="dot"></span>active</span>{{else if .IsRevoked}}<span class="chip off"><span class="dot"></span>revoked</span>{{else}}<span class="chip">{{.Status}}</span>{{end}}</td>
+          <td>
+            <details class="menu">
+              <summary aria-label="Actions">{{template "ic-more" .}}</summary>
+              <div class="menu-pop">
+                <a href="/admin/devices/{{.ID}}">{{template "ic-settings" .}} Inspect</a>
+                <div class="menu-sep"></div>
+                {{if .IsActive}}
+                <form method="post" action="/admin/devices/{{.ID}}/revoke">
+                  <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                  <button type="submit">Revoke device</button>
+                </form>
+                {{else if .IsRevoked}}
+                <form method="post" action="/admin/devices/{{.ID}}/delete" onsubmit="return confirm('Delete this revoked device record? The audit log keeps its history.');">
+                  <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                  <button type="submit">Delete record</button>
+                </form>
+                {{end}}
+              </div>
+            </details>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <div class="empty">
+      <span class="empty-ico">{{template "ic-grid" .}}</span>
+      <div class="empty-title">No devices enrolled</div>
+      <div class="empty-hint">Users enroll devices by running <code>omni-enrollment enroll</code> and approving the code under their account.</div>
+    </div>
+    {{end}}
+  </div>
+</div>
+{{template "shell-end" .}}
+{{end}}

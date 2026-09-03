@@ -32,6 +32,23 @@
   </div>
 
   <div class="panel">
+    <div class="panel-hd">Passkeys</div>
+    <div class="panel-bd">
+      {{if .PasskeyCount}}<p class="inline"><span class="chip ok"><span class="dot"></span>{{.PasskeyCount}} registered</span></p>
+      {{else}}<p class="muted">Sign in with your device's screen lock or a security key instead of a password.</p>{{end}}
+      <p style="margin-top:12px"><a class="btn{{if not .PasskeyCount}} primary{{end}}" href="/account/passkeys">Manage passkeys</a></p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">Devices</div>
+    <div class="panel-bd">
+      <p class="muted">Machines enrolled to your account can prove they are yours and sign you in without a password.</p>
+      <p style="margin-top:12px"><a class="btn" href="/account/devices">My Devices</a> <a class="btn" href="/device" style="margin-left:6px">Enter a device code</a></p>
+    </div>
+  </div>
+
+  <div class="panel">
     <div class="panel-hd">Change password</div>
     <div class="panel-bd">
       <form class="stack" method="post" action="/account/password" style="margin-top:0;max-width:360px">

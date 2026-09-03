@@ -26,28 +26,30 @@ const sessionTTL = 12 * time.Hour
 
 // Server holds shared dependencies and the route mux.
 type Server struct {
-	cfg          *config.Config
-	db           *store.DB
-	sessions     *auth.SessionManager
-	keys         *tokens.KeyManager
-	issuer       *tokens.Issuer
-	tmpl         *templates
-	branding     *brandingService
-	settings     *settingsService
-	loginRate    *rateLimiter
-	loginIPRate  *rateLimiter
-	mfaRate      *rateLimiter
-	forgotRate   *rateLimiter
-	verifyMu     sync.Mutex
-	verifyActive int
-	mailer       email.Sender
-	enc          *crypto.Encryptor
-	connectors   []authn.PasswordConnector // external auth sources (e.g. LDAP); empty by default
-	directory    authn.DirectoryManager    // write-capable directory client; nil unless LDAP+bind configured. Exposure gated live by the ldap_manage_enabled setting
-	metrics      *metrics
-	logLevel     *slog.LevelVar // dynamic log level applied live from settings; nil in tests
-	mux          *http.ServeMux
-	handler      http.Handler
+	cfg            *config.Config
+	db             *store.DB
+	sessions       *auth.SessionManager
+	keys           *tokens.KeyManager
+	issuer         *tokens.Issuer
+	tmpl           *templates
+	branding       *brandingService
+	settings       *settingsService
+	loginRate      *rateLimiter
+	loginIPRate    *rateLimiter
+	mfaRate        *rateLimiter
+	forgotRate     *rateLimiter
+	deviceCodeRate *rateLimiter // /device user-code guessing budget per IP
+	wa             webauthnRP   // cached WebAuthn relying party for the live public URL
+	verifyMu       sync.Mutex
+	verifyActive   int
+	mailer         email.Sender
+	enc            *crypto.Encryptor
+	connectors     []authn.PasswordConnector // external auth sources (e.g. LDAP); empty by default
+	directory      authn.DirectoryManager    // write-capable directory client; nil unless LDAP+bind configured. Exposure gated live by the ldap_manage_enabled setting
+	metrics        *metrics
+	logLevel       *slog.LevelVar // dynamic log level applied live from settings; nil in tests
+	mux            *http.ServeMux
+	handler        http.Handler
 }
 
 // BindLogLevel attaches the process log-level var (created at startup) so the
@@ -128,18 +130,19 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 	sessions.SetConfigProvider(settings)
 
 	s := &Server{
-		cfg:         cfg,
-		db:          db,
-		sessions:    sessions,
-		keys:        km,
-		issuer:      issuer,
-		tmpl:        tmpl,
-		branding:    newBrandingService(db.GetBranding),
-		settings:    settings,
-		loginRate:   newRateLimiter(),
-		loginIPRate: newRateLimiter(),
-		mfaRate:     newRateLimiter(),
-		forgotRate:  newRateLimiter(),
+		cfg:            cfg,
+		db:             db,
+		sessions:       sessions,
+		keys:           km,
+		issuer:         issuer,
+		tmpl:           tmpl,
+		branding:       newBrandingService(db.GetBranding),
+		settings:       settings,
+		loginRate:      newRateLimiter(),
+		loginIPRate:    newRateLimiter(),
+		mfaRate:        newRateLimiter(),
+		forgotRate:     newRateLimiter(),
+		deviceCodeRate: newRateLimiter(),
 		mailer: &email.SMTPSender{
 			Host: cfg.SMTP.Host, Port: cfg.SMTP.Port, Username: cfg.SMTP.Username,
 			Password: cfg.SMTP.Password, From: cfg.SMTP.From, StartTLS: cfg.SMTP.StartTLS,
@@ -176,9 +179,22 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /oauth2/introspect", s.handleIntrospect)
 	s.mux.HandleFunc("GET /userinfo", s.handleUserinfo)
 	s.mux.HandleFunc("POST /userinfo", s.handleUserinfo)
+	s.mux.HandleFunc("POST /oauth2/device_authorization", s.handleDeviceAuthorization)
+
+	// Device identity (docs/DEVICE-IDENTITY-ARCHITECTURE.md §11).
+	s.mux.HandleFunc("GET /device", s.requireUser(s.handleDeviceForm))
+	s.mux.HandleFunc("POST /device", s.requireUser(s.handleDeviceLookup))
+	s.mux.HandleFunc("POST /device/confirm", s.requireUser(s.handleDeviceConfirm))
+	s.mux.HandleFunc("POST /api/v1/devices", s.handleEnrollDevice)
+	s.mux.HandleFunc("GET /api/v1/devices/me", s.requireDevice(s.handleDeviceMe))
+	s.mux.HandleFunc("POST /api/v1/devices/me/key", s.requireDevice(s.handleDeviceRotateKey))
+	s.mux.HandleFunc("POST /api/v1/devices/me/unenroll", s.requireDevice(s.handleDeviceUnenroll))
 
 	s.mux.HandleFunc("GET /login", s.handleLoginForm)
 	s.mux.HandleFunc("POST /login", s.handleLoginSubmit)
+	s.mux.HandleFunc("GET /static/", s.handleStatic)
+	s.mux.HandleFunc("POST /login/passkey/begin", s.handlePasskeyLoginBegin)
+	s.mux.HandleFunc("POST /login/passkey/finish", s.handlePasskeyLoginFinish)
 	s.mux.HandleFunc("GET /login/mfa", s.handleMFAForm)
 	s.mux.HandleFunc("POST /login/mfa", s.handleMFASubmit)
 	s.mux.HandleFunc("GET /consent", s.handleConsentForm)
@@ -199,6 +215,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /account/mfa/setup", s.requireUser(s.handleMFASetup))
 	s.mux.HandleFunc("POST /account/mfa/enable", s.requireUser(s.handleMFAEnable))
 	s.mux.HandleFunc("POST /account/mfa/disable", s.requireUser(s.handleMFADisable))
+	s.mux.HandleFunc("GET /account/passkeys", s.requireUser(s.handleAccountPasskeys))
+	s.mux.HandleFunc("POST /account/passkeys/begin", s.requireUser(s.handlePasskeyRegisterBegin))
+	s.mux.HandleFunc("POST /account/passkeys/finish", s.requireUser(s.handlePasskeyRegisterFinish))
+	s.mux.HandleFunc("POST /account/passkeys/{id}/delete", s.requireUser(s.handleAccountPasskeyDelete))
+	s.mux.HandleFunc("GET /account/devices", s.requireUser(s.handleAccountDevices))
+	s.mux.HandleFunc("POST /account/devices/{id}/revoke", s.requireUser(s.handleAccountRevokeDevice))
 
 	s.mux.HandleFunc("GET /admin", s.requireAdmin(s.handleAdminHome))
 	s.mux.HandleFunc("GET /admin/users", s.requireAdmin(s.handleAdminUsers))
@@ -217,6 +239,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /admin/clients/{id}/rotate", s.requireAdmin(s.handleAdminRotateClient))
 	s.mux.HandleFunc("POST /admin/users/{id}/unlock", s.requireAdmin(s.handleAdminUnlockUser))
 	s.mux.HandleFunc("POST /admin/users/{id}/mfa/reset", s.requireAdmin(s.handleAdminResetMFA))
+	s.mux.HandleFunc("POST /admin/users/{id}/passkeys/reset", s.requireAdmin(s.handleAdminResetPasskeys))
 	s.mux.HandleFunc("POST /admin/users/{id}/reset-link", s.requireAdmin(s.handleAdminUserResetLink))
 	s.mux.HandleFunc("GET /admin/settings", s.requireAdmin(s.handleAdminSettings))
 	s.mux.HandleFunc("POST /admin/settings", s.requireAdmin(s.handleAdminUpdateBranding))
@@ -226,6 +249,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /admin/settings/logging", s.requireAdmin(s.handleAdminUpdateLogging))
 	s.mux.HandleFunc("POST /admin/settings/reset", s.requireAdmin(s.handleAdminResetSettings))
 	s.mux.HandleFunc("GET /admin/audit", s.requireAdmin(s.handleAdminAudit))
+	s.mux.HandleFunc("GET /admin/devices", s.requireAdmin(s.handleAdminDevices))
+	s.mux.HandleFunc("GET /admin/devices/{id}", s.requireAdmin(s.handleAdminDeviceDetail))
+	s.mux.HandleFunc("POST /admin/devices/{id}/revoke", s.requireAdmin(s.handleAdminRevokeDevice))
+	s.mux.HandleFunc("POST /admin/devices/{id}/delete", s.requireAdmin(s.handleAdminDeleteDevice))
 
 	s.mux.HandleFunc("GET /{$}", s.handleRoot)
 }

@@ -32,10 +32,15 @@
           <input name="password" type="password" autocomplete="current-password" required>
         </label>
         <button class="btn primary block" type="submit">Sign in</button>
+        {{if .PasskeysEnabled}}
+        <div id="passkey-error" class="alert error" hidden></div>
+        <button id="passkey-login" class="btn block" type="button" data-csrf="{{.CSRFToken}}">{{template "ic-key" .}} Sign in with a passkey</button>
+        {{end}}
       </form>
       {{if .ForgotEnabled}}<p class="muted" style="margin-top:14px"><a href="/forgot">Forgot password?</a></p>{{end}}
     </div>
     {{template "omni-footer" .}}
   </div>
 </div>
+{{if .PasskeysEnabled}}<script src="/static/webauthn.js"></script>{{end}}
 {{end}}

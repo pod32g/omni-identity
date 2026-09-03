@@ -1,0 +1,56 @@
+{{define "title"}}Connect a device · Omni Identity{{end}}
+{{define "content"}}
+<div class="auth-wrap">
+  <div class="auth-card">
+    {{template "omni-brand" .}}
+    <div class="panel">
+      {{if eq .Stage "enter"}}
+        <h1>Connect a device</h1>
+        <p class="muted">Enter the code shown on the device or in your terminal.</p>
+        {{if .Error}}<div class="alert error" style="margin-top:14px">{{.Error}}</div>{{end}}
+        <form class="stack" method="post" action="/device">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <label class="field">Code
+            <input name="user_code" value="{{.UserCode}}" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX" autofocus required style="font-family:var(--font-mono);letter-spacing:.12em;text-transform:uppercase">
+          </label>
+          <button class="btn primary block" type="submit">Continue</button>
+        </form>
+        <p class="t-caption" style="margin-top:14px">Signed in as <strong>{{with .Me}}{{.Username}}{{end}}</strong>. Only continue for a device you are looking at right now.</p>
+      {{else if eq .Stage "confirm"}}
+        {{if .Enroll}}
+          <h1>Enroll this device?</h1>
+          <p class="muted">The device below will be added to <strong>{{with .Me}}{{.Username}}{{end}}</strong>'s account and will be able to prove it is yours.</p>
+        {{else}}
+          <h1>Sign in on this device?</h1>
+          <p class="muted"><strong>{{.AppName}}</strong> is asking to sign you in as <strong>{{with .Me}}{{.Username}}{{end}}</strong>.</p>
+        {{end}}
+        <div class="app-card" style="margin-top:14px">
+          <span class="app-logo placeholder">{{template "ic-grid" .}}</span>
+          <div class="app-meta">
+            <div class="app-name">{{if .DeviceName}}{{.DeviceName}}{{else}}{{.AppName}}{{end}}</div>
+            <div class="app-domain">
+              {{if .DevicePlatform}}{{.DevicePlatform}} · {{end}}
+              {{if .Enrolled}}enrolled device{{if .OwnerName}} of {{if .OwnerIsMe}}you{{else}}<strong>{{.OwnerName}}</strong>{{end}}{{end}}{{else}}not yet enrolled{{end}}
+            </div>
+          </div>
+        </div>
+        {{if and .Enrolled (not .OwnerIsMe)}}
+        <div class="alert warn" style="margin-top:14px">This device is enrolled to another user. Only continue if you expect to sign in on their machine.</div>
+        {{end}}
+        <div class="alert warn" style="margin-top:14px">Code <strong style="font-family:var(--font-mono)">{{.UserCode}}</strong>. If you did not start this on a device in front of you, deny it.</div>
+        <form class="stack" method="post" action="/device/confirm">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="user_code" value="{{.UserCode}}">
+          <button class="btn primary block" type="submit" name="action" value="allow">{{if .Enroll}}Enroll device{{else}}Approve sign-in{{end}}</button>
+          <button class="btn block" type="submit" name="action" value="deny">Deny</button>
+        </form>
+      {{else}}
+        <h1>Done</h1>
+        <p class="muted" style="margin-top:8px">{{.Message}}</p>
+        <p style="margin-top:16px"><a class="btn" href="/account/devices">My Devices</a></p>
+      {{end}}
+    </div>
+    {{template "omni-footer" .}}
+  </div>
+</div>
+{{end}}

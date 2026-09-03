@@ -20,18 +20,28 @@ type mfaPage struct {
 // startMFAChallenge parks a second-factor challenge and redirects to the MFA
 // step. It does NOT issue a session yet.
 func (s *Server) startMFAChallenge(w http.ResponseWriter, r *http.Request, user *model.User, next, reqID string) {
+	if err := s.createMFAChallenge(w, r, user, next, reqID, "pwd"); err != nil {
+		http.Error(w, "could not start MFA", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/login/mfa", http.StatusSeeOther)
+}
+
+// createMFAChallenge records the pending second-factor step (with the first
+// factor's amr) and sets the challenge cookie, without redirecting.
+func (s *Server) createMFAChallenge(w http.ResponseWriter, r *http.Request, user *model.User, next, reqID, amr string) error {
 	now := time.Now().UTC()
 	ch := &model.LoginChallenge{
 		ID:        auth.RandomToken(32),
 		UserID:    user.ID,
 		Next:      next,
 		Req:       reqID,
+		AMR:       amr,
 		CreatedAt: now,
 		ExpiresAt: now.Add(mfaChallengeTTL),
 	}
 	if err := s.db.CreateLoginChallenge(r.Context(), ch); err != nil {
-		http.Error(w, "could not start MFA", http.StatusInternalServerError)
-		return
+		return err
 	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     mfaCookieName,
@@ -44,7 +54,7 @@ func (s *Server) startMFAChallenge(w http.ResponseWriter, r *http.Request, user 
 	})
 	s.metrics.recordMFA("challenge")
 	s.audit(r, evtMFAChallenge, auditEntry{actorUserID: user.ID, username: user.Username})
-	http.Redirect(w, r, "/login/mfa", http.StatusSeeOther)
+	return nil
 }
 
 // currentChallenge resolves the pending MFA challenge from the cookie.
@@ -122,7 +132,14 @@ func (s *Server) handleMFASubmit(w http.ResponseWriter, r *http.Request) {
 	_ = s.db.DeleteLoginChallenge(r.Context(), ch.ID)
 	s.clearMFACookie(w)
 
-	if _, err := s.sessions.Issue(w, r, user.ID, "pwd mfa"); err != nil {
+	// amr: the first factor recorded on the challenge (pwd, or a passkey without
+	// user verification) plus the TOTP step. Defaults to "pwd" for old rows.
+	first := ch.AMR
+	if first == "" {
+		first = "pwd"
+	}
+	sess, err := s.sessions.Issue(w, r, user.ID, first+" otp mfa")
+	if err != nil {
 		http.Error(w, "could not create session", http.StatusInternalServerError)
 		return
 	}
@@ -134,7 +151,7 @@ func (s *Server) handleMFASubmit(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		s.continueAfterAuth(w, r, p, ch.Req, user.ID, time.Now().UTC())
+		s.continueAfterAuth(w, r, p, ch.Req, user.ID, time.Now().UTC(), sess.AMR)
 		return
 	}
 	dest := safeNext(ch.Next)

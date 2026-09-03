@@ -5,8 +5,13 @@ import (
 	"strings"
 )
 
+// ScopeDeviceEnroll authorizes registering the presenting key as an enrolled
+// device of the authenticated user. Granted only to the built-in enrollment
+// client unless an admin explicitly allows it for another client.
+const ScopeDeviceEnroll = "device:enroll"
+
 // SupportedScopes are all scopes Omni Identity recognizes.
-var SupportedScopes = []string{ScopeOpenID, ScopeProfile, ScopeEmail, ScopeOfflineAccess}
+var SupportedScopes = []string{ScopeOpenID, ScopeProfile, ScopeEmail, ScopeOfflineAccess, ScopeDeviceEnroll}
 
 // SplitScope splits a space-delimited scope string into its components.
 func SplitScope(scope string) []string {

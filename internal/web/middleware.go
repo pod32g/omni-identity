@@ -48,15 +48,43 @@ type metrics struct {
 	logins   map[[2]string]int64 // {source, result} → count
 	mfa      map[string]int64    // result → count
 	tokens   map[string]int64    // token type → count
+	// Device identity series (low-cardinality result labels only).
+	deviceEnroll map[string]int64 // result → count
+	deviceAuth   map[string]int64 // result → count
+	deviceGrant  map[string]int64 // RFC 8628 outcome → count
 }
 
 func newMetrics() *metrics {
 	return &metrics{
-		byStatus: map[int]int64{},
-		logins:   map[[2]string]int64{},
-		mfa:      map[string]int64{},
-		tokens:   map[string]int64{},
+		byStatus:     map[int]int64{},
+		logins:       map[[2]string]int64{},
+		mfa:          map[string]int64{},
+		tokens:       map[string]int64{},
+		deviceEnroll: map[string]int64{},
+		deviceAuth:   map[string]int64{},
+		deviceGrant:  map[string]int64{},
 	}
+}
+
+// recordDeviceEnrollment counts an enrollment outcome ∈ {success, failure, denied}.
+func (m *metrics) recordDeviceEnrollment(result string) {
+	m.mu.Lock()
+	m.deviceEnroll[result]++
+	m.mu.Unlock()
+}
+
+// recordDeviceAuth counts a device authentication ∈ {success, failure}.
+func (m *metrics) recordDeviceAuth(result string) {
+	m.mu.Lock()
+	m.deviceAuth[result]++
+	m.mu.Unlock()
+}
+
+// recordDeviceGrant counts an RFC 8628 outcome ∈ {requested, approved, denied, issued, expired}.
+func (m *metrics) recordDeviceGrant(result string) {
+	m.mu.Lock()
+	m.deviceGrant[result]++
+	m.mu.Unlock()
 }
 
 func (m *metrics) record(status int) {
@@ -126,6 +154,9 @@ func (m *metrics) render() string {
 
 	writeLabeled(&b, "omni_identity_mfa_total", "MFA events by result.", "result", m.mfa)
 	writeLabeled(&b, "omni_identity_tokens_issued_total", "Tokens issued by type.", "type", m.tokens)
+	writeLabeled(&b, "omni_identity_device_enrollments_total", "Device enrollments by result.", "result", m.deviceEnroll)
+	writeLabeled(&b, "omni_identity_device_auth_total", "Device authentications by result.", "result", m.deviceAuth)
+	writeLabeled(&b, "omni_identity_device_grants_total", "RFC 8628 device grants by outcome.", "result", m.deviceGrant)
 	return b.String()
 }
 
@@ -246,10 +277,12 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 
 func noStorePath(path string) bool {
 	switch {
-	case path == "/login", path == "/login/mfa", path == "/consent", path == "/logout",
+	case path == "/login", strings.HasPrefix(path, "/login/"), path == "/consent", path == "/logout",
 		path == "/setup", path == "/set-password", path == "/forgot":
 		return true
-	case path == "/oauth2/authorize":
+	case path == "/oauth2/authorize", path == "/device", strings.HasPrefix(path, "/device/"):
+		return true
+	case strings.HasPrefix(path, "/api/"):
 		return true
 	case path == "/account" || strings.HasPrefix(path, "/account/"):
 		return true
@@ -283,6 +316,11 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		b.WriteString("# HELP omni_identity_active_sessions Current non-expired browser sessions.\n")
 		b.WriteString("# TYPE omni_identity_active_sessions gauge\n")
 		fmt.Fprintf(&b, "omni_identity_active_sessions %d\n", n)
+	}
+	if n, err := s.db.CountActiveDevices(r.Context()); err == nil {
+		b.WriteString("# HELP omni_identity_devices_active Enrolled devices in the active state.\n")
+		b.WriteString("# TYPE omni_identity_devices_active gauge\n")
+		fmt.Fprintf(&b, "omni_identity_devices_active %d\n", n)
 	}
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")

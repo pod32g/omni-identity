@@ -75,6 +75,10 @@ func (s *Server) handleAdminUpdateSettings(w http.ResponseWriter, r *http.Reques
 	}
 	parse("token_ttl", minTokenTTL, maxTokenTTL, &next.TokenTTL)
 	parse("refresh_token_ttl", minRefreshTTL, maxRefreshTTL, &next.RefreshTokenTTL)
+	// Optional so forms/tools that predate device identity keep working.
+	if strings.TrimSpace(form.Get("device_token_ttl")) != "" {
+		parse("device_token_ttl", minTokenTTL, maxTokenTTL, &next.DeviceTokenTTL)
+	}
 	parse("lockout_duration", time.Second, 30*24*time.Hour, &next.LockoutDuration)
 	parse("rate_limit_window", minRateLimitWindow, maxRateLimitWindow, &next.RateLimitWindow)
 	parseSessionIdle("session_idle_timeout", form.Get("session_idle_timeout"), &next.SessionIdleTimeout, &perr)

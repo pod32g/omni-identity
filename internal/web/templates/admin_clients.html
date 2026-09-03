@@ -19,7 +19,7 @@
       <tbody>
         {{range .Clients}}
         <tr>
-          <td><a href="/admin/clients/{{.ClientID}}">{{.Name}}</a></td>
+          <td><a href="/admin/clients/{{.ClientID}}">{{.Name}}</a>{{if .BuiltIn}} <span class="chip" title="Ships with Omni Identity; used by the omni-enrollment agent">built-in</span>{{end}}</td>
           <td><code>{{.ClientID}}</code></td>
           <td class="t-secondary">{{.Type}}</td>
           <td>

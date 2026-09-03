@@ -63,7 +63,7 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 
 	// Trusted first-party clients skip consent; others get the consent screen.
 	if p.client.SkipConsent {
-		s.issueCode(w, r, p, sess.UserID, sess.CreatedAt)
+		s.issueCode(w, r, p, sess.UserID, sess.CreatedAt, sess.AMR)
 		return
 	}
 	if prompt == "none" {
@@ -171,7 +171,7 @@ func (s *Server) parkAndRedirect(w http.ResponseWriter, r *http.Request, p authz
 
 // issueCode mints a single-use authorization code and redirects back to the
 // client with code and state.
-func (s *Server) issueCode(w http.ResponseWriter, r *http.Request, p authzParams, userID string, authTime time.Time) {
+func (s *Server) issueCode(w http.ResponseWriter, r *http.Request, p authzParams, userID string, authTime time.Time, amr string) {
 	rawCode := auth.RandomToken(32)
 	now := time.Now().UTC()
 	code := &model.AuthorizationCode{
@@ -186,6 +186,7 @@ func (s *Server) issueCode(w http.ResponseWriter, r *http.Request, p authzParams
 		ExpiresAt:           now.Add(authCodeTTL),
 		CreatedAt:           now,
 		AuthTime:            authTime,
+		AMR:                 amr,
 	}
 	if err := s.db.CreateAuthCode(r.Context(), code); err != nil {
 		redirectErr(w, r, p.redirectURI, "server_error", "could not issue authorization code", p.state)

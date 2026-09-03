@@ -16,13 +16,14 @@ import (
 )
 
 type loginPage struct {
-	CSRFToken     string
-	Error         string
-	Notice        string   // success flash (e.g. after setting a password)
-	Next          string   // same-origin path for plain admin login
-	Req           string   // parked OIDC auth-request id, when arriving from /oauth2/authorize
-	App           *appView // requesting application, nil for admin login
-	ForgotEnabled bool     // show the self-service "Forgot password?" link
+	CSRFToken       string
+	Error           string
+	Notice          string   // success flash (e.g. after setting a password)
+	Next            string   // same-origin path for plain admin login
+	Req             string   // parked OIDC auth-request id, when arriving from /oauth2/authorize
+	App             *appView // requesting application, nil for admin login
+	ForgotEnabled   bool     // show the self-service "Forgot password?" link
+	PasskeysEnabled bool     // show the passkey sign-in button (RP id available)
 }
 
 // loginNotices maps known notice codes to user-facing messages (no free text,
@@ -79,7 +80,7 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 	if sess, err := s.sessions.Current(r); err == nil {
 		if reqID != "" {
 			if p, _, ok := s.peekAuthRequest(r.Context(), reqID); ok {
-				s.continueAfterAuth(w, r, p, reqID, sess.UserID, sess.CreatedAt)
+				s.continueAfterAuth(w, r, p, reqID, sess.UserID, sess.CreatedAt, sess.AMR)
 				return
 			}
 		}
@@ -144,13 +145,14 @@ func (s *Server) signedInLanding(ctx context.Context, userID string) string {
 
 func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, status int, errMsg, reqID, next string, app *appView) {
 	s.tmpl.render(w, status, "login", loginPage{
-		CSRFToken:     auth.CSRFToken(w, r, s.cookieSecure()),
-		Error:         errMsg,
-		Notice:        loginNotices[r.URL.Query().Get("notice")],
-		Next:          next,
-		Req:           reqID,
-		App:           app,
-		ForgotEnabled: s.forgotEnabled(),
+		CSRFToken:       auth.CSRFToken(w, r, s.cookieSecure()),
+		Error:           errMsg,
+		Notice:          loginNotices[r.URL.Query().Get("notice")],
+		Next:            next,
+		Req:             reqID,
+		App:             app,
+		ForgotEnabled:   s.forgotEnabled(),
+		PasskeysEnabled: s.passkeysEnabled(),
 	})
 }
 
@@ -314,14 +316,15 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Rotates the session id (fixation guard) on success.
-	if _, err := s.sessions.Issue(w, r, user.ID, "pwd"); err != nil {
+	sess, err := s.sessions.Issue(w, r, user.ID, "pwd")
+	if err != nil {
 		http.Error(w, "could not create session", http.StatusInternalServerError)
 		return
 	}
 	s.audit(r, evtLoginSuccess, auditEntry{actorUserID: user.ID, username: username, success: true})
 
 	if haveReq {
-		s.continueAfterAuth(w, r, p, reqID, user.ID, now)
+		s.continueAfterAuth(w, r, p, reqID, user.ID, now, sess.AMR)
 		return
 	}
 
@@ -388,10 +391,10 @@ func redirectAfterLogin(u *model.User) string {
 // continueAfterAuth resumes a parked authorization request once the user is
 // authenticated: trusted clients get a code immediately; others are sent to the
 // consent screen.
-func (s *Server) continueAfterAuth(w http.ResponseWriter, r *http.Request, p authzParams, reqID, userID string, authTime time.Time) {
+func (s *Server) continueAfterAuth(w http.ResponseWriter, r *http.Request, p authzParams, reqID, userID string, authTime time.Time, amr string) {
 	if p.client.SkipConsent {
 		_ = s.db.DeleteAuthRequest(r.Context(), reqID)
-		s.issueCode(w, r, p, userID, authTime)
+		s.issueCode(w, r, p, userID, authTime, amr)
 		return
 	}
 	http.Redirect(w, r, "/consent?req="+url.QueryEscape(reqID), http.StatusSeeOther)

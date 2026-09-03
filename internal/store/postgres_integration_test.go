@@ -245,6 +245,52 @@ func TestPostgresBackendIntegration(t *testing.T) {
 		t.Error("password token must be single-use")
 	}
 
+	// Devices (migration 0013): nullable TIMESTAMPTZ columns, ON CONFLICT jti
+	// guard, transactional revoke, and the seeded built-in client.
+	dev := &model.Device{ID: uuid.NewString(), OwnerUserID: u.ID, Name: "vm", Platform: "linux",
+		PublicKey: `{"crv":"Ed25519","kty":"OKP","x":"AA"}`, PublicKeyAlgorithm: "EdDSA", Fingerprint: "pg-fp",
+		Status: model.DeviceStatusActive, TrustLevel: model.DeviceTrustEnrolled, CreatedAt: now, EnrolledAt: now}
+	if err := db.CreateDevice(ctx, dev); err != nil {
+		t.Fatalf("CreateDevice: %v", err)
+	}
+	if got, err := db.GetDevice(ctx, dev.ID); err != nil || !got.IsActive() || !got.LastSeenAt.IsZero() {
+		t.Fatalf("GetDevice: %+v err=%v", got, err)
+	}
+	if ok, err := db.ConsumeJTI(ctx, "pg-jti", dev.ID, now.Add(time.Minute)); err != nil || !ok {
+		t.Fatalf("ConsumeJTI first: ok=%v err=%v", ok, err)
+	}
+	if ok, _ := db.ConsumeJTI(ctx, "pg-jti", dev.ID, now.Add(time.Minute)); ok {
+		t.Error("ConsumeJTI replay accepted on postgres")
+	}
+	drt := &model.RefreshToken{ID: uuid.NewString(), TokenHash: "pg-drt", ClientID: "c", UserID: u.ID, Scope: "openid",
+		ExpiresAt: now.Add(time.Hour), CreatedAt: now, AuthTime: now, DeviceID: dev.ID, DPoPJKT: "pg-fp", AMR: "pwd"}
+	if err := db.CreateRefreshToken(ctx, drt); err != nil {
+		t.Fatalf("CreateRefreshToken (device-bound): %v", err)
+	}
+	if err := db.RevokeDevice(ctx, dev.ID, now); err != nil {
+		t.Fatalf("RevokeDevice: %v", err)
+	}
+	if got, _ := db.GetRefreshTokenByHash(ctx, "pg-drt"); !got.Revoked || got.DeviceID != dev.ID {
+		t.Errorf("device-bound refresh token not revoked with device: %+v", got)
+	}
+	dc := &model.DeviceCode{ID: uuid.NewString(), DeviceCodeHash: "pg-dc", UserCode: "BCDFGHJK", ClientID: model.EnrollmentClientID,
+		Scope: "openid", Status: model.DeviceCodePending, CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
+	if err := db.CreateDeviceCode(ctx, dc); err != nil {
+		t.Fatalf("CreateDeviceCode: %v", err)
+	}
+	if err := db.ApproveDeviceCode(ctx, dc.ID, u.ID, "pwd", now); err != nil {
+		t.Fatalf("ApproveDeviceCode: %v", err)
+	}
+	if ok, err := db.ConsumeDeviceCode(ctx, dc.ID); err != nil || !ok {
+		t.Fatalf("ConsumeDeviceCode: ok=%v err=%v", ok, err)
+	}
+	if c, err := db.GetClient(ctx, model.EnrollmentClientID); err != nil || !c.IsPublic() {
+		t.Fatalf("built-in enrollment client: %+v err=%v", c, err)
+	}
+	if st4, _ := db.GetSettings(ctx); st4.DeviceTokenTTL != "1h" {
+		t.Errorf("device_token_ttl default = %q", st4.DeviceTokenTTL)
+	}
+
 	// SQLite-only maintenance helpers must refuse on Postgres.
 	if err := db.BackupTo(ctx, "/tmp/x"); err == nil {
 		t.Error("BackupTo should be rejected on postgres")

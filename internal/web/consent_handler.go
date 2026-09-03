@@ -113,5 +113,5 @@ func (s *Server) handleConsentSubmit(w http.ResponseWriter, r *http.Request) {
 	if authTime.IsZero() {
 		authTime = time.Now().UTC()
 	}
-	s.issueCode(w, r, p, sess.UserID, authTime)
+	s.issueCode(w, r, p, sess.UserID, authTime, sess.AMR)
 }

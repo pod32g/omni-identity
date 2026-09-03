@@ -62,8 +62,9 @@ func TestListClients(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListClients: %v", err)
 	}
-	if len(list) != 2 {
-		t.Errorf("len = %d, want 2", len(list))
+	// Two created here plus the built-in omni-enrollment client (migration 0013).
+	if len(list) != 3 {
+		t.Errorf("len = %d, want 3", len(list))
 	}
 }
 

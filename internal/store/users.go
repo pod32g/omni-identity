@@ -13,7 +13,7 @@ import (
 
 const userColumns = `id, username, email, password_hash, is_admin, disabled, ` +
 	`failed_login_count, locked_until, mfa_enabled, totp_secret, ` +
-	`auth_source, external_id, created_at, updated_at`
+	`auth_source, external_id, created_at, updated_at, webauthn_handle`
 
 // CreateUser inserts a new user.
 func (d *DB) CreateUser(ctx context.Context, u *model.User) error {
@@ -22,10 +22,10 @@ func (d *DB) CreateUser(ctx context.Context, u *model.User) error {
 	}
 	_, err := d.sql.ExecContext(ctx, `
 		INSERT INTO users (`+userColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		u.ID, u.Username, u.Email, u.PasswordHash, u.IsAdmin, u.Disabled,
 		u.FailedLoginCount, nullTime(u.LockedUntil), u.MFAEnabled, u.TOTPSecret,
-		u.AuthSource, u.ExternalID, u.CreatedAt.UTC(), u.UpdatedAt.UTC(),
+		u.AuthSource, u.ExternalID, u.CreatedAt.UTC(), u.UpdatedAt.UTC(), u.WebAuthnHandle,
 	)
 	return err
 }
@@ -205,7 +205,7 @@ func scanUser(s scanner) (*model.User, error) {
 		&u.ID, &u.Username, &u.Email, &u.PasswordHash,
 		&u.IsAdmin, &u.Disabled, &u.FailedLoginCount, &lockedUntil,
 		&u.MFAEnabled, &u.TOTPSecret, &u.AuthSource, &u.ExternalID,
-		&u.CreatedAt, &u.UpdatedAt,
+		&u.CreatedAt, &u.UpdatedAt, &u.WebAuthnHandle,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound

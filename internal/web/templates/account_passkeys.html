@@ -1,0 +1,64 @@
+{{define "title"}}Passkeys · Omni Identity{{end}}
+{{define "content"}}
+{{template "account-shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>Passkeys</h1>
+    <p class="desc">Sign in with your device's screen lock or a security key — phishing-resistant, no password needed.</p>
+  </div>
+  <div class="actions"><a class="btn" href="/account">Account</a></div>
+</div>
+<div class="page-body">
+  {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+  {{if .Saved}}<div class="alert success">{{.Saved}}</div>{{end}}
+  <div id="passkey-error" class="alert error" hidden></div>
+
+  <div class="panel">
+    {{if .Passkeys}}
+    <table class="omni">
+      <thead><tr><th>Name</th><th>Added</th><th>Last used</th><th>Type</th><th></th></tr></thead>
+      <tbody>
+        {{range .Passkeys}}
+        <tr>
+          <td><strong>{{.Name}}</strong></td>
+          <td class="t-secondary">{{.Created}}</td>
+          <td class="t-secondary">{{.LastUsed}}</td>
+          <td class="t-secondary">{{if .Synced}}synced passkey{{else}}device-bound{{end}}</td>
+          <td>
+            <form method="post" action="/account/passkeys/{{.ID}}/delete" onsubmit="return confirm('Remove {{.Name}}? It will no longer be able to sign you in.');">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button class="btn danger sm" type="submit">Remove</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <div class="empty">
+      <span class="empty-ico">{{template "ic-key" .}}</span>
+      <div class="empty-title">No passkeys yet</div>
+      <div class="empty-hint">Add one below. A passkey with a PIN or biometric counts as two factors, so you won't be asked for a TOTP code after it.</div>
+    </div>
+    {{end}}
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">{{template "ic-plus" .}} Add a passkey</div>
+    <div class="panel-bd">
+      {{if .Unavailable}}
+        <p class="t-caption" style="margin:0">{{.Unavailable}}</p>
+      {{else}}
+      <form id="passkey-add" class="stack" data-csrf="{{.CSRFToken}}" style="margin-top:0;max-width:360px">
+        <label class="field">Name <span class="muted">(e.g. "MacBook Touch ID", "YubiKey 5")</span>
+          <input name="name" maxlength="64" required autocomplete="off">
+        </label>
+        <button class="btn primary" type="submit" style="align-self:flex-start">Create passkey</button>
+      </form>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{template "account-shell-end" .}}
+<script src="/static/webauthn.js"></script>
+{{end}}

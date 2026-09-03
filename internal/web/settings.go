@@ -40,6 +40,7 @@ type SettingsView struct {
 	LDAPManageEnabled               bool
 	LogLevel                        string // debug|info|warn|error
 	LogHTTPRequests                 string // all|errors|off
+	DeviceTokenTTL                  time.Duration
 }
 
 // PasswordPolicy renders the live complexity policy.
@@ -101,6 +102,7 @@ func newSettingsService(db settingsStore, cfg *config.Config, defaultSessionLife
 		LDAPManageEnabled:               cfg.LDAP.ManageEnabled,
 		LogLevel:                        cfg.Logging.Level,
 		LogHTTPRequests:                 cfg.Logging.HTTPRequests,
+		DeviceTokenTTL:                  defaultDeviceTokenTTL,
 	}
 	s.def = withRuntimeSettingDefaults(s.def)
 	s.v = s.def
@@ -185,6 +187,7 @@ func viewFromModel(m *model.Settings, def SettingsView) SettingsView {
 		LDAPManageEnabled:               m.LDAPManageEnabled,
 		LogLevel:                        m.LogLevel,
 		LogHTTPRequests:                 m.LogHTTPRequests,
+		DeviceTokenTTL:                  parseDurOr(m.DeviceTokenTTL, def.DeviceTokenTTL),
 	}
 }
 
@@ -238,8 +241,13 @@ func (v SettingsView) toModel() *model.Settings {
 		LDAPManageEnabled:               v.LDAPManageEnabled,
 		LogLevel:                        v.LogLevel,
 		LogHTTPRequests:                 v.LogHTTPRequests,
+		DeviceTokenTTL:                  v.DeviceTokenTTL.String(),
 	}
 }
+
+// defaultDeviceTokenTTL bounds how long a revoked device's outstanding device
+// tokens remain valid; short by design (see the architecture doc §9).
+const defaultDeviceTokenTTL = time.Hour
 
 func withRuntimeSettingDefaults(v SettingsView) SettingsView {
 	if v.TokenTTL <= 0 {
@@ -283,6 +291,9 @@ func withRuntimeSettingDefaults(v SettingsView) SettingsView {
 	}
 	if v.LogHTTPRequests == "" {
 		v.LogHTTPRequests = "errors"
+	}
+	if v.DeviceTokenTTL <= 0 {
+		v.DeviceTokenTTL = defaultDeviceTokenTTL
 	}
 	return v
 }

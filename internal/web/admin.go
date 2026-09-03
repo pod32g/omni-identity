@@ -367,6 +367,24 @@ type adminUserDetailPage struct {
 	SetupLink        string // one-time reset link, shown once
 	SetupLinkLabel   string
 	DirectoryEnabled bool // a managed directory is configured (offer directory edit/delete)
+	Devices          []deviceView
+	PasskeyCount     int
+}
+
+func (s *Server) passkeyCount(r *http.Request, u *model.User) int {
+	n, _ := s.db.CountWebAuthnCredentials(r.Context(), u.ID)
+	return n
+}
+
+// userDevices lists a user's devices for the admin detail page.
+func (s *Server) userDevices(r *http.Request, u *model.User) []deviceView {
+	devs, _ := s.db.ListDevicesForUser(r.Context(), u.ID)
+	now := time.Now()
+	out := make([]deviceView, 0, len(devs))
+	for _, d := range devs {
+		out = append(out, viewDevice(d, u.Username, now))
+	}
+	return out
 }
 
 // renderUserDetailWithWarning renders the user page with a non-fatal advisory.
@@ -378,6 +396,8 @@ func (s *Server) renderUserDetailWithWarning(w http.ResponseWriter, r *http.Requ
 		User:             u,
 		Warning:          warning,
 		DirectoryEnabled: s.directoryEnabled(),
+		Devices:          s.userDevices(r, u),
+		PasskeyCount:     s.passkeyCount(r, u),
 	})
 }
 
@@ -389,6 +409,8 @@ func (s *Server) renderUserDetail(w http.ResponseWriter, r *http.Request, status
 		User:             u,
 		Error:            errMsg,
 		DirectoryEnabled: s.directoryEnabled(),
+		Devices:          s.userDevices(r, u),
+		PasskeyCount:     s.passkeyCount(r, u),
 	})
 }
 
@@ -401,6 +423,8 @@ func (s *Server) renderUserDetailWithLink(w http.ResponseWriter, r *http.Request
 		SetupLink:        link,
 		SetupLinkLabel:   label,
 		DirectoryEnabled: s.directoryEnabled(),
+		Devices:          s.userDevices(r, u),
+		PasskeyCount:     s.passkeyCount(r, u),
 	})
 }
 

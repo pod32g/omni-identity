@@ -1,0 +1,59 @@
+{{define "title"}}{{.Device.Name}} · Omni Identity{{end}}
+{{define "content"}}
+{{template "shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>{{.Device.Name}}</h1>
+    <p class="desc">{{.Device.Platform}}{{if .Device.Architecture}} / {{.Device.Architecture}}{{end}}
+      {{if .Device.IsActive}}<span class="chip ok"><span class="dot"></span>active</span>{{else if .Device.IsRevoked}}<span class="chip off"><span class="dot"></span>revoked</span>{{else}}<span class="chip">{{.Device.Status}}</span>{{end}}
+      <span class="chip">{{.Device.TrustLevel}}</span>
+    </p>
+  </div>
+  <div class="actions"><a class="btn" href="/admin/devices">Back</a></div>
+</div>
+<div class="page-body">
+  {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+  <div class="panel">
+    <div class="panel-hd">{{template "ic-grid" .}} Device</div>
+    <div class="panel-bd">
+      <table class="omni">
+        <tbody>
+          <tr><td class="t-tertiary" style="width:180px">Owner</td><td><a href="/admin/users/{{.Device.OwnerID}}">{{.Device.Owner}}</a></td></tr>
+          <tr><td class="t-tertiary">Hostname</td><td>{{.Device.Hostname}}</td></tr>
+          <tr><td class="t-tertiary">Device ID</td><td style="font-family:var(--font-mono)">{{.Device.ID}}</td></tr>
+          <tr><td class="t-tertiary">Key fingerprint</td><td style="font-family:var(--font-mono)">{{.Device.Fingerprint}}</td></tr>
+          <tr><td class="t-tertiary">Key algorithm</td><td>{{.Device.Algorithm}}</td></tr>
+          <tr><td class="t-tertiary">Trust level</td><td>{{.Device.TrustLevel}} <span class="t-caption">(software key registered under user authorization; no attestation)</span></td></tr>
+          <tr><td class="t-tertiary">Enrolled</td><td>{{.Device.Enrolled}}</td></tr>
+          <tr><td class="t-tertiary">Last seen</td><td>{{.Device.LastSeen}}</td></tr>
+          {{if .Device.Revoked}}<tr><td class="t-tertiary">Revoked</td><td>{{.Device.Revoked}}</td></tr>{{end}}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-hd">{{template "ic-key" .}} Public key</div>
+    <div class="panel-bd"><code style="word-break:break-all">{{.PublicKey}}</code></div>
+  </div>
+  <div class="panel">
+    <div class="panel-hd">{{template "ic-lock" .}} Danger zone</div>
+    <div class="panel-bd">
+      {{if .Device.IsActive}}
+      <form method="post" action="/admin/devices/{{.Device.ID}}/revoke">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <input type="hidden" name="return" value="detail">
+        <p class="t-caption" style="margin:0 0 10px">Revoking stops new device credentials immediately and revokes its refresh tokens. Already-issued tokens expire within their TTL.</p>
+        <button class="btn danger" type="submit">Revoke device</button>
+      </form>
+      {{else if .Device.IsRevoked}}
+      <form method="post" action="/admin/devices/{{.Device.ID}}/delete" onsubmit="return confirm('Delete this revoked device record?');">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <p class="t-caption" style="margin:0 0 10px">Deletes the record. Its key fingerprint cannot be re-enrolled; the audit log keeps its history.</p>
+        <button class="btn danger" type="submit">Delete record</button>
+      </form>
+      {{end}}
+    </div>
+  </div>
+</div>
+{{template "shell-end" .}}
+{{end}}

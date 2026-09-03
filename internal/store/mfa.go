@@ -63,18 +63,18 @@ func (d *DB) DeleteRecoveryCodes(ctx context.Context, userID string) error {
 // CreateLoginChallenge stores a pending second-factor challenge.
 func (d *DB) CreateLoginChallenge(ctx context.Context, c *model.LoginChallenge) error {
 	_, err := d.sql.ExecContext(ctx, `
-		INSERT INTO login_challenges (id, user_id, next, req, created_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?)`,
-		c.ID, c.UserID, c.Next, c.Req, c.CreatedAt.UTC(), c.ExpiresAt.UTC())
+		INSERT INTO login_challenges (id, user_id, next, req, amr, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		c.ID, c.UserID, c.Next, c.Req, c.AMR, c.CreatedAt.UTC(), c.ExpiresAt.UTC())
 	return err
 }
 
 // GetLoginChallenge fetches a non-expired challenge by id.
 func (d *DB) GetLoginChallenge(ctx context.Context, id string) (*model.LoginChallenge, error) {
 	row := d.sql.QueryRowContext(ctx,
-		`SELECT id, user_id, next, req, created_at, expires_at FROM login_challenges WHERE id = ?`, id)
+		`SELECT id, user_id, next, req, amr, created_at, expires_at FROM login_challenges WHERE id = ?`, id)
 	var c model.LoginChallenge
-	err := row.Scan(&c.ID, &c.UserID, &c.Next, &c.Req, &c.CreatedAt, &c.ExpiresAt)
+	err := row.Scan(&c.ID, &c.UserID, &c.Next, &c.Req, &c.AMR, &c.CreatedAt, &c.ExpiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

@@ -2,6 +2,7 @@ package tokens
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -64,40 +65,93 @@ func (i *Issuer) IDTTL() time.Duration {
 	return i.idTTL
 }
 
+// Token-use markers placed in the token_use claim.
+const (
+	TokenUseAccess = "access"
+	TokenUseDevice = "device"
+)
+
+// Extra holds optional additional claims merged into a token. Used for the
+// standard amr claim and for device claims (device_id, device_trust, cnf). It
+// never overrides the core claims set by the issuer.
+type Extra map[string]any
+
 // IssueAccessToken mints a signed access-token JWT.
 func (i *Issuer) IssueAccessToken(subject, audience, scope string) (string, error) {
+	return i.IssueAccessTokenWithClaims(subject, audience, scope, nil)
+}
+
+// IssueAccessTokenWithClaims mints an access token with extra claims.
+func (i *Issuer) IssueAccessTokenWithClaims(subject, audience, scope string, extra Extra) (string, error) {
 	now := time.Now()
-	claims := jwt.MapClaims{
-		"iss":       i.issuerName(),
-		"sub":       subject,
-		"aud":       audience,
-		"iat":       now.Unix(),
-		"exp":       now.Add(i.AccessTTL()).Unix(),
-		"scope":     scope,
-		"token_use": "access",
+	claims := jwt.MapClaims{}
+	for k, v := range extra {
+		claims[k] = v
 	}
+	claims["iss"] = i.issuerName()
+	claims["sub"] = subject
+	claims["aud"] = audience
+	claims["iat"] = now.Unix()
+	claims["exp"] = now.Add(i.AccessTTL()).Unix()
+	claims["scope"] = scope
+	claims["token_use"] = TokenUseAccess
 	return i.sign(claims)
 }
 
 // IssueIDToken mints a signed ID-token JWT carrying identity claims.
 func (i *Issuer) IssueIDToken(subject, audience string, p Profile, nonce string, authTime time.Time) (string, error) {
+	return i.IssueIDTokenWithClaims(subject, audience, p, nonce, authTime, nil)
+}
+
+// IssueIDTokenWithClaims mints an ID token with extra claims (amr, device_id,
+// device_trust). Extra claims never override the core OIDC claims.
+func (i *Issuer) IssueIDTokenWithClaims(subject, audience string, p Profile, nonce string, authTime time.Time, extra Extra) (string, error) {
 	now := time.Now()
-	claims := jwt.MapClaims{
-		"iss":                i.issuerName(),
-		"sub":                subject,
-		"aud":                audience,
-		"iat":                now.Unix(),
-		"exp":                now.Add(i.IDTTL()).Unix(),
-		"auth_time":          authTime.Unix(),
-		"email":              p.Email,
-		"email_verified":     p.EmailVerified,
-		"preferred_username": p.PreferredUsername,
-		"name":               p.Name,
+	claims := jwt.MapClaims{}
+	for k, v := range extra {
+		claims[k] = v
 	}
+	claims["iss"] = i.issuerName()
+	claims["sub"] = subject
+	claims["aud"] = audience
+	claims["iat"] = now.Unix()
+	claims["exp"] = now.Add(i.IDTTL()).Unix()
+	claims["auth_time"] = authTime.Unix()
+	claims["email"] = p.Email
+	claims["email_verified"] = p.EmailVerified
+	claims["preferred_username"] = p.PreferredUsername
+	claims["name"] = p.Name
 	if nonce != "" {
 		claims["nonce"] = nonce
 	}
 	return i.sign(claims)
+}
+
+// IssueDeviceToken mints a device token: a short-lived JWT naming an enrolled
+// device (sub = device id) that the device obtained by proving possession of
+// its key (RFC 7523 jwt-bearer grant). jkt, when non-empty, DPoP-binds it.
+func (i *Issuer) IssueDeviceToken(deviceID, ownerSub, trust, audience, jkt string, ttl time.Duration) (string, error) {
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"iss":          i.issuerName(),
+		"sub":          deviceID,
+		"aud":          audience,
+		"iat":          now.Unix(),
+		"exp":          now.Add(ttl).Unix(),
+		"token_use":    TokenUseDevice,
+		"device_id":    deviceID,
+		"device_trust": trust,
+		"owner_sub":    ownerSub,
+	}
+	if jkt != "" {
+		claims["cnf"] = map[string]any{"jkt": jkt}
+	}
+	return i.sign(claims)
+}
+
+// AMRList converts a space-separated amr string into the JSON array form.
+func AMRList(amr string) []string {
+	return strings.Fields(amr)
 }
 
 func (i *Issuer) sign(claims jwt.MapClaims) (string, error) {
@@ -121,12 +175,23 @@ type VerifiedToken struct {
 	Scope             string
 	Email             string
 	PreferredUsername string
-	Claims            jwt.MapClaims
+	// DeviceID / DeviceTrust are set on device tokens and on user tokens issued
+	// through a device-authenticated grant; empty otherwise.
+	DeviceID    string
+	DeviceTrust string
+	// JKT is the DPoP key thumbprint the token is bound to (cnf.jkt), if any.
+	JKT    string
+	Claims jwt.MapClaims
 }
 
 // IsAccessToken reports whether the token was minted as an access token.
 func (v *VerifiedToken) IsAccessToken() bool {
-	return v.Claims["token_use"] == "access"
+	return v.Claims["token_use"] == TokenUseAccess
+}
+
+// IsDeviceToken reports whether the token was minted as a device token.
+func (v *VerifiedToken) IsDeviceToken() bool {
+	return v.Claims["token_use"] == TokenUseDevice
 }
 
 // Verify checks the signature (by kid), allowed algorithms, issuer, and expiry,
@@ -154,6 +219,11 @@ func (i *Issuer) Verify(tokenStr string) (*VerifiedToken, error) {
 	vt.Scope, _ = claims["scope"].(string)
 	vt.Email, _ = claims["email"].(string)
 	vt.PreferredUsername, _ = claims["preferred_username"].(string)
+	vt.DeviceID, _ = claims["device_id"].(string)
+	vt.DeviceTrust, _ = claims["device_trust"].(string)
+	if cnf, ok := claims["cnf"].(map[string]any); ok {
+		vt.JKT, _ = cnf["jkt"].(string)
+	}
 	vt.Audience = audienceString(claims)
 	return vt, nil
 }

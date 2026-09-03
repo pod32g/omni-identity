@@ -85,6 +85,9 @@
           <label class="field">Refresh token TTL <span class="muted">(e.g. 720h — must be ≥ access TTL)</span>
             <input name="refresh_token_ttl" value="{{.Settings.RefreshTokenTTL}}" required>
           </label>
+          <label class="field">Device token TTL <span class="muted">(enrolled devices; bounds revocation latency)</span>
+            <input name="device_token_ttl" value="{{.Settings.DeviceTokenTTL}}" required>
+          </label>
         </div>
       </div>
       <div class="save-bar"><button class="btn primary" type="submit">Save settings</button></div>

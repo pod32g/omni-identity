@@ -1,0 +1,55 @@
+{{define "title"}}My Devices · Omni Identity{{end}}
+{{define "content"}}
+{{template "account-shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>My Devices</h1>
+    <p class="desc">Endpoints enrolled to your account. Revoke anything you no longer control.</p>
+  </div>
+  <div class="actions"><a class="btn" href="/account">Account</a></div>
+</div>
+<div class="page-body">
+  {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
+  {{if .Saved}}<div class="alert success">{{.Saved}}</div>{{end}}
+
+  <div class="panel">
+    {{if .Devices}}
+    <table class="omni">
+      <thead><tr><th>Device</th><th>Platform</th><th>Last seen</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {{range .Devices}}
+        <tr>
+          <td><strong>{{.Name}}</strong>{{if and .Hostname (ne .Hostname .Name)}}<div class="t-caption">{{.Hostname}}</div>{{end}}<div class="t-caption" style="font-family:var(--font-mono)">{{.ShortFP}}…</div></td>
+          <td class="t-secondary">{{.Platform}}{{if .Architecture}} / {{.Architecture}}{{end}}</td>
+          <td class="t-secondary">{{.LastSeen}}</td>
+          <td>{{if .IsActive}}<span class="chip ok"><span class="dot"></span>Active</span>{{else if .IsRevoked}}<span class="chip off"><span class="dot"></span>Revoked</span>{{else}}<span class="chip">{{.Status}}</span>{{end}}</td>
+          <td>
+            {{if .IsActive}}
+            <form method="post" action="/account/devices/{{.ID}}/revoke" onsubmit="return confirm('Revoke {{.Name}}? It will no longer be able to sign in as you or renew its credentials.');">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button class="btn danger sm" type="submit">Revoke</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <div class="empty">
+      <span class="empty-ico">{{template "ic-grid" .}}</span>
+      <div class="empty-title">No devices yet</div>
+      <div class="empty-hint">Run <code>omni-enrollment enroll</code> on a machine and approve it here to enroll it.</div>
+    </div>
+    {{end}}
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">Have a code?</div>
+    <div class="panel-bd">
+      <p class="muted">If a device or terminal is showing you a code, <a href="/device">enter it here</a>.</p>
+    </div>
+  </div>
+</div>
+{{template "account-shell-end" .}}
+{{end}}

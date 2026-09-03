@@ -19,6 +19,7 @@ type DiscoveryDocument struct {
 	AuthorizationEndpoint             string   `json:"authorization_endpoint"`
 	TokenEndpoint                     string   `json:"token_endpoint"`
 	UserinfoEndpoint                  string   `json:"userinfo_endpoint"`
+	DeviceAuthorizationEndpoint       string   `json:"device_authorization_endpoint"`
 	JWKSURI                           string   `json:"jwks_uri"`
 	RevocationEndpoint                string   `json:"revocation_endpoint"`
 	IntrospectionEndpoint             string   `json:"introspection_endpoint"`
@@ -32,7 +33,14 @@ type DiscoveryDocument struct {
 	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported"`
 	PromptValuesSupported             []string `json:"prompt_values_supported"`
 	ClaimsSupported                   []string `json:"claims_supported"`
+	DPoPSigningAlgValuesSupported     []string `json:"dpop_signing_alg_values_supported"`
 }
+
+// Grant types beyond the core code/refresh/client_credentials set.
+const (
+	GrantTypeDeviceCode = "urn:ietf:params:oauth:grant-type:device_code" // RFC 8628
+	GrantTypeJWTBearer  = "urn:ietf:params:oauth:grant-type:jwt-bearer"  // RFC 7523 §2.1
+)
 
 // BuildDiscovery returns the discovery document for the given issuer base URL.
 // All endpoint URLs are derived from the issuer, so the issuer must be the
@@ -44,21 +52,24 @@ func BuildDiscovery(issuer string) DiscoveryDocument {
 		AuthorizationEndpoint:             base + "/oauth2/authorize",
 		TokenEndpoint:                     base + "/oauth2/token",
 		UserinfoEndpoint:                  base + "/userinfo",
+		DeviceAuthorizationEndpoint:       base + "/oauth2/device_authorization",
 		JWKSURI:                           base + "/jwks.json",
 		RevocationEndpoint:                base + "/oauth2/revoke",
 		IntrospectionEndpoint:             base + "/oauth2/introspect",
 		EndSessionEndpoint:                base + "/logout",
 		ResponseTypesSupported:            []string{"code"},
-		GrantTypesSupported:               []string{"authorization_code", "refresh_token", "client_credentials"},
+		GrantTypesSupported:               []string{"authorization_code", "refresh_token", "client_credentials", GrantTypeDeviceCode, GrantTypeJWTBearer},
 		SubjectTypesSupported:             []string{"public"},
 		IDTokenSigningAlgValuesSupported:  []string{"RS256", "EdDSA"},
-		ScopesSupported:                   []string{ScopeOpenID, ScopeProfile, ScopeEmail, ScopeOfflineAccess},
+		ScopesSupported:                   []string{ScopeOpenID, ScopeProfile, ScopeEmail, ScopeOfflineAccess, ScopeDeviceEnroll},
 		TokenEndpointAuthMethodsSupported: []string{"client_secret_basic", "client_secret_post", "none"},
 		CodeChallengeMethodsSupported:     []string{"S256"},
 		PromptValuesSupported:             []string{"none", "login", "consent"},
 		ClaimsSupported: []string{
 			"sub", "iss", "aud", "exp", "iat",
 			"email", "email_verified", "preferred_username", "name",
+			"auth_time", "amr", "device_id", "device_trust",
 		},
+		DPoPSigningAlgValuesSupported: []string{"EdDSA", "ES256", "RS256"},
 	}
 }

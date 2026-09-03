@@ -13,6 +13,9 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
+//go:embed static/*
+var staticFS embed.FS
+
 // templates holds one parsed template set per page, each composed with the
 // shared base layout.
 type templates struct {

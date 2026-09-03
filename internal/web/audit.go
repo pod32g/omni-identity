@@ -47,6 +47,28 @@ const (
 	evtBrandingUpdate  = "admin.branding.updated"
 	evtSettingsUpdated = "admin.settings.updated"
 	evtSessionsRevoked = "session.revoked_all"
+
+	// Device identity (docs/DEVICE-IDENTITY-ARCHITECTURE.md §11).
+	evtDeviceGrantRequested  = "device.grant.requested"
+	evtDeviceEnrollStarted   = "device.enrollment.started"
+	evtDeviceEnrollCompleted = "device.enrollment.completed"
+	evtDeviceEnrollFailed    = "device.enrollment.failed"
+	evtDeviceEnrollDenied    = "device.enrollment.denied"
+	evtDeviceLoginApproved   = "device.login.approved"
+	evtDeviceLoginDenied     = "device.login.denied"
+	evtDeviceAuthSuccess     = "device.authentication.success"
+	evtDeviceAuthFailed      = "device.authentication.failed"
+	evtDeviceKeyRotated      = "device.key.rotated"
+	evtDeviceRevoked         = "device.revoked"
+	evtDeviceDeleted         = "device.deleted"
+
+	// Passkeys (WebAuthn).
+	evtPasskeyRegistered     = "passkey.registered"
+	evtPasskeyRegisterFailed = "passkey.register.failed"
+	evtPasskeyRemoved        = "passkey.removed"
+	evtPasskeyReset          = "admin.passkeys.reset"
+	evtPasskeyLoginSuccess   = "passkey.login.success"
+	evtPasskeyLoginFailed    = "passkey.login.failed"
 )
 
 // auditEntry carries the variable fields of an audit record.
@@ -111,7 +133,9 @@ func logAuditEvent(ev *model.AuditEvent) {
 // auditLevel maps an audit event to a log level.
 func auditLevel(event string) slog.Level {
 	switch event {
-	case evtLoginFailed, evtLoginLocked, evtMFAFailed, evtConsentDenied:
+	case evtLoginFailed, evtLoginLocked, evtMFAFailed, evtConsentDenied,
+		evtDeviceEnrollFailed, evtDeviceEnrollDenied, evtDeviceLoginDenied, evtDeviceAuthFailed,
+		evtPasskeyRegisterFailed, evtPasskeyLoginFailed:
 		return slog.LevelWarn
 	default:
 		return slog.LevelInfo

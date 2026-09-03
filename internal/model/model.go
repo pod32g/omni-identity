@@ -31,8 +31,12 @@ type User struct {
 	// Multi-factor authentication (TOTP).
 	MFAEnabled bool
 	TOTPSecret string // AES-GCM ciphertext (base64), empty when MFA disabled
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	// WebAuthnHandle is the random, opaque user handle presented to
+	// authenticators (base64url, 32 bytes). Empty until the first passkey is
+	// registered. Never the user id: the handle is visible to authenticators.
+	WebAuthnHandle string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 // IsLocal reports whether the account authenticates against the local password
@@ -108,8 +112,42 @@ type LoginChallenge struct {
 	UserID    string
 	Next      string
 	Req       string
+	AMR       string // first-factor methods already satisfied (e.g. "pwd", "webauthn user")
 	CreatedAt time.Time
 	ExpiresAt time.Time
+}
+
+// WebAuthnCredential is a registered passkey / security key. Credential holds
+// the library's credential record as JSON (public key, flags, sign counter,
+// transports) — no secrets.
+type WebAuthnCredential struct {
+	ID             string // base64url credential id
+	UserID         string
+	Name           string
+	Credential     string
+	AAGUID         string
+	BackupEligible bool
+	CreatedAt      time.Time
+	LastUsedAt     time.Time
+}
+
+// WebAuthn ceremony purposes.
+const (
+	WebAuthnPurposeRegister = "register"
+	WebAuthnPurposeLogin    = "login"
+)
+
+// WebAuthnCeremony is the server-side half of a pending WebAuthn ceremony:
+// the challenge and options issued at begin, consumed once at finish.
+type WebAuthnCeremony struct {
+	ID          string
+	UserID      string // empty for a discoverable (usernameless) login
+	Purpose     string
+	SessionData string // library SessionData JSON
+	Next        string
+	Req         string
+	CreatedAt   time.Time
+	ExpiresAt   time.Time
 }
 
 // Client is a registered OAuth2/OIDC client application.
@@ -135,6 +173,15 @@ type Client struct {
 
 // IsPublic reports whether the client is a public (no-secret) client.
 func (c *Client) IsPublic() bool { return c.Type == ClientTypePublic }
+
+// EnrollmentClientID is the built-in public client used by the omni-enrollment
+// endpoint agent (created by migration 0013). It is the only client allowed to
+// request the device:enroll scope by default.
+const EnrollmentClientID = "omni-enrollment"
+
+// BuiltIn reports whether the client ships with Omni Identity and therefore
+// cannot be deleted from the admin UI.
+func (c *Client) BuiltIn() bool { return c.ClientID == EnrollmentClientID }
 
 // Label returns the friendliest available name for the client: its display
 // name when set, otherwise its registered name, otherwise the client id.
@@ -185,8 +232,10 @@ type Settings struct {
 	// LogHTTPRequests is all|errors|off. Seeded from config (logging.*).
 	LogLevel        string
 	LogHTTPRequests string
-	Seeded          bool
-	UpdatedAt       time.Time
+	// DeviceTokenTTL is the lifetime of device tokens issued to enrolled devices.
+	DeviceTokenTTL string
+	Seeded         bool
+	UpdatedAt      time.Time
 }
 
 // Branding holds the configurable look of the hosted pages (single global row).
@@ -231,6 +280,9 @@ type AuthorizationCode struct {
 	CreatedAt           time.Time
 	// AuthTime is when the end user actually authenticated (session login time).
 	AuthTime time.Time
+	// AMR is the space-separated list of authentication methods of the session
+	// that authorized the code (RFC 8176 values), surfaced as the ID token amr.
+	AMR string
 }
 
 // RefreshToken is a stored, hashed refresh token (supports rotation).
@@ -246,6 +298,82 @@ type RefreshToken struct {
 	CreatedAt   time.Time
 	// AuthTime is the original end-user authentication time, preserved across rotation.
 	AuthTime time.Time
+	// AMR is preserved across rotation so refreshed ID tokens keep their amr.
+	AMR string
+	// DeviceID binds the token to an enrolled device: it is revoked with the
+	// device and refreshed tokens carry device claims. Empty for ordinary tokens.
+	DeviceID string
+	// DPoPJKT is the RFC 7638 thumbprint of the DPoP key the token is bound to
+	// (RFC 9449 §5). Empty means a plain bearer refresh token.
+	DPoPJKT string
+}
+
+// Device status values.
+const (
+	DeviceStatusPending = "pending"
+	DeviceStatusActive  = "active"
+	DeviceStatusRevoked = "revoked"
+)
+
+// Device trust levels. V1 has a single level; "hardware" is reserved for
+// attested TPM / Secure Enclave keys.
+const (
+	DeviceTrustEnrolled = "enrolled"
+)
+
+// Device is an enrolled endpoint. Only the public half of its key pair is ever
+// stored; the endpoint proves possession of the private key to authenticate.
+type Device struct {
+	ID                  string
+	OwnerUserID         string
+	Name                string
+	Hostname            string
+	Platform            string
+	Architecture        string
+	PublicKey           string // public JWK (JSON)
+	PublicKeyAlgorithm  string // JWS alg: EdDSA | ES256 | RS256
+	Fingerprint         string // RFC 7638 JWK thumbprint (base64url SHA-256)
+	PreviousFingerprint string // set after a key rotation
+	Status              string
+	TrustLevel          string
+	CreatedAt           time.Time
+	EnrolledAt          time.Time // zero when pending
+	LastSeenAt          time.Time // zero when never authenticated
+	RevokedAt           time.Time // zero unless revoked
+}
+
+// IsActive reports whether the device may obtain credentials.
+func (d *Device) IsActive() bool { return d.Status == DeviceStatusActive }
+
+// Device-code (RFC 8628) grant states.
+const (
+	DeviceCodePending  = "pending"
+	DeviceCodeApproved = "approved"
+	DeviceCodeDenied   = "denied"
+	DeviceCodeConsumed = "consumed"
+)
+
+// DeviceCode is a pending RFC 8628 device authorization grant. The device
+// code is stored hashed; the user code is the short human-entered value.
+type DeviceCode struct {
+	ID             string
+	DeviceCodeHash string
+	UserCode       string
+	ClientID       string
+	Scope          string
+	// DeviceID is set when the request was authenticated by an enrolled device
+	// (a device-aware login); DeviceName/DevicePlatform are display metadata
+	// supplied by an unenrolled client during enrollment.
+	DeviceID       string
+	DeviceName     string
+	DevicePlatform string
+	Status         string
+	UserID         string    // approving user (set on approval)
+	AMR            string    // approving session's auth methods
+	AuthTime       time.Time // approving session's login time
+	LastPolledAt   time.Time
+	CreatedAt      time.Time
+	ExpiresAt      time.Time
 }
 
 // SigningKey is a JWT signing keypair.
