@@ -345,8 +345,9 @@ omni-identity healthcheck --url http://localhost:8080/healthz          # 2xx = h
 | Login / Logout | `/login`, `/logout` |
 | Health / Metrics | `/healthz`, `/metrics` |
 
-Additional grant types at `/oauth2/token`: `urn:ietf:params:oauth:grant-type:device_code`
-and `urn:ietf:params:oauth:grant-type:jwt-bearer` (device assertions). DPoP
+Additional grant types at `/oauth2/token`: `urn:ietf:params:oauth:grant-type:device_code`,
+`urn:ietf:params:oauth:grant-type:jwt-bearer` (device assertions), and
+`urn:ietf:params:oauth:grant-type:token-exchange` (the endpoint's local token broker). DPoP
 (RFC 9449) proofs are honoured on every grant and bind the issued tokens.
 
 `/metrics` is disabled unless `metrics.bearer_token` or `OMNI_METRICS_TOKEN` is

@@ -152,12 +152,20 @@ obtain tokens or trigger a login.
 
 *Control:* the PAM socket is `0600 root:root`; only root (PAM stacks of
 `login`, `sshd`, `gdm`, `sudo`) may connect. The daemon checks `SO_PEERCRED`
-and rejects non-root peers. No token-broker socket exists in V1 (§10 of the
-architecture doc requires per-app authorization before it ever does).
+and rejects non-root peers. The broker socket is world-connectable but
+authorizes every request by the caller's uid: tokens are issued only to the
+uid of a user who signed in online on this device and is not revoked, only
+for allowlisted audiences, and only as short-lived bearer tokens for that
+audience; root and system uids are refused. A local process running *as the
+user* can obtain what the user could obtain anyway; one running as another
+user cannot.
 
 ### 4.8 Malicious local applications
 
-Same as 4.7. Nothing on the endpoint hands tokens to applications in V1.
+Same as 4.7. An application running as the signed-in user can ask the broker
+for tokens for allowlisted audiences — that is the feature — but never for
+other audiences, never a refresh token, and never the device key. Operators
+choose the allowlist; an empty list disables the broker.
 
 The NSS socket (`nss.sock`) is world-connectable by necessity (any process
 resolves names) but read-only: it answers name/uid queries from the cache and

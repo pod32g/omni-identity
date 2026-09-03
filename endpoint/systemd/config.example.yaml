@@ -10,3 +10,4 @@ issuer: https://identity.example
 # qr: dark            # QR code under sign-in links on consoles/SSH: dark (default) | light | off
 # offline_validity: 168h
 # login_shell: /bin/bash
+# broker_audiences: [omni-metrics, omni-logging]   # local token broker; empty = off

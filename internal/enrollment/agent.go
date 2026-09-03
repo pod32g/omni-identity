@@ -53,6 +53,8 @@ type Config struct {
 	// QR controls the terminal QR code under the verification URL: dark
 	// (default), light, or off.
 	QR string
+	// BrokerAudiences enables the local token broker for these client ids.
+	BrokerAudiences []string
 	// Browser selects RFC 8252 authorization code + PKCE through the system
 	// browser instead of the device grant (needs a browser on this machine).
 	Browser bool
@@ -304,6 +306,10 @@ type DaemonOptions struct {
 	RefreshEvery time.Duration
 	// ServePAM starts the PAM and NSS sockets (Linux login integration).
 	ServePAM bool
+	// Broker enables the local token broker socket for the listed audiences.
+	Broker BrokerPolicy
+	// PeerUID overrides peer-credential resolution (tests).
+	PeerUID PeerUID
 }
 
 // RunDaemon renews the device token on a schedule (half its lifetime, at
@@ -336,6 +342,11 @@ func (a *Agent) RunDaemon(ctx context.Context, opt DaemonOptions, logf func(stri
 		go func() {
 			if err := a.ServeNSS(ctx, opt.Accounts, opt.Policy, logf); err != nil {
 				logf("nss socket: %v", err)
+			}
+		}()
+		go func() {
+			if err := a.ServeBroker(ctx, opt.Broker, opt.PeerUID, logf); err != nil {
+				logf("broker socket: %v", err)
 			}
 		}()
 	}

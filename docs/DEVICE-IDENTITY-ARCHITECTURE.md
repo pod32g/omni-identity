@@ -45,7 +45,7 @@ in `device_id`.
 | **RFC 7523** JWT profile for OAuth: §2.1 JWT as authorization grant | The enrolled device presents a JWT signed with its private key to the token endpoint and receives a device token. The RFC's required "trust relationship" is the enrollment record (public key registered under user authorization). | **Adopted** for device authentication. |
 | **RFC 9449** DPoP | Sender-constrains tokens to the device key: the enrollment token cannot be replayed with a different key (this is what defeats public-key substitution), and device/user tokens issued to the endpoint are useless if copied without the key. | **Adopted** (server: token endpoint + device API; client: proof per request). |
 | **RFC 7638** JWK Thumbprint | Device fingerprint and DPoP `jkt` are the same value: `base64url(SHA-256(canonical JWK))`. | Adopted. |
-| **RFC 8693** Token Exchange | Would let a local broker exchange a user token + device actor token for an app-scoped token with an `act` claim. | **Deferred** to the future local token broker (§10). Not needed for the PoC. |
+| **RFC 8693** Token Exchange | The local broker exchanges the user's device-bound refresh token (subject) plus the device token (actor) for an app-scoped access token carrying `act`. | **Adopted** for the local token broker (§10). |
 | **RFC 8705** mTLS client auth / certificate-bound tokens | Device certificates instead of raw keys. | **Rejected**: requires a CA and TLS-terminating proxies to pass client certs; the project forbids unnecessary PKI. |
 | **RFC 7591** Dynamic Client Registration | Register each device as an OAuth client with `private_key_jwt`. Standards-pure but pollutes the Applications UI and makes `client_id` do double duty. | **Rejected** for V1; devices are their own table. The assertion format is still RFC 7523. |
 | **RFC 8176** AMR values | Report *how* the user authenticated. | Adopted for `amr` on sessions and ID tokens. |
@@ -359,20 +359,45 @@ only path is re-enrollment (fresh user authorization → new device id).
 
 ---
 
-## 10. Future: local token broker (design only)
+## 10. Local token broker (RFC 8693)
 
-`omni-enrollment` running as a daemon could later broker tokens for local Omni
-apps: an app connects to a Unix socket, the daemon checks the peer's uid and an
-allowlist, then performs **RFC 8693 token exchange** —
-`subject_token` = the user's device-bound refresh token, `actor_token` = the
-device token, `audience` = the requesting app's client id — and hands back a
-short-lived, app-scoped access token whose `act` claim names the device.
-Strong local authorization (peer credentials + per-app allowlist +
-user-approval on first use) is mandatory; a random local process must not
-inherit the user's Omni access merely because the daemon runs. Not built in
-this project.
+`omni-enrollment daemon` can broker tokens for local Omni applications so
+they never store user credentials of their own:
 
----
+```
+local app (uid 200123)           omni-enrollment daemon (root)              Omni Identity
+  │ TOKEN omni-metrics  ────────▶ │ SO_PEERCRED → uid → cached user alice     │
+  │                               │ audience ∈ broker_audiences allowlist?    │
+  │                               │ POST /oauth2/token grant=token-exchange ─▶│ subject = alice's device-bound
+  │                               │   subject_token = refresh token (DPoP)    │   refresh token (not consumed)
+  │                               │   actor_token   = device token (DPoP)     │ actor = this device
+  │ ◀──── TOKEN 900 <jwt> ─────── │ ◀──────── access token aud=omni-metrics ──│ sub=alice, act={sub:device},
+  │                               │                                            │ device_id, amr; plain bearer
+```
+
+Server side, `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`
+accepts only the built-in client, requires a DPoP proof, and checks: the
+actor token is a DPoP-bound device token for the presented key and an active
+device; the subject token is a live refresh token bound to that same device
+and key; the audience is a registered, enabled client; the scope is within
+both the user's grant and the audience's allowed scopes. The issued token is
+a normal access token for that audience with `act: {sub: <device_id>}`,
+`device_id`, `device_trust`, and `amr` — the RFC 8693 delegation shape, so a
+resource server can distinguish "alice via her enrolled laptop" from a plain
+user token. It is a bearer with the normal short TTL because the local app
+holds no device key.
+
+Endpoint side, the broker socket (`/run/omni-enrollment/broker.sock`) is
+world-connectable but every request is authorized by the caller's uid: only
+uids that map to a cached user who has signed in online on this device and is
+not revoked get anything, root and system uids are refused, and the audience
+must be on the operator's `broker_audiences` allowlist (empty = broker off).
+`omni-enrollment token --audience <client id>` is the CLI for scripts.
+
+A random local process therefore does not gain access merely because the
+daemon runs: it needs to *be* the signed-in user, and only for audiences the
+operator chose. Per-app user approval on first use is a possible refinement
+and is not implemented.
 
 ## 11. Endpoint and UI inventory (Phase 2)
 
@@ -383,6 +408,7 @@ New HTTP surface:
 | `POST /oauth2/device_authorization` | client id (public) or device token | RFC 8628 §3.1 |
 | `POST /oauth2/token` grant `device_code` | client id (+DPoP) | RFC 8628 §3.4 |
 | `POST /oauth2/token` grant `jwt-bearer` | device assertion (+DPoP) | RFC 7523 §2.1 |
+| `POST /oauth2/token` grant `token-exchange` | device token + device-bound refresh token (+DPoP) | RFC 8693 (local broker) |
 | `GET /device`, `POST /device` | session | user-code entry + approval page |
 | `POST /api/v1/devices` | DPoP-bound access token, scope `device:enroll` | enroll |
 | `GET /api/v1/devices/me` | device token | status |

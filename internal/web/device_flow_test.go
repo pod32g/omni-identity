@@ -937,3 +937,89 @@ func TestEnrollmentNotificationsWhenSMTPConfigured(t *testing.T) {
 	default:
 	}
 }
+
+// RFC 8693: the enrolled device brokers an audience-scoped token for a local app.
+func TestTokenExchangeForLocalBroker(t *testing.T) {
+	srv := testServer(t)
+	alice := createUser(t, srv, "alice", "pw", false)
+	createClient(t, srv, "omni-metrics", "s3cret", false, []string{"https://m.example/cb"}, []string{"openid", "email", "profile"})
+	key := newDeviceKey(t)
+	id := enrollDevice(t, srv, alice, key, "laptop")
+	devTok := decodeJSON(t, deviceToken(t, srv, id, key, true))["access_token"].(string)
+	withDevice := func(req *http.Request) {
+		req.Header.Set("Authorization", "DPoP "+devTok)
+		key.dpop(t, req, devTok)
+	}
+	// Device-bound user login → device-bound refresh token.
+	deviceCode, userCode := startDeviceGrant(t, srv, "openid profile email offline_access", nil, withDevice)
+	approveUserCode(t, srv, startSession(t, srv, alice.ID), userCode, "allow")
+	refresh := decodeJSON(t, pollDeviceCode(t, srv, deviceCode, &key, withDevice))["refresh_token"].(string)
+
+	exchange := func(mutate func(url.Values), k *deviceKey) *httptest.ResponseRecorder {
+		form := url.Values{
+			"grant_type": {oidc.GrantTypeTokenExchange}, "client_id": {model.EnrollmentClientID},
+			"subject_token": {refresh}, "subject_token_type": {tokenTypeRefresh},
+			"actor_token": {devTok}, "actor_token_type": {tokenTypeAccess},
+			"audience": {"omni-metrics"},
+		}
+		if mutate != nil {
+			mutate(form)
+		}
+		req := formReq("/oauth2/token", form)
+		if k != nil {
+			k.dpop(t, req, "")
+		}
+		return do(srv, req)
+	}
+
+	rr := exchange(nil, &key)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("exchange = %d: %s", rr.Code, rr.Body.String())
+	}
+	resp := decodeJSON(t, rr)
+	if resp["issued_token_type"] != tokenTypeAccess || resp["token_type"] != "Bearer" || resp["scope"] != "openid profile email" {
+		t.Errorf("response = %v", resp)
+	}
+	c := jwtClaims(t, resp["access_token"].(string))
+	if c["sub"] != alice.ID || c["aud"] != "omni-metrics" || c["device_id"] != id || c["act"].(map[string]any)["sub"] != id {
+		t.Errorf("claims = %v", c)
+	}
+	if _, bound := c["cnf"]; bound {
+		t.Error("brokered token must be a plain bearer for the local app")
+	}
+	// The issued token works at userinfo for its audience's scopes.
+	req := httptest.NewRequest(http.MethodGet, "/userinfo", nil)
+	req.Header.Set("Authorization", "Bearer "+resp["access_token"].(string))
+	if ui := do(srv, req); ui.Code != 200 || decodeJSON(t, ui)["email"] != alice.Email {
+		t.Errorf("userinfo = %d %s", ui.Code, ui.Body.String())
+	}
+	// Down-scoping works; widening does not.
+	if rr := exchange(func(f url.Values) { f.Set("scope", "email") }, &key); rr.Code != 200 || decodeJSON(t, rr)["scope"] != "email" {
+		t.Errorf("down-scope = %d", rr.Code)
+	}
+	if rr := exchange(func(f url.Values) { f.Set("scope", "offline_access") }, &key); decodeJSON(t, rr)["error"] != "invalid_scope" {
+		t.Errorf("widening allowed: %s", rr.Body.String())
+	}
+	// Failure modes.
+	if rr := exchange(nil, nil); decodeJSON(t, rr)["error"] != "invalid_dpop_proof" {
+		t.Errorf("no proof: %s", rr.Body.String())
+	}
+	other := newDeviceKey(t)
+	if rr := exchange(nil, &other); decodeJSON(t, rr)["error"] != "invalid_grant" {
+		t.Errorf("foreign key: %s", rr.Body.String())
+	}
+	if rr := exchange(func(f url.Values) { f.Set("audience", "nope") }, &key); decodeJSON(t, rr)["error"] != "invalid_target" {
+		t.Errorf("unknown audience: %s", rr.Body.String())
+	}
+	if rr := exchange(func(f url.Values) { f.Set("actor_token", refresh) }, &key); decodeJSON(t, rr)["error"] != "invalid_grant" {
+		t.Errorf("bad actor: %s", rr.Body.String())
+	}
+	if rr := exchange(func(f url.Values) { f.Set("client_id", "omni-metrics"); f.Set("client_secret", "s3cret") }, &key); rr.Code != http.StatusUnauthorized {
+		t.Errorf("third-party client allowed: %d", rr.Code)
+	}
+	// Revoking the device kills the exchange.
+	_ = srv.db.RevokeDevice(context.Background(), id, time.Now())
+	if rr := exchange(nil, &key); rr.Code != http.StatusBadRequest {
+		t.Errorf("exchange after revocation = %d", rr.Code)
+	}
+}

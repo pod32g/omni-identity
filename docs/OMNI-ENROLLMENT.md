@@ -116,6 +116,22 @@ issuer. The Linux login integration talks to the daemon over two Unix sockets: t
 root-only PAM socket and the read-only NSS socket; that is the extent of its
 local surface.
 
+## Local token broker
+
+With `broker_audiences` set in `config.yaml` (or `OMNI_ENROLLMENT_BROKER_AUDIENCES`),
+the daemon brokers audience-bound access tokens for local applications run by
+a signed-in Omni user, using RFC 8693 token exchange with the device as actor:
+
+```bash
+omni-enrollment token --audience omni-metrics          # prints a bearer token
+omni-enrollment token --audience omni-metrics --json   # {"access_token":…,"expires_in":900}
+```
+
+The caller is identified by its uid on `/run/omni-enrollment/broker.sock`;
+only users who have signed in online on this machine (and are not revoked)
+get tokens, and only for the allowlisted audiences. The app never sees a
+refresh token or the device key. Details: device architecture §10.
+
 ## Admin approval
 
 If the server's *Require admin approval for new device enrollments* setting is

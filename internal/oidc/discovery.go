@@ -40,6 +40,9 @@ type DiscoveryDocument struct {
 const (
 	GrantTypeDeviceCode = "urn:ietf:params:oauth:grant-type:device_code" // RFC 8628
 	GrantTypeJWTBearer  = "urn:ietf:params:oauth:grant-type:jwt-bearer"  // RFC 7523 §2.1
+	// GrantTypeTokenExchange (RFC 8693) lets an enrolled device broker
+	// audience-scoped tokens for local applications.
+	GrantTypeTokenExchange = "urn:ietf:params:oauth:grant-type:token-exchange"
 )
 
 // BuildDiscovery returns the discovery document for the given issuer base URL.
@@ -58,7 +61,7 @@ func BuildDiscovery(issuer string) DiscoveryDocument {
 		IntrospectionEndpoint:             base + "/oauth2/introspect",
 		EndSessionEndpoint:                base + "/logout",
 		ResponseTypesSupported:            []string{"code"},
-		GrantTypesSupported:               []string{"authorization_code", "refresh_token", "client_credentials", GrantTypeDeviceCode, GrantTypeJWTBearer},
+		GrantTypesSupported:               []string{"authorization_code", "refresh_token", "client_credentials", GrantTypeDeviceCode, GrantTypeJWTBearer, GrantTypeTokenExchange},
 		SubjectTypesSupported:             []string{"public"},
 		IDTokenSigningAlgValuesSupported:  []string{"RS256", "EdDSA"},
 		ScopesSupported:                   []string{ScopeOpenID, ScopeProfile, ScopeEmail, ScopeOfflineAccess, ScopeDeviceEnroll},
@@ -68,7 +71,7 @@ func BuildDiscovery(issuer string) DiscoveryDocument {
 		ClaimsSupported: []string{
 			"sub", "iss", "aud", "exp", "iat",
 			"email", "email_verified", "preferred_username", "name",
-			"auth_time", "amr", "device_id", "device_trust",
+			"auth_time", "amr", "device_id", "device_trust", "act",
 		},
 		DPoPSigningAlgValuesSupported: []string{"EdDSA", "ES256", "RS256"},
 	}

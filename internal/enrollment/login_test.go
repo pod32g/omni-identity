@@ -3,6 +3,8 @@ package enrollment_test
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/pod32g/omni-identity/internal/enrollment"
+	"github.com/pod32g/omni-identity/internal/model"
 )
 
 // scriptConv is a scripted PAM conversation.
@@ -337,3 +340,85 @@ func dialRetry(t *testing.T, sock string) net.Conn {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// The local token broker: a signed-in user's process gets an audience-bound
+// token; others get nothing.
+func TestBrokerIssuesAudienceTokensForSignedInUsers(t *testing.T) {
+	accounts := newFakeAccounts()
+	ti, agent := enrolledAgent(t, accounts)
+	// A registered local application.
+	now := time.Now().UTC()
+	if err := ti.DB.CreateClient(context.Background(), &model.Client{ClientID: "omni-metrics", Name: "metrics", Type: model.ClientTypeConfidential,
+		AllowedScopes: []string{"openid", "email"}, RedirectURIs: []string{"https://m/cb"}, CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	// alice signs in online so a device-bound refresh token is cached.
+	conv := &scriptConv{answers: []string{"", "hunter2xyz", "hunter2xyz"}}
+	verdict := make(chan enrollment.Verdict, 1)
+	go func() {
+		verdict <- agent.Login(context.Background(), conv, enrollment.LoginContext{Username: "alice"}, accounts, enrollment.DefaultLoginPolicy)
+	}()
+	ti.approvePending(t)
+	if v := <-verdict; v != enrollment.VerdictOK {
+		t.Fatalf("login: %d\n%s", v, conv.transcript())
+	}
+	alice, _ := agent.LoadUserCache("alice")
+
+	short, _ := os.MkdirTemp("/tmp", "omni-brk")
+	t.Cleanup(func() { _ = os.RemoveAll(short) })
+	agent.RuntimeDir = short
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var peer int
+	fakePeer := func(*net.UnixConn) (int, error) { return peer, nil }
+	pol := enrollment.BrokerPolicy{Audiences: []string{"omni-metrics"}}
+	go func() { _ = agent.ServeBroker(ctx, pol, fakePeer, func(string, ...any) {}) }()
+	time.Sleep(100 * time.Millisecond)
+
+	peer = alice.UID
+	tok, exp, err := enrollment.RequestBrokerToken(short, "omni-metrics", "")
+	if err != nil {
+		t.Fatalf("broker: %v", err)
+	}
+	if exp <= 0 || tok == "" {
+		t.Fatalf("token = %q exp=%d", tok, exp)
+	}
+	claims, err := parseUnverified(tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims["sub"] != ti.User.ID || claims["aud"] != "omni-metrics" || claims["device_id"] != alice.DeviceID || claims["act"].(map[string]any)["sub"] != alice.DeviceID {
+		t.Errorf("claims = %v", claims)
+	}
+	if _, _, err := enrollment.RequestBrokerToken(short, "jellyfin", ""); err == nil || !strings.Contains(err.Error(), "not allowed") {
+		t.Errorf("disallowed audience: %v", err)
+	}
+	peer = 0
+	if _, _, err := enrollment.RequestBrokerToken(short, "omni-metrics", ""); err == nil || !strings.Contains(err.Error(), "root") {
+		t.Errorf("root caller: %v", err)
+	}
+	peer = alice.UID + 7 // some other local uid, never signed in
+	if _, _, err := enrollment.RequestBrokerToken(short, "omni-metrics", ""); err == nil || !strings.Contains(err.Error(), "not a signed-in") {
+		t.Errorf("stranger caller: %v", err)
+	}
+	// Revocation closes the broker for that user.
+	alice.Revoked = true
+	_ = agent.SaveUserCache(alice)
+	peer = alice.UID
+	if _, _, err := enrollment.RequestBrokerToken(short, "omni-metrics", ""); err == nil || !strings.Contains(err.Error(), "revoked") {
+		t.Errorf("revoked caller: %v", err)
+	}
+}
+
+func parseUnverified(raw string) (map[string]any, error) {
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		return nil, errors.New("not a jwt")
+	}
+	b, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	return m, json.Unmarshal(b, &m)
+}

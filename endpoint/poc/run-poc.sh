@@ -139,7 +139,10 @@ post --data-urlencode "username=alice" --data-urlencode "email=alice@example.com
      --data-urlencode "password=$ALICE_PW" "$ISSUER_LOCAL/admin/users"
 post --data-urlencode "username=bob" --data-urlencode "email=bob@example.com" \
      --data-urlencode "password=$BOB_PW" "$ISSUER_LOCAL/admin/users"
-pass "admin + alice + bob created"
+# A local application the token broker may issue tokens for.
+post --data-urlencode "name=Omni Metrics" --data-urlencode "client_id=omni-metrics" --data-urlencode "type=confidential" \
+     --data-urlencode "redirect_uris=https://metrics.example/cb" --data-urlencode "scopes=openid email profile" "$ISSUER_LOCAL/admin/clients"
+pass "admin + alice + bob + omni-metrics client created"
 
 step "Starting the endpoint container ($POC_BASE, sshd + pam_omni)"
 docker run -d --name "$EP" --network "$NET" --add-host=host.docker.internal:host-gateway \
@@ -163,7 +166,7 @@ DEVICE_ID="$(docker exec "$EP" omni-enrollment status --json | sed -n 's/.*"devi
 pass "device $DEVICE_ID enrolled to alice; private key stayed in /var/lib/omni-enrollment"
 
 step "Starting the enrollment daemon (renewal + PAM socket)"
-docker exec -d "$EP" sh -c "omni-enrollment daemon --refresh-interval 15s > /var/log/omni-enrollment.log 2>&1"
+docker exec -d -e OMNI_ENROLLMENT_BROKER_AUDIENCES=omni-metrics "$EP" sh -c "omni-enrollment daemon --refresh-interval 15s > /var/log/omni-enrollment.log 2>&1"
 sleep 3
 docker exec "$EP" test -S /run/omni-enrollment/pam.sock
 docker exec "$EP" test -S /run/omni-enrollment/nss.sock
@@ -175,6 +178,16 @@ docker exec "$EP" grep -q '^alice:' /etc/passwd && { echo "alice must not be in 
 docker exec "$EP" /poc/ssh-login.exp alice online "$LOCAL_PW"
 docker exec "$EP" sh -c 'stat -c "%U %a %n" /home/alice'
 pass "alice authenticated via Omni through PAM; identity via NSS; home created; local offline password set"
+
+step "Local token broker: alice's own process gets an omni-metrics token; root and bob do not"
+TOK="$(docker exec "$EP" su - alice -c 'omni-enrollment token --audience omni-metrics')"
+payload="$(echo "$TOK" | cut -d. -f2 | tr '_-' '/+')"
+pad=$(( (4 - ${#payload} % 4) % 4 )); while [ $pad -gt 0 ]; do payload="$payload="; pad=$((pad-1)); done
+echo "$payload" | base64 -d | grep -q '"aud":"omni-metrics"' || { echo "token lacks the audience"; exit 1; }
+echo "$payload" | base64 -d | grep -q '"act":{"sub":"' || { echo "token lacks the act claim"; exit 1; }
+docker exec "$EP" sh -c 'omni-enrollment token --audience omni-metrics 2>&1 | grep -q "root" || { echo "root got a token"; exit 1; }'
+(docker exec "$EP" su - alice -c 'omni-enrollment token --audience jellyfin' 2>&1 || true) | grep -q "not allowed" || { echo "disallowed audience issued"; exit 1; }
+pass "broker issued an audience-bound token to alice only (RFC 8693 with the device as actor)"
 
 step "Scenario 26 (non-owner): bob's first ever SSH login, resolved through NSS + Omni lookup"
 docker exec "$EP" sh -c 'getent passwd bob | grep -q "^bob:" && ! grep -q "^bob:" /etc/passwd'
@@ -192,7 +205,7 @@ pass "wrong local password refused"
 step "Scenario 32: break-glass omni-recovery works without Omni, network, or the daemon"
 docker exec "$EP" pkill -f 'omni-enrollment daemon' || true
 docker exec "$EP" /poc/recovery-login.exp "$RECOVERY_PW"
-docker exec -d "$EP" sh -c "omni-enrollment daemon --refresh-interval 15s >> /var/log/omni-enrollment.log 2>&1"
+docker exec -d -e OMNI_ENROLLMENT_BROKER_AUDIENCES=omni-metrics "$EP" sh -c "omni-enrollment daemon --refresh-interval 15s >> /var/log/omni-enrollment.log 2>&1"
 pass "omni-recovery logged in over SSH via pam_unix and used sudo, with daemon stopped and network down"
 
 step "Scenario 33-34: reconnect -> device trust refresh"

@@ -101,6 +101,8 @@ func (s *Server) handleToken(w http.ResponseWriter, r *http.Request) {
 		s.grantDeviceCode(w, r)
 	case oidc.GrantTypeJWTBearer:
 		s.grantJWTBearer(w, r)
+	case oidc.GrantTypeTokenExchange:
+		s.grantTokenExchange(w, r)
 	default:
 		oauthError(w, http.StatusBadRequest, "unsupported_grant_type", "unsupported grant_type")
 	}

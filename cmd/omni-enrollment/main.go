@@ -63,6 +63,8 @@ func main() {
 		err = runDaemon(args)
 	case "pam-test":
 		err = runPAMTest(args)
+	case "token":
+		err = runToken(args)
 	case "version", "-v", "--version":
 		fmt.Println("omni-enrollment", version)
 	case "help", "-h", "--help":
@@ -90,6 +92,7 @@ Commands:
   unenroll    Revoke this device server-side and remove local state
   daemon      Run the renewal loop + PAM socket (used by the systemd service)
   pam-test    Run the Linux login conversation for a user on this terminal
+  token       Ask the local broker for an access token (--audience <client id>)
   version     Print the version
 
 Run "omni-enrollment <command> -h" for command-specific flags.
@@ -98,17 +101,18 @@ Run "omni-enrollment <command> -h" for command-specific flags.
 
 // fileConfig mirrors /etc/omni-enrollment/config.yaml.
 type fileConfig struct {
-	Issuer            string `yaml:"issuer"`
-	ClientID          string `yaml:"client_id"`
-	StateDir          string `yaml:"state_dir"`
-	RuntimeDir        string `yaml:"runtime_dir"`
-	Name              string `yaml:"name"`
-	AllowInsecureHTTP bool   `yaml:"allow_insecure_http"`
-	CAFile            string `yaml:"ca_file"`
-	OfflineValidity   string `yaml:"offline_validity"`
-	LoginShell        string `yaml:"login_shell"`
-	RefreshInterval   string `yaml:"refresh_interval"`
-	QR                string `yaml:"qr"`
+	Issuer            string   `yaml:"issuer"`
+	ClientID          string   `yaml:"client_id"`
+	StateDir          string   `yaml:"state_dir"`
+	RuntimeDir        string   `yaml:"runtime_dir"`
+	Name              string   `yaml:"name"`
+	AllowInsecureHTTP bool     `yaml:"allow_insecure_http"`
+	CAFile            string   `yaml:"ca_file"`
+	OfflineValidity   string   `yaml:"offline_validity"`
+	LoginShell        string   `yaml:"login_shell"`
+	RefreshInterval   string   `yaml:"refresh_interval"`
+	QR                string   `yaml:"qr"`
+	BrokerAudiences   []string `yaml:"broker_audiences"`
 }
 
 // commonFlags registers the shared flags and returns a resolver applying
@@ -161,6 +165,10 @@ func commonFlags(fs *flag.FlagSet) func() (enrollment.Config, error) {
 			}
 		}
 		cfg.LoginShell = pick(cfg.LoginShell, "OMNI_ENROLLMENT_LOGIN_SHELL", fc.LoginShell, "")
+		cfg.BrokerAudiences = fc.BrokerAudiences
+		if v := os.Getenv("OMNI_ENROLLMENT_BROKER_AUDIENCES"); v != "" {
+			cfg.BrokerAudiences = strings.Fields(strings.ReplaceAll(v, ",", " "))
+		}
 		flagQR := ""
 		switch {
 		case *noQR:
@@ -316,7 +324,35 @@ func runDaemon(args []string) error {
 	return agentFor(cfg).RunDaemon(ctx, enrollment.DaemonOptions{
 		Accounts: enrollment.PasswdFile{}, Policy: cfg.Policy(),
 		RefreshEvery: cfg.RefreshInterval, ServePAM: true,
+		Broker: enrollment.BrokerPolicy{Audiences: cfg.BrokerAudiences},
 	}, log.Printf)
+}
+
+// runToken asks the daemon's broker for a token as the calling user and
+// prints it (or JSON with --json) for scripts and local apps.
+func runToken(args []string) error {
+	fs := flag.NewFlagSet("token", flag.ExitOnError)
+	resolve := commonFlags(fs)
+	audience := fs.String("audience", "", "client id of the application the token is for (required)")
+	scope := fs.String("scope", "", "requested scope (default: everything the login granted that the audience allows)")
+	asJSON := fs.Bool("json", false, "print {access_token, expires_in} as JSON")
+	_ = fs.Parse(args)
+	cfg, err := resolve()
+	if err != nil {
+		return err
+	}
+	if *audience == "" {
+		return errors.New("--audience is required")
+	}
+	tok, expires, err := enrollment.RequestBrokerToken(cfg.RuntimeDir, *audience, *scope)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{"access_token": tok, "expires_in": expires, "token_type": "Bearer"})
+	}
+	fmt.Println(tok)
+	return nil
 }
 
 // runPAMTest drives the login conversation on the terminal without PAM, for
