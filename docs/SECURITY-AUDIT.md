@@ -83,3 +83,16 @@ normalization is lossless and full entropy is preserved.
 
 `go build ./...`, `go vet ./...`, and `go test ./...` pass after remediation,
 including the new `TestIntrospectionRejectsOtherClientsToken` regression test.
+
+## Addendum (2026-09-02): device identity, passkeys, Linux login
+
+The device-identity work has its own security documentation:
+[DEVICE-THREAT-MODEL.md](DEVICE-THREAT-MODEL.md) (assets, boundaries,
+threats/controls, residual risks) and the security sections of
+[DEVICE-IDENTITY-ARCHITECTURE.md](DEVICE-IDENTITY-ARCHITECTURE.md) (§5.3
+enrollment resistance, §9 revocation semantics), [PASSKEYS.md](PASSKEYS.md)
+(what WebAuthn checks are enforced, MFA policy), and
+[LINUX-LOGIN-ARCHITECTURE.md](LINUX-LOGIN-ARCHITECTURE.md) (§3.4 break-glass,
+§5 offline credential). Security-relevant regression tests:
+`internal/pop/pop_test.go`, `internal/web/device_flow_test.go`,
+`internal/web/webauthn_test.go`, `internal/enrollment/{agent,login}_test.go`.

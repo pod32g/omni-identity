@@ -36,11 +36,33 @@ first, one binary, SQLite.
 - Minimal admin UI: users, applications (clients), branding settings
 - First-run web wizard to create the initial admin
 - Token revocation (RFC 7009) for refresh tokens
+- **Passkeys / WebAuthn** for local *and* LDAP-backed users: discoverable and
+  username-first login, per-credential naming/removal, admin reset; a passkey
+  with user verification counts as phishing-resistant MFA (no TOTP prompt)
+- **Device identity**: endpoints enroll with their own locally generated key
+  (RFC 8628 device grant + DPoP), authenticate with RFC 7523 signed
+  assertions, and get short-lived device tokens; users see and revoke their
+  devices under *My Devices*, admins under *Devices*
+- **`omni-enrollment`** Linux agent + `pam_omni.so`: Omni-backed Linux login
+  with an offline local password, background trust refresh, and revocation
+  propagation — see the docs below
 - Structured request logging and a basic Prometheus-style `/metrics` endpoint
 - Single binary + SQLite
 
 See [docs/INTEGRATION.md](docs/INTEGRATION.md) for how applications add a
 **"Continue with Omni Identity"** button using Authorization Code + PKCE.
+
+Device identity, passkeys, and Linux login:
+
+| Document | Contents |
+|---|---|
+| [docs/DEVICE-IDENTITY-ARCHITECTURE.md](docs/DEVICE-IDENTITY-ARCHITECTURE.md) | standards evaluated, enrollment and device-authentication protocol, token claims, revocation, key rotation |
+| [docs/DEVICE-THREAT-MODEL.md](docs/DEVICE-THREAT-MODEL.md) | assets, trust boundaries, threats and controls, residual risks |
+| [docs/OMNI-ENROLLMENT.md](docs/OMNI-ENROLLMENT.md) | the endpoint agent: install, commands, files, daemon |
+| [docs/PASSKEYS.md](docs/PASSKEYS.md) | WebAuthn implementation and the MFA policy |
+| [docs/LINUX-LOGIN-ARCHITECTURE.md](docs/LINUX-LOGIN-ARCHITECTURE.md) | Linux stack research, alternatives, chosen PAM/daemon design, offline policy |
+| [docs/LINUX-LOGIN-POC.md](docs/LINUX-LOGIN-POC.md) | the automated container PoC, manual VM procedure, break-glass |
+| [docs/ARCHITECTURE-ANALYSIS.md](docs/ARCHITECTURE-ANALYSIS.md) | map of the existing codebase these features plug into |
 
 ## Build
 
@@ -150,7 +172,7 @@ SQLite-specific maintenance (`backup`, `integrity`) is not available on Postgres
 The `security`, `cookies`, `uploads`, and identity (`issuer`/`public_url`) values above are
 **seeded from config on first start**, then become editable from
 **Admin → Settings** and apply **live** (no restart): token/refresh TTLs, lockout
-threshold + duration, rate-limit window, pre-hash IP budget, password-verification
+threshold + duration, device token TTL, rate-limit window, pre-hash IP budget, password-verification
 concurrency, login field caps, redirect URI loopback / private-network policy, password minimum
 length, session lifetime + idle timeout, logo upload size, the cookie `Secure`
 flag, and the issuer/public URL. A "Reset to config defaults"
@@ -252,9 +274,14 @@ run the gated LDAP integration test, set `OMNI_TEST_LDAP_URL` (plus the
 ### Observability (logs & metrics)
 
 - **Metrics** — `GET /metrics` exposes Prometheus text: HTTP request counts by
-  status, plus identity series `omni_identity_logins_total{source,result}`,
+  status, plus identity series `omni_identity_logins_total{source,result}`
+  (sources `local`, `ldap`, `passkey`, `unknown`),
   `omni_identity_mfa_total{result}`, `omni_identity_tokens_issued_total{type}`,
-  the `omni_identity_active_sessions` gauge, and `omni_identity_build_info`. Point
+  `omni_identity_device_enrollments_total{result}`,
+  `omni_identity_device_auth_total{result}`,
+  `omni_identity_device_grants_total{result}`, the
+  `omni_identity_active_sessions` / `omni_identity_devices_active` gauges, and
+  `omni_identity_build_info`. Point
   any Prometheus-compatible scraper (e.g. omni-metrics) at it.
 - **Log verbosity** — logs are structured JSON on stdout. The signal is the
   audit-event stream (`login.success`, `admin.user.created`, …); per-request
@@ -311,8 +338,14 @@ omni-identity healthcheck --url http://localhost:8080/healthz          # 2xx = h
 | Revocation | `/oauth2/revoke` |
 | UserInfo | `/userinfo` |
 | JWKS | `/jwks.json` |
+| Device authorization (RFC 8628) | `/oauth2/device_authorization`, user page `/device` |
+| Device enrollment / self API | `/api/v1/devices`, `/api/v1/devices/me[/key\|/unenroll]` |
 | Login / Logout | `/login`, `/logout` |
 | Health / Metrics | `/healthz`, `/metrics` |
+
+Additional grant types at `/oauth2/token`: `urn:ietf:params:oauth:grant-type:device_code`
+and `urn:ietf:params:oauth:grant-type:jwt-bearer` (device assertions). DPoP
+(RFC 9449) proofs are honoured on every grant and bind the issued tokens.
 
 `/metrics` is disabled unless `metrics.bearer_token` or `OMNI_METRICS_TOKEN` is
 set. Scrape it with `Authorization: Bearer <token>`.
@@ -356,10 +389,12 @@ pre-deploy DB backup, integrity check, and auto-heal. See
 make compose-up      # build + run locally via docker compose (uses .env)
 ```
 
-## Non-goals (V1)
+## Non-goals
 
-MFA, passkeys, LDAP, SAML, SCIM, social login, organizations, multi-tenancy,
-complex RBAC, service accounts, API keys, audit-log UI, federation.
+SAML, SCIM, social login, organizations, multi-tenancy, complex RBAC, service
+accounts, API keys, federation, MDM/remote management, a VPN, an LDAP server,
+Kerberos, or an operating system. Omni Identity stays one binary a single
+person can run.
 
 ## License
 

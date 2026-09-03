@@ -179,3 +179,19 @@ Otherwise it shows the branded "You've signed out" page.
 - Always validate `state` (CSRF) and the `id_token` (`iss`, `aud`, `exp`,
   `nonce`, signature).
 - Never collect or store the user's Omni Identity password in your application.
+
+
+## Optional claims: `amr`, `device_id`, `device_trust`
+
+ID tokens now carry the standard `amr` claim (RFC 8176 values such as
+`["pwd","otp","mfa"]` or `["webauthn","user","mfa"]` for a passkey with user
+verification). Your application can require a stronger method by inspecting
+it; ignoring it keeps today's behaviour.
+
+`device_id` and `device_trust` appear **only** on tokens issued through a
+device-authenticated grant (an enrolled machine running `omni-enrollment`);
+ordinary Authorization Code / refresh / client-credentials tokens never carry
+them. When present they are asserted by Omni after a proof of possession of
+the device key. See
+[DEVICE-IDENTITY-ARCHITECTURE.md §7](DEVICE-IDENTITY-ARCHITECTURE.md) for the
+exact rules and [PASSKEYS.md](PASSKEYS.md) for the `amr` values.
