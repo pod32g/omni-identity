@@ -1,9 +1,12 @@
-# The "disposable Linux VM" of the PoC: Debian stable (slim) with sshd, the pam_omni
-# module built from source, the omni-enrollment agent, and the expect scripts
-# that stand in for a human at the login prompt. No systemd: the daemon is
-# started as a plain background process (the systemd unit is in
-# endpoint/systemd for real installs).
-FROM debian:stable-slim
+# The "disposable Linux VM" of the PoC: Ubuntu 24.04 (the brief's suggested
+# distribution; override BASE for hosts that cannot pull it, e.g.
+# --build-arg BASE=debian:stable-slim) with sshd, the pam_omni module built
+# from source, the omni-enrollment agent, and the expect scripts that stand in
+# for a human at the login prompt. No systemd: the daemon is started as a
+# plain background process (the systemd unit is in endpoint/systemd for real
+# installs).
+ARG BASE=ubuntu:24.04
+FROM ${BASE}
 ARG TARGETARCH
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \

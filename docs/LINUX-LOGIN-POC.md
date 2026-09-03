@@ -4,21 +4,24 @@
 Linux user identity using Omni Identity?* — Yes, with the design in
 [LINUX-LOGIN-ARCHITECTURE.md](LINUX-LOGIN-ARCHITECTURE.md).
 
-The PoC uses a **disposable Debian stable container** as the endpoint (this
-Mac has Docker but no VM tooling; the same files install unchanged on a real
-Fedora/Ubuntu VM — see §4). It exercises brief scenarios 26–35 end to end and
-is fully automated:
+The PoC uses a **disposable Ubuntu 24.04 container** as the endpoint (a
+container rather than a VM because the developer Mac has Docker but no VM
+tooling; the same files install unchanged on a real Fedora/Ubuntu VM — see
+§2). It exercises brief scenarios 26–35 end to end, is fully automated, and
+runs in CI on every push as the `linux-login-poc` job (Ubuntu runner host,
+Ubuntu container endpoint):
 
 ```bash
-endpoint/poc/run-poc.sh          # ~5 min on first run (image builds)
-endpoint/poc/run-poc.sh --keep   # keep the containers to poke at
+endpoint/poc/run-poc.sh                              # ~5 min on first run (image builds)
+endpoint/poc/run-poc.sh --keep                       # keep the containers to poke at
+POC_BASE=debian:stable-slim endpoint/poc/run-poc.sh  # hosts that cannot pull ubuntu:24.04
 ```
 
 ## 1. What the harness does
 
 | Step | Scenario | Evidence printed |
 |---|---|---|
-| Build `omni-identity` for the host and `omni-endpoint:poc` (sshd + `pam_omni.so` compiled from `endpoint/pam` + `omni-enrollment`) | — | image id |
+| Build `omni-identity` for the host and `omni-endpoint:poc` (Ubuntu 24.04 + sshd + `pam_omni.so` compiled from `endpoint/pam` + `omni-enrollment`) | — | image id |
 | Start Omni natively on `127.0.0.1:18080` with public URL `http://host.docker.internal:18080` (insecure-HTTP opt-in), bootstrap `admin` and `alice` through the real setup wizard and admin UI | — | `PASS: admin + alice created` |
 | `omni-enrollment enroll` in the endpoint; the code is approved *as alice* through the real `/device` pages (the `approve.sh` script stands in for her phone) | 7–12 | enrollment transcript, `omni-enrollment status` |
 | Start `omni-enrollment daemon --refresh-interval 15s` (no systemd in a container) | 13–14 | socket present |

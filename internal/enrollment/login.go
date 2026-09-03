@@ -387,7 +387,7 @@ func (a *Agent) onlineLogin(ctx context.Context, conv Conversation, name string,
 
 // chooseLocalSecret asks the user for the machine-local offline password.
 func (a *Agent) chooseLocalSecret(conv Conversation, uc *UserCache, pol LoginPolicy) bool {
-	conv.Info("Choose a local password for this machine. It is used only when Omni Identity is unreachable and is never sent anywhere.")
+	conv.Info("Choose a local password for this machine. It is used only when Omni Identity cannot be reached and is never sent anywhere.")
 	for attempt := 0; attempt < 3; attempt++ {
 		p1, err := conv.Prompt("New local password: ", false)
 		if err != nil {

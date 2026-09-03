@@ -7,6 +7,11 @@
 #
 #   endpoint/poc/run-poc.sh          # run everything, clean up at the end
 #   endpoint/poc/run-poc.sh --keep   # leave containers running for inspection
+#   POC_BASE=debian:stable-slim endpoint/poc/run-poc.sh   # other endpoint base image
+#
+# Works on Docker Desktop (macOS) and on Linux hosts such as the GitHub
+# runner: the endpoint reaches the host's Omni through host.docker.internal,
+# mapped to the host gateway explicitly.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
@@ -23,6 +28,11 @@ ALICE_PW="Al1ce-$(openssl rand -hex 6)"
 RECOVERY_PW="Rec0very-$(openssl rand -hex 6)"
 LOCAL_PW="local-offline-pw-$(openssl rand -hex 3)"
 ARCH="$(docker version --format '{{.Server.Arch}}')"
+POC_BASE="${POC_BASE:-ubuntu:24.04}"
+# On Linux the container reaches the host via the docker0 gateway, so Omni
+# must listen beyond loopback there; Docker Desktop routes host.docker.internal
+# to loopback, so 127.0.0.1 suffices on macOS.
+HOST_BIND=127.0.0.1; [[ "$(uname -s)" == Linux ]] && HOST_BIND=0.0.0.0
 
 step() { printf '\n\033[1;34m==> %s\033[0m\n' "$*"; }
 pass() { printf '\033[1;32m    PASS: %s\033[0m\n' "$*"; }
@@ -53,10 +63,10 @@ post() { curl -fsS -b "$JAR" -c "$JAR" -o /dev/null --data-urlencode "csrf_token
 step "Building omni-identity (host) and the endpoint image"
 go build -o "$WORK/omni-identity" ./cmd/omni-identity
 make -s build-enrollment ARCH="$ARCH"
-docker build -q -f endpoint/poc/Dockerfile.endpoint -t omni-endpoint:poc . >/dev/null
+docker build -q --build-arg BASE="$POC_BASE" -f endpoint/poc/Dockerfile.endpoint -t omni-endpoint:poc . >/dev/null
 
 step "Starting Omni Identity on $ISSUER_LOCAL (public URL $ISSUER)"
-OMNI_SERVER_HOST=127.0.0.1 OMNI_SERVER_PORT="$PORT" OMNI_SERVER_PUBLIC_URL="$ISSUER" \
+OMNI_SERVER_HOST="$HOST_BIND" OMNI_SERVER_PORT="$PORT" OMNI_SERVER_PUBLIC_URL="$ISSUER" \
   OMNI_ALLOW_INSECURE_HTTP=true OMNI_COOKIES_SECURE=false OMNI_SETUP_TOKEN="$SETUP_TOKEN" \
   OMNI_DATABASE_PATH="$WORK/omni.db" "$WORK/omni-identity" serve -config /dev/null > "$WORK/omni.log" 2>&1 &
 OMNI_PID=$!
@@ -73,8 +83,9 @@ post --data-urlencode "username=alice" --data-urlencode "email=alice@example.com
      --data-urlencode "password=$ALICE_PW" "$ISSUER_LOCAL/admin/users"
 pass "admin + alice created"
 
-step "Starting the endpoint container (Debian stable, sshd + pam_omni)"
-docker run -d --name "$EP" --network "$NET" -e RECOVERY_PASSWORD="$RECOVERY_PW" \
+step "Starting the endpoint container ($POC_BASE, sshd + pam_omni)"
+docker run -d --name "$EP" --network "$NET" --add-host=host.docker.internal:host-gateway \
+  -e RECOVERY_PASSWORD="$RECOVERY_PW" \
   -e OMNI_ISSUER="$ISSUER" -e OMNI_USER=alice -e OMNI_PASSWORD="$ALICE_PW" omni-endpoint:poc >/dev/null
 sleep 2
 

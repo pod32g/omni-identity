@@ -43,6 +43,21 @@ jobs:
       - run: npm run typecheck
       - run: npm test
 
+  linux-login-poc:
+    # Scenarios 26-35 of the device-identity brief: enroll a disposable Ubuntu
+    # container, log in over SSH/PAM through Omni, go offline, use the
+    # break-glass account, reconnect, revoke. Runs on the GitHub-hosted runner
+    # (Omni on the host, endpoint in Docker). Informational for now: it does
+    # not gate the deploy until it has proven stable.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: Go toolchain (go.mod pins it; GOTOOLCHAIN=auto fetches it)
+        run: go version && go env GOTOOLCHAIN
+      - name: Run the Linux login proof of concept
+        run: endpoint/poc/run-poc.sh
+
   deploy:
     needs: [build, design-system]
     if: github.ref == 'refs/heads/main'   # only main deploys
