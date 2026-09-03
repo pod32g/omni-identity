@@ -329,14 +329,20 @@ func (a *Agent) Unenroll(ctx context.Context) error {
 
 // DaemonOptions tunes RunDaemon.
 type DaemonOptions struct {
+	// Accounts is the machine's account database for the Linux login
+	// integration (defaults to PasswdFile when ServePAM is set; otherwise
+	// nil, and no account is ever provisioned).
 	Accounts LocalAccounts
 	Policy   LoginPolicy
 	// RefreshEvery caps the renewal interval (0 = half the device-token
 	// lifetime). Also drives the per-user trust refresh.
 	RefreshEvery time.Duration
-	// ServePAM starts the PAM and NSS sockets (Linux login integration).
+	// ServePAM starts the PAM and NSS sockets and pre-provisions the owner's
+	// account (Linux login integration). Off on other platforms, where the
+	// daemon only renews the device token and brokers tokens.
 	ServePAM bool
-	// Broker enables the local token broker socket for the listed audiences.
+	// Broker enables the local token broker socket for the listed audiences,
+	// with or without the login integration.
 	Broker BrokerPolicy
 	// PeerUID overrides peer-credential resolution (tests).
 	PeerUID PeerUID
@@ -344,26 +350,26 @@ type DaemonOptions struct {
 
 // RunDaemon renews the device token on a schedule (half its lifetime, at
 // least every minute, backing off while Omni is unreachable), refreshes the
-// cached Linux users' trust, serves the PAM socket, and keeps status.json
-// current. It exits when ctx is cancelled. It deliberately does nothing else:
-// no remote commands, no policy, no MDM.
+// cached users' trust, serves the PAM/NSS sockets when asked to, serves the
+// token broker when audiences are configured, and keeps status.json current.
+// It exits when ctx is cancelled. It deliberately does nothing else: no
+// remote commands, no policy, no MDM.
 func (a *Agent) RunDaemon(ctx context.Context, opt DaemonOptions, logf func(string, ...any)) error {
-	if _, err := LoadState(a.StateDir); err != nil {
+	st, err := LoadState(a.StateDir)
+	if err != nil {
 		return err
 	}
-	if opt.Accounts == nil {
+	if opt.Accounts == nil && opt.ServePAM {
 		opt.Accounts = PasswdFile{}
 	}
 	if opt.Policy.OfflineValidity <= 0 {
 		opt.Policy = DefaultLoginPolicy
 	}
 	a.logf = logf
-	if st, err := LoadState(a.StateDir); err == nil {
+	if opt.ServePAM {
 		if err := a.EnsureOwnerAccount(st, opt.Accounts); err != nil {
 			logf("prepare owner identity: %v", err)
 		}
-	}
-	if opt.ServePAM {
 		go func() {
 			if err := a.ServePAM(ctx, opt.Accounts, opt.Policy, logf); err != nil {
 				logf("pam socket: %v", err)
@@ -374,6 +380,8 @@ func (a *Agent) RunDaemon(ctx context.Context, opt DaemonOptions, logf func(stri
 				logf("nss socket: %v", err)
 			}
 		}()
+	}
+	if len(opt.Broker.Audiences) > 0 {
 		go func() {
 			if err := a.ServeBroker(ctx, opt.Broker, opt.PeerUID, logf); err != nil {
 				logf("broker socket: %v", err)

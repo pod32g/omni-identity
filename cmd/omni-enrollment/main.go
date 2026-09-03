@@ -26,6 +26,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -243,7 +244,18 @@ func envOr(key, def string) string {
 
 func agentFor(cfg enrollment.Config) *enrollment.Agent {
 	return &enrollment.Agent{StateDir: cfg.StateDir, RuntimeDir: cfg.RuntimeDir, Out: os.Stdout,
-		Accounts: enrollment.PasswdFile{}, Policy: cfg.Policy()}
+		Accounts: localAccounts(), Policy: cfg.Policy()}
+}
+
+// localAccounts is the machine's account database on Linux, where the agent
+// provisions login identities (PAM/NSS). Elsewhere it is nil: no account is
+// pre-provisioned and the daemon only renews the device token and brokers
+// tokens for the desktop user.
+func localAccounts() enrollment.LocalAccounts {
+	if runtime.GOOS == "linux" {
+		return enrollment.PasswdFile{}
+	}
+	return nil
 }
 
 func signalContext() (context.Context, context.CancelFunc) {
@@ -359,8 +371,8 @@ func runDaemon(args []string) error {
 	log.SetFlags(0)
 	log.Printf("omni-enrollment daemon %s starting (state %s)", version, cfg.StateDir)
 	return agentFor(cfg).RunDaemon(ctx, enrollment.DaemonOptions{
-		Accounts: enrollment.PasswdFile{}, Policy: cfg.Policy(),
-		RefreshEvery: cfg.RefreshInterval, ServePAM: true,
+		Accounts: localAccounts(), Policy: cfg.Policy(),
+		RefreshEvery: cfg.RefreshInterval, ServePAM: runtime.GOOS == "linux",
 		Broker: enrollment.BrokerPolicy{Audiences: cfg.BrokerAudiences},
 	}, log.Printf)
 }
