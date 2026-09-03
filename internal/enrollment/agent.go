@@ -40,6 +40,16 @@ type Config struct {
 	LoginShell      string
 	// RefreshInterval caps the daemon's renewal/trust-refresh cadence.
 	RefreshInterval time.Duration
+	// QR controls the terminal QR code under the verification URL: dark
+	// (default), light, or off.
+	QR string
+}
+
+func (c Config) qrMode() string {
+	if c.QR == "" {
+		return QRDark
+	}
+	return c.QR
 }
 
 // Policy renders the login policy from the config with defaults applied.
@@ -50,6 +60,9 @@ func (c Config) Policy() LoginPolicy {
 	}
 	if c.LoginShell != "" {
 		pol.LoginShell = c.LoginShell
+	}
+	if c.QR != "" {
+		pol.QR = c.QR
 	}
 	return pol
 }
@@ -94,8 +107,12 @@ func (a *Agent) Enroll(ctx context.Context, cfg Config) (*State, error) {
 	if err != nil {
 		return nil, fmt.Errorf("start enrollment: %w", err)
 	}
-	fmt.Fprintf(a.Out, "Authenticate with Omni Identity:\n\n    %s\n\n    (or open %s and enter the code %s)\n\nWaiting for approval...",
+	fmt.Fprintf(a.Out, "Authenticate with Omni Identity:\n\n    %s\n\n    (or open %s and enter the code %s)\n\n",
 		da.VerificationURIComplete, da.VerificationURI, da.UserCode)
+	if qr, err := RenderQR(da.VerificationURIComplete, cfg.qrMode()); err == nil && qr != "" {
+		fmt.Fprintln(a.Out, qr)
+	}
+	fmt.Fprint(a.Out, "Waiting for approval...")
 
 	tok, err := client.WaitForDeviceCode(ctx, da, "", func() { fmt.Fprint(a.Out, ".") })
 	fmt.Fprintln(a.Out)

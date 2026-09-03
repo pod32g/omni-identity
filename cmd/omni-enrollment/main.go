@@ -107,6 +107,7 @@ type fileConfig struct {
 	OfflineValidity   string `yaml:"offline_validity"`
 	LoginShell        string `yaml:"login_shell"`
 	RefreshInterval   string `yaml:"refresh_interval"`
+	QR                string `yaml:"qr"`
 }
 
 // commonFlags registers the shared flags and returns a resolver applying
@@ -124,6 +125,8 @@ func commonFlags(fs *flag.FlagSet) func() (enrollment.Config, error) {
 	offline := fs.String("offline-validity", "", "how long offline login stays valid after the last trust refresh (default 168h)")
 	fs.StringVar(&cfg.LoginShell, "login-shell", "", "shell for provisioned accounts (default /bin/bash)")
 	refresh := fs.String("refresh-interval", "", "cap on the daemon's renewal/trust-refresh interval (default: half the device token lifetime)")
+	noQR := fs.Bool("no-qr", false, "do not print a QR code under the sign-in link")
+	qrLight := fs.Bool("qr-light", false, "render the QR code for a light terminal background")
 	return func() (enrollment.Config, error) {
 		var fc fileConfig
 		if raw, err := os.ReadFile(*configPath); err == nil {
@@ -157,6 +160,19 @@ func commonFlags(fs *flag.FlagSet) func() (enrollment.Config, error) {
 			}
 		}
 		cfg.LoginShell = pick(cfg.LoginShell, "OMNI_ENROLLMENT_LOGIN_SHELL", fc.LoginShell, "")
+		flagQR := ""
+		switch {
+		case *noQR:
+			flagQR = enrollment.QROff
+		case *qrLight:
+			flagQR = enrollment.QRLight
+		}
+		cfg.QR = pick(flagQR, "OMNI_ENROLLMENT_QR", fc.QR, enrollment.QRDark)
+		switch cfg.QR {
+		case enrollment.QROff, enrollment.QRDark, enrollment.QRLight:
+		default:
+			return cfg, fmt.Errorf("qr must be one of off, dark, light (got %q)", cfg.QR)
+		}
 		var derr error
 		if v := pick(*offline, "OMNI_ENROLLMENT_OFFLINE_VALIDITY", fc.OfflineValidity, ""); v != "" {
 			if cfg.OfflineValidity, derr = time.ParseDuration(v); derr != nil {

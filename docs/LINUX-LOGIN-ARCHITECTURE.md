@@ -66,7 +66,9 @@ Hard rule from the brief, honoured: PAM, NSS, logind, the display manager,
    possession of the enrolled key during the ceremony (brief §19).
 3. The user sees, through PAM messages: *Sign in at
    `https://identity.example/device?user_code=BCDF-GHJK`* — on any phone or
-   laptop. Omni's page shows *"Sign in on **omni-vm** (linux), enrolled by
+   laptop. On a console or SSH session the same link is also drawn as a
+   half-block QR code (`qr: dark|light|off`); graphical greeters, which use
+   proportional fonts, get the text only. Omni's page shows *"Sign in on **omni-vm** (linux), enrolled by
    alice"*; the user authenticates with password / LDAP / TOTP / passkey and
    approves.
 4. The daemon polls the token endpoint with the device token + DPoP and
@@ -233,6 +235,7 @@ because only standard PAM text prompts are used, but is not exercised.
 
 Not implemented: NSS module (needed for first-time SSH login of users other
 than the enrolling owner, see §4), group mapping, sudo policy, home-directory
-encryption, screen-lock integration beyond PAM, QR codes in greeters, TPM
-sealing, an `sssd-idp` profile, and an authd broker. None of these are needed
+encryption, screen-lock integration beyond PAM, QR codes in *graphical*
+greeters (consoles and SSH have them), TPM sealing, an `sssd-idp` profile,
+and an authd broker. None of these are needed
 to answer the PoC question.

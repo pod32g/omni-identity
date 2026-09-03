@@ -30,10 +30,11 @@ type LoginPolicy struct {
 	OfflineValidity time.Duration // offline login allowed while now < last_trust_refresh + this
 	LoginShell      string
 	MinLocalSecret  int
+	QR              string // QRDark | QRLight | QROff for console/SSH prompts
 }
 
 // DefaultLoginPolicy is a homelab-friendly default: a week offline.
-var DefaultLoginPolicy = LoginPolicy{OfflineValidity: 7 * 24 * time.Hour, LoginShell: "/bin/bash", MinLocalSecret: 8}
+var DefaultLoginPolicy = LoginPolicy{OfflineValidity: 7 * 24 * time.Hour, LoginShell: "/bin/bash", MinLocalSecret: 8, QR: QRDark}
 
 // UserCache is the per-user offline record. It never contains an Omni or
 // LDAP password; secret_hash is the hash of a password the user chose for
@@ -253,10 +254,10 @@ func (a *Agent) Login(ctx context.Context, conv Conversation, lc LoginContext, p
 			return VerdictFail
 		}
 	}
-	return a.onlineLogin(ctx, conv, name, uc, prov, pol, now)
+	return a.onlineLogin(ctx, conv, name, uc, prov, pol, now, qrForService(lc.Service))
 }
 
-func (a *Agent) onlineLogin(ctx context.Context, conv Conversation, name string, uc *UserCache, prov Provisioner, pol LoginPolicy, now time.Time) Verdict {
+func (a *Agent) onlineLogin(ctx context.Context, conv Conversation, name string, uc *UserCache, prov Provisioner, pol LoginPolicy, now time.Time, showQR bool) Verdict {
 	st, _, client, err := a.Open()
 	if err != nil {
 		conv.Error("omni: this machine is not enrolled")
@@ -296,8 +297,14 @@ func (a *Agent) onlineLogin(ctx context.Context, conv Conversation, name string,
 		tok, err := client.WaitForDeviceCode(wctx, da, devTok.AccessToken, nil)
 		polled <- pollResult{tok, err}
 	}()
-	prompt := fmt.Sprintf("Sign in with Omni Identity on any device:\n  %s\n  (code %s, expires in %d minutes)\nPress Enter after approving: ",
+	prompt := fmt.Sprintf("Sign in with Omni Identity on any device:\n  %s\n  (code %s, expires in %d minutes)\n",
 		da.VerificationURIComplete, da.UserCode, da.ExpiresIn/60)
+	if showQR {
+		if qr, err := RenderQR(da.VerificationURIComplete, pol.QR); err == nil && qr != "" {
+			prompt += qr
+		}
+	}
+	prompt += "Press Enter after approving: "
 	if _, err := conv.Prompt(prompt, true); err != nil {
 		cancel()
 		return VerdictFail

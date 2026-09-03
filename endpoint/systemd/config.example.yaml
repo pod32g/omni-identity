@@ -7,3 +7,6 @@ issuer: https://identity.example
 # name: omni-laptop
 # ca_file: /etc/omni-enrollment/ca.pem
 # allow_insecure_http: false   # private-network testing only
+# qr: dark            # QR code under sign-in links on consoles/SSH: dark (default) | light | off
+# offline_validity: 168h
+# login_shell: /bin/bash
