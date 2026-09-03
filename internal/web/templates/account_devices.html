@@ -6,7 +6,7 @@
     <h1>My Devices</h1>
     <p class="desc">Endpoints enrolled to your account. Revoke anything you no longer control.</p>
   </div>
-  <div class="actions"><a class="btn" href="/account">Account</a></div>
+  <div class="actions"><a class="btn primary" href="/account/enroll">Enroll a device</a> <a class="btn" href="/account" style="margin-left:6px">Account</a></div>
 </div>
 <div class="page-body">
   {{if .Error}}<div class="alert error">{{.Error}}</div>{{end}}
@@ -39,7 +39,7 @@
     <div class="empty">
       <span class="empty-ico">{{template "ic-grid" .}}</span>
       <div class="empty-title">No devices yet</div>
-      <div class="empty-hint">Run <code>omni-enrollment enroll</code> on a machine and approve it here to enroll it.</div>
+      <div class="empty-hint"><a href="/account/enroll">Download the agent</a>, run <code>omni-enrollment enroll</code> on a machine, and approve it here.</div>
     </div>
     {{end}}
   </div>

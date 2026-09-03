@@ -7,9 +7,17 @@ in their own browser and the agent only ever proves possession of the device
 key it generated locally. Protocol details: [DEVICE-IDENTITY-ARCHITECTURE.md](DEVICE-IDENTITY-ARCHITECTURE.md);
 what it does and does not protect against: [DEVICE-THREAT-MODEL.md](DEVICE-THREAT-MODEL.md).
 
-## Build
+## Get the binary
 
-Pure Go, no CGO, cross-compiles from any host:
+**From your Omni server (recommended).** The Docker image builds the agent for
+linux/amd64 and linux/arm64 — plus a tarball of the PAM module and systemd
+unit sources — from the same commit as the server, and serves them on
+**Account → Enroll a device** (`/account/enroll`) with SHA-256 checksums.
+The page shows copy-paste install commands with your issuer filled in. Files
+are public at `/downloads/<name>`; the server needs `downloads.dir`
+(`OMNI_DOWNLOADS_DIR`, set to `/downloads` by the compose file).
+
+**From source.** Pure Go, no CGO, cross-compiles from any host:
 
 ```bash
 make build-enrollment ARCH=arm64      # → omni-enrollment-linux-arm64

@@ -1,0 +1,72 @@
+{{define "title"}}Enroll a device · Omni Identity{{end}}
+{{define "content"}}
+{{template "account-shell-start" .}}
+<div class="page-hd">
+  <div class="titles">
+    <h1>Enroll a device</h1>
+    <p class="desc">Give a Linux machine its own identity under your account. It generates a key locally; the private key never leaves it.</p>
+  </div>
+  <div class="actions"><a class="btn" href="/account/devices">My Devices</a></div>
+</div>
+<div class="page-body">
+  <div class="panel">
+    <div class="panel-hd">1 · Download the agent</div>
+    <div class="panel-bd">
+      {{if .Enabled}}
+        {{if .Artifacts}}
+        <table class="omni">
+          <thead><tr><th>File</th><th>Description</th><th>Size</th><th>SHA-256</th></tr></thead>
+          <tbody>
+            {{range .Artifacts}}
+            <tr>
+              <td><a href="/downloads/{{.Name}}" download>{{.Name}}</a></td>
+              <td class="t-secondary">{{.Label}}</td>
+              <td class="t-secondary">{{.Size}}</td>
+              <td><code style="font-size:11px;word-break:break-all">{{.SHA256}}</code></td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+        <p class="t-caption" style="margin:10px 0 0">Built from the same commit as this server, so versions always match. Verify the checksum after downloading.</p>
+        {{else}}
+        <p class="t-caption" style="margin:0">The downloads directory is configured but empty. Rebuild the server image to populate it.</p>
+        {{end}}
+      {{else}}
+        <p class="muted">Downloads are not enabled on this server. Build the agent from source with <code>make build-enrollment ARCH=amd64</code> (or <code>arm64</code>) in the repository.</p>
+      {{end}}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">2 · Install and enroll</div>
+    <div class="panel-bd">
+      <p class="muted">On the machine to enroll, as root:</p>
+<pre style="background:var(--bg-sunken);padding:12px;border-radius:var(--r-md);overflow:auto;font-family:var(--font-mono);font-size:12px;line-height:1.5">ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+curl -fsSLo omni-enrollment {{.Issuer}}/downloads/omni-enrollment-linux-$ARCH
+sha256sum omni-enrollment                     # compare with the table above
+sudo install -m 0755 omni-enrollment /usr/local/bin/omni-enrollment
+sudo omni-enrollment enroll --issuer {{.Issuer}}{{if .Insecure}} --allow-insecure-http{{end}}</pre>
+      <p class="muted" style="margin-top:12px">The command prints a link and a QR code. Open it here, signed in as <strong>{{with .Me}}{{.Username}}{{end}}</strong>, and approve the device. It then appears under <a href="/account/devices">My Devices</a>.</p>
+      {{if .Insecure}}<div class="alert warn" style="margin-top:12px">This server's issuer uses plain <code>http://</code>. The agent refuses that unless <code>--allow-insecure-http</code> is passed; use it only on a private network you trust.</div>{{end}}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">3 · Optional: Linux login</div>
+    <div class="panel-bd">
+      <p class="muted">To sign in to that machine with your Omni account (with an offline password for when this server is unreachable), install the PAM module and the systemd unit from the sources tarball, then enable the daemon:</p>
+<pre style="background:var(--bg-sunken);padding:12px;border-radius:var(--r-md);overflow:auto;font-family:var(--font-mono);font-size:12px;line-height:1.5">curl -fsSL {{.Issuer}}/downloads/omni-enrollment-endpoint.tar.gz | tar -xz
+make -C endpoint/pam && sudo make -C endpoint/pam install
+sudo install -m 0644 endpoint/systemd/omni-enrollment.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now omni-enrollment</pre>
+      <p class="t-caption" style="margin:10px 0 0">Then add <code>auth sufficient pam_omni.so</code> and <code>account sufficient pam_omni.so</code> above the <code>pam_unix</code> lines of the PAM services you want (e.g. <code>/etc/pam.d/sshd</code>). Keep a local administrator account: it always authenticates through <code>pam_unix</code>.</p>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">Have a code already?</div>
+    <div class="panel-bd"><p class="muted"><a class="btn" href="/device">Enter a device code</a></p></div>
+  </div>
+</div>
+{{template "account-shell-end" .}}
+{{end}}

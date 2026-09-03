@@ -76,6 +76,13 @@ uploads:
   # Branding logos are raster-only PNG/JPEG/WebP.
   max_logo_bytes: 524288
 
+downloads:
+  # Directory of endpoint artifacts (omni-enrollment-linux-amd64/arm64 and the
+  # PAM/systemd sources tarball) offered on the "Enroll a device" page with
+  # SHA-256 checksums. The Docker image builds them into /downloads; empty
+  # hides the download section (OMNI_DOWNLOADS_DIR).
+  dir: ""
+
 smtp:
   # Optional. When host + from are set, self-service "Forgot password?" is
   # enabled on the login page. Credentials live here (config/env), never in the

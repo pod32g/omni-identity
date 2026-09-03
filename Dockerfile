@@ -13,12 +13,20 @@ ENV CGO_ENABLED=1
 RUN go test ./...
 RUN go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...
 RUN mkdir /data && go build -ldflags "-X main.version=docker" -o /omni-identity ./cmd/omni-identity
+# Endpoint artifacts served on the "Enroll a device" page: the omni-enrollment
+# agent for Linux (pure Go, no CGO) and the PAM/systemd sources, all built from
+# the same commit as the server so versions always match.
+RUN mkdir /downloads \
+    && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=docker" -o /downloads/omni-enrollment-linux-amd64 ./cmd/omni-enrollment \
+    && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-X main.version=docker" -o /downloads/omni-enrollment-linux-arm64 ./cmd/omni-enrollment \
+    && tar -czf /downloads/omni-enrollment-endpoint.tar.gz endpoint/pam endpoint/systemd
 
 # Runtime stage: distroless with glibc (the CGO binary is dynamically linked
 # against libc), running as the non-root distroless user (65532).
 FROM gcr.io/distroless/base-debian12:nonroot@sha256:4ae8d0163a6f04d96f36e41324d76f00744f0db7545b6d04039c9e6fa1df77f3
 COPY --from=build --chown=65532:65532 /omni-identity /omni-identity
 COPY --from=build --chown=65532:65532 /data /data
+COPY --from=build --chown=65532:65532 /downloads /downloads
 USER 65532:65532
 EXPOSE 8080
 VOLUME ["/data"]

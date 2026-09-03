@@ -71,6 +71,8 @@ services:
       OMNI_SECURITY_SESSION_LIFETIME: ${OMNI_SECURITY_SESSION_LIFETIME:-12h}
       OMNI_SECURITY_SESSION_IDLE_TIMEOUT: ${OMNI_SECURITY_SESSION_IDLE_TIMEOUT:-0}
       OMNI_UPLOADS_MAX_LOGO_BYTES: ${OMNI_UPLOADS_MAX_LOGO_BYTES:-524288}
+      # Endpoint agent binaries built into the image, offered on /account/enroll.
+      OMNI_DOWNLOADS_DIR: /downloads
       # Empty disables /metrics. Set a strong value and scrape with Authorization: Bearer.
       OMNI_METRICS_TOKEN: ${OMNI_METRICS_TOKEN:-}
       # Optional LDAP / Active Directory backend. Off unless OMNI_LDAP_ENABLED=true.

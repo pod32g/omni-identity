@@ -36,8 +36,9 @@ revocation, passkeys) are covered by `go test ./...`; see
 ## 2. Manual integration-test procedure (real VM)
 
 1. Deploy Omni (HTTPS, DNS name) and create a user.
-2. On a fresh Fedora/Ubuntu VM: install `omni-enrollment` and `pam_omni.so`
-   ([OMNI-ENROLLMENT.md](OMNI-ENROLLMENT.md), `endpoint/pam/Makefile`),
+2. On a fresh Fedora/Ubuntu VM: download the agent and the PAM/systemd sources
+   from **Account → Enroll a device** on your server and follow its install
+   commands ([OMNI-ENROLLMENT.md](OMNI-ENROLLMENT.md), `endpoint/pam/Makefile`),
    create the break-glass user (§3), and add to `/etc/pam.d/sshd` (and, if
    desired, `login`, `gdm-password`) **above** the `pam_unix` lines:
    ```

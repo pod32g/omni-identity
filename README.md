@@ -45,7 +45,8 @@ first, one binary, SQLite.
   devices under *My Devices*, admins under *Devices*
 - **`omni-enrollment`** Linux agent + `pam_omni.so`: Omni-backed Linux login
   with an offline local password, background trust refresh, and revocation
-  propagation — see the docs below
+  propagation. The Docker image builds the agent binaries and serves them,
+  with checksums and install commands, on **Account → Enroll a device**
 - Structured request logging and a basic Prometheus-style `/metrics` endpoint
 - Single binary + SQLite
 

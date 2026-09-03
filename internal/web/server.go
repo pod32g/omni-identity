@@ -40,6 +40,7 @@ type Server struct {
 	forgotRate     *rateLimiter
 	deviceCodeRate *rateLimiter // /device user-code guessing budget per IP
 	wa             webauthnRP   // cached WebAuthn relying party for the live public URL
+	downloads      *downloadsService
 	verifyMu       sync.Mutex
 	verifyActive   int
 	mailer         email.Sender
@@ -151,6 +152,7 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 		connectors: connectors,
 		directory:  directory,
 		metrics:    newMetrics(),
+		downloads:  newDownloadsService(cfg.Downloads.Dir),
 		mux:        http.NewServeMux(),
 	}
 	// Render branding on every page; read live so admin edits take effect.
@@ -219,6 +221,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /account/passkeys/begin", s.requireUser(s.handlePasskeyRegisterBegin))
 	s.mux.HandleFunc("POST /account/passkeys/finish", s.requireUser(s.handlePasskeyRegisterFinish))
 	s.mux.HandleFunc("POST /account/passkeys/{id}/delete", s.requireUser(s.handleAccountPasskeyDelete))
+	s.mux.HandleFunc("GET /account/enroll", s.requireUser(s.handleAccountEnroll))
+	s.mux.HandleFunc("GET /downloads/{name}", s.handleDownload)
 	s.mux.HandleFunc("GET /account/devices", s.requireUser(s.handleAccountDevices))
 	s.mux.HandleFunc("POST /account/devices/{id}/revoke", s.requireUser(s.handleAccountRevokeDevice))
 

@@ -18,15 +18,16 @@ import (
 
 // Config is the validated, runtime configuration.
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Security SecurityConfig
-	Cookies  CookieConfig
-	Metrics  MetricsConfig
-	Uploads  UploadsConfig
-	SMTP     SMTPConfig
-	LDAP     LDAPConfig
-	Logging  LoggingConfig
+	Server    ServerConfig
+	Database  DatabaseConfig
+	Security  SecurityConfig
+	Cookies   CookieConfig
+	Metrics   MetricsConfig
+	Uploads   UploadsConfig
+	Downloads DownloadsConfig
+	SMTP      SMTPConfig
+	LDAP      LDAPConfig
+	Logging   LoggingConfig
 }
 
 // LoggingConfig configures optional shipping of structured logs to an external
@@ -174,6 +175,14 @@ type MetricsConfig struct {
 	BearerToken string
 }
 
+// DownloadsConfig points at a directory of endpoint artifacts (the
+// omni-enrollment agent binaries and endpoint sources) that the server offers
+// for download on the "Enroll a device" page. Empty disables the page's
+// download section. The Docker image populates /downloads at build time.
+type DownloadsConfig struct {
+	Dir string
+}
+
 // UploadsConfig holds upload size limits. Values are intentionally config/env
 // seed data for the live settings row, not secrets.
 type UploadsConfig struct {
@@ -231,6 +240,9 @@ type fileConfig struct {
 	Uploads struct {
 		MaxLogoBytes int `yaml:"max_logo_bytes"`
 	} `yaml:"uploads"`
+	Downloads struct {
+		Dir string `yaml:"dir"`
+	} `yaml:"downloads"`
 	SMTP struct {
 		Host     string `yaml:"host"`
 		Port     int    `yaml:"port"`
@@ -404,6 +416,7 @@ func Load(path string) (*Config, error) {
 	}
 	cfg.Metrics.BearerToken = fc.Metrics.BearerToken
 	cfg.Uploads.MaxLogoBytes = orDefaultInt(fc.Uploads.MaxLogoBytes, defaultMaxLogoBytes)
+	cfg.Downloads.Dir = strings.TrimSpace(fc.Downloads.Dir)
 
 	cfg.SMTP.Host = fc.SMTP.Host
 	cfg.SMTP.Port = orDefaultInt(fc.SMTP.Port, 587)
@@ -772,6 +785,9 @@ func applyEnvOverrides(fc *fileConfig) {
 	}
 	if v := os.Getenv("OMNI_METRICS_TOKEN"); v != "" {
 		fc.Metrics.BearerToken = v
+	}
+	if v := os.Getenv("OMNI_DOWNLOADS_DIR"); v != "" {
+		fc.Downloads.Dir = v
 	}
 	if v := os.Getenv("OMNI_UPLOADS_MAX_LOGO_BYTES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
