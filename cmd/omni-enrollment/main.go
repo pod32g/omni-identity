@@ -65,6 +65,8 @@ func main() {
 		err = runPAMTest(args)
 	case "token":
 		err = runToken(args)
+	case "gui":
+		err = runGUI(args)
 	case "version", "-v", "--version":
 		fmt.Println("omni-enrollment", version)
 	case "help", "-h", "--help":
@@ -93,6 +95,7 @@ Commands:
   daemon      Run the renewal loop + PAM socket (used by the systemd service)
   pam-test    Run the Linux login conversation for a user on this terminal
   token       Ask the local broker for an access token (--audience <client id>)
+  gui         Open a local web page to enroll and manage this device
   version     Print the version
 
 Run "omni-enrollment <command> -h" for command-specific flags.
@@ -335,6 +338,37 @@ func runDaemon(args []string) error {
 		RefreshEvery: cfg.RefreshInterval, ServePAM: true,
 		Broker: enrollment.BrokerPolicy{Audiences: cfg.BrokerAudiences},
 	}, log.Printf)
+}
+
+// runGUI serves the local enrollment page on loopback and opens it.
+func runGUI(args []string) error {
+	fs := flag.NewFlagSet("gui", flag.ExitOnError)
+	resolve := commonFlags(fs)
+	listen := fs.String("listen", "127.0.0.1:0", "loopback address to serve the page on")
+	noOpen := fs.Bool("no-open", false, "print the URL instead of opening a browser")
+	_ = fs.Parse(args)
+	cfg, err := resolve()
+	if err != nil {
+		return err
+	}
+	ctx, stop := signalContext()
+	defer stop()
+	gui, err := enrollment.NewGUI(agentFor(cfg), cfg)
+	if err != nil {
+		return err
+	}
+	url, err := gui.Serve(ctx, *listen)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Omni Enrollment GUI: %s\n(press Ctrl-C to stop)\n", url)
+	if !*noOpen {
+		if err := enrollment.OpenBrowser(url); err != nil {
+			fmt.Fprintln(os.Stderr, "could not open a browser:", err)
+		}
+	}
+	<-ctx.Done()
+	return nil
 }
 
 // runToken asks the daemon's broker for a token as the calling user and

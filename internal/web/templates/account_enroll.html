@@ -46,7 +46,7 @@ curl -fsSLo omni-enrollment {{.Issuer}}/downloads/omni-enrollment-linux-$ARCH
 sha256sum omni-enrollment                     # compare with the table above
 sudo install -m 0755 omni-enrollment /usr/local/bin/omni-enrollment
 sudo omni-enrollment enroll --issuer {{.Issuer}}{{if .Insecure}} --allow-insecure-http{{end}}</pre>
-      <p class="muted" style="margin-top:12px">The command prints a link and a QR code. Open it here, signed in as <strong>{{with .Me}}{{.Username}}{{end}}</strong>, and approve the device. It then appears under <a href="/account/devices">My Devices</a>. On a machine that has a browser, add <code>--browser</code> to approve in that browser directly instead of using a code.</p>
+      <p class="muted" style="margin-top:12px">Prefer a window? <code>sudo omni-enrollment gui --issuer {{.Issuer}}</code> opens a local page with the same steps. The command-line version prints a link and a QR code. Open it here, signed in as <strong>{{with .Me}}{{.Username}}{{end}}</strong>, and approve the device. It then appears under <a href="/account/devices">My Devices</a>. On a machine that has a browser, add <code>--browser</code> to approve in that browser directly instead of using a code.</p>
       {{if .Insecure}}<div class="alert warn" style="margin-top:12px">This server's issuer uses plain <code>http://</code>. The agent refuses that unless <code>--allow-insecure-http</code> is passed; use it only on a private network you trust.</div>{{end}}
     </div>
   </div>

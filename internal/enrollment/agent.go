@@ -103,17 +103,46 @@ func LocalMetadata(name string) Metadata {
 	return Metadata{Name: name, Hostname: host, Platform: runtime.GOOS, Architecture: runtime.GOARCH}
 }
 
-// Enroll runs the full ceremony (docs §5.2): generate a key, start an RFC 8628
-// grant, show the user the verification URL, poll with DPoP, register the key.
+// Enroll runs the full ceremony (docs §5.2) for the CLI: generate a key,
+// start an RFC 8628 grant (or the browser flow), show the user the link,
+// poll with DPoP, register the key.
 func (a *Agent) Enroll(ctx context.Context, cfg Config) (*State, error) {
-	if _, err := LoadState(a.StateDir); err == nil {
-		return nil, errors.New("this machine is already enrolled (run `omni-enrollment unenroll` first)")
+	if cfg.Browser {
+		return a.enrollViaBrowser(ctx, cfg)
 	}
 	if cfg.KeyBackend == KeyBackendTPM {
 		fmt.Fprintf(a.Out, "Generating device identity in the TPM (%s)...\n", orDefault(cfg.TPMDevice, DefaultTPMDevice))
 	} else {
 		fmt.Fprintln(a.Out, "Generating device identity...")
 	}
+	e, err := a.BeginEnrollment(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	meta := e.Device()
+	fmt.Fprintf(a.Out, "\nDevice:\n    name:        %s\n    hostname:    %s\n    platform:    %s (%s)\n    key:         %s (%s)\n    fingerprint: %s\n\n",
+		meta.Name, meta.Hostname, meta.Platform, meta.Architecture, e.KeyAlgorithm(), orDefault(cfg.KeyBackend, KeyBackendFile), e.Fingerprint())
+	fmt.Fprintf(a.Out, "Authenticate with Omni Identity:\n\n    %s\n\n    (or open %s and enter the code %s)\n\n",
+		e.VerificationURIComplete(), e.VerificationURI(), e.UserCode())
+	if qr, err := RenderQR(e.VerificationURIComplete(), cfg.qrMode()); err == nil && qr != "" {
+		fmt.Fprintln(a.Out, qr)
+	}
+	fmt.Fprint(a.Out, "Waiting for approval...")
+	st, err := e.Wait(ctx, func() { fmt.Fprint(a.Out, ".") })
+	fmt.Fprintln(a.Out)
+	if err != nil {
+		return nil, err
+	}
+	a.announceEnrolled(st)
+	return st, nil
+}
+
+// enrollViaBrowser is the RFC 8252 variant of Enroll.
+func (a *Agent) enrollViaBrowser(ctx context.Context, cfg Config) (*State, error) {
+	if _, err := LoadState(a.StateDir); err == nil {
+		return nil, errors.New("this machine is already enrolled (run `omni-enrollment unenroll` first)")
+	}
+	fmt.Fprintln(a.Out, "Generating device identity...")
 	key, err := GenerateKeyWith(a.StateDir, cfg.KeyBackend, cfg.TPMDevice, false)
 	if err != nil {
 		return nil, err
@@ -121,74 +150,42 @@ func (a *Agent) Enroll(ctx context.Context, cfg Config) (*State, error) {
 	client, err := NewClient(Options{Issuer: cfg.Issuer, ClientID: cfg.ClientID, Signer: key,
 		AllowInsecureHTTP: cfg.AllowInsecureHTTP, CAFile: cfg.CAFile, Transport: a.Transport})
 	if err != nil {
+		_ = RemoveState(a.StateDir)
 		return nil, err
 	}
 	meta := LocalMetadata(cfg.Name)
 	fmt.Fprintf(a.Out, "\nDevice:\n    name:        %s\n    hostname:    %s\n    platform:    %s (%s)\n    key:         %s (%s)\n    fingerprint: %s\n\n",
 		meta.Name, meta.Hostname, meta.Platform, meta.Architecture, key.Algorithm(), orDefault(cfg.KeyBackend, KeyBackendFile), key.Fingerprint())
-
-	var tok *TokenResponse
-	if cfg.Browser {
-		tok, err = client.AuthorizeViaBrowser(ctx, ScopeEnroll, cfg.OpenURL, func(msg string) {
-			if strings.HasPrefix(msg, "http") {
-				fmt.Fprintf(a.Out, "Authenticate with Omni Identity in your browser:\n\n    %s\n\nWaiting for the browser...\n", msg)
-			} else {
-				fmt.Fprintln(a.Out, msg)
-			}
-		})
-		if err != nil {
-			_ = RemoveState(a.StateDir)
-			return nil, fmt.Errorf("enrollment was not approved: %w", err)
+	tok, err := client.AuthorizeViaBrowser(ctx, ScopeEnroll, cfg.OpenURL, func(msg string) {
+		if strings.HasPrefix(msg, "http") {
+			fmt.Fprintf(a.Out, "Authenticate with Omni Identity in your browser:\n\n    %s\n\nWaiting for the browser...\n", msg)
+		} else {
+			fmt.Fprintln(a.Out, msg)
 		}
-	} else {
-		da, err := client.StartDeviceAuthorization(ctx, ScopeEnroll,
-			map[string]string{"device_name": meta.Name, "device_platform": meta.Platform}, "")
-		if err != nil {
-			_ = RemoveState(a.StateDir)
-			return nil, fmt.Errorf("start enrollment: %w", err)
-		}
-		fmt.Fprintf(a.Out, "Authenticate with Omni Identity:\n\n    %s\n\n    (or open %s and enter the code %s)\n\n",
-			da.VerificationURIComplete, da.VerificationURI, da.UserCode)
-		if qr, err := RenderQR(da.VerificationURIComplete, cfg.qrMode()); err == nil && qr != "" {
-			fmt.Fprintln(a.Out, qr)
-		}
-		fmt.Fprint(a.Out, "Waiting for approval...")
-		tok, err = client.WaitForDeviceCode(ctx, da, "", func() { fmt.Fprint(a.Out, ".") })
-		fmt.Fprintln(a.Out)
-		if err != nil {
-			_ = RemoveState(a.StateDir)
-			return nil, fmt.Errorf("enrollment was not approved: %w", err)
-		}
-	}
-	dev, err := client.Enroll(ctx, tok.AccessToken, meta)
+	})
 	if err != nil {
 		_ = RemoveState(a.StateDir)
-		return nil, fmt.Errorf("register device: %w", err)
+		return nil, fmt.Errorf("enrollment was not approved: %w", err)
 	}
-	enrolledAt, _ := time.Parse(time.RFC3339, dev.EnrolledAt)
-	st := &State{
-		Issuer: client.Issuer, ClientID: client.ClientID, DeviceID: dev.ID, Fingerprint: dev.Fingerprint,
-		Name: dev.Name, OwnerSub: dev.OwnerSub, OwnerUsername: dev.OwnerUsername, EnrolledAt: enrolledAt,
-		Status: dev.Status, LastCheckedAt: time.Now().UTC(),
-		AllowInsecureHTTP: cfg.AllowInsecureHTTP, CAFile: cfg.CAFile,
-		KeyBackend: orDefault(cfg.KeyBackend, KeyBackendFile), TPMDevice: cfg.TPMDevice,
-	}
-	if err := SaveState(a.StateDir, st); err != nil {
+	e := &Enrollment{agent: a, cfg: cfg, client: client, key: key, meta: meta, start: time.Now()}
+	st, err := e.complete(ctx, tok)
+	if err != nil {
 		return nil, err
 	}
-	if dev.Status == "pending" {
-		fmt.Fprintf(a.Out, "Enrolled as %s (device id %s) — PENDING administrator approval. Start the daemon; it becomes active once approved.\n", dev.OwnerUsername, dev.ID)
+	a.announceEnrolled(st)
+	return st, nil
+}
+
+// announceEnrolled prints the CLI's closing lines.
+func (a *Agent) announceEnrolled(st *State) {
+	if st.Status == "pending" {
+		fmt.Fprintf(a.Out, "Enrolled as %s (device id %s) — PENDING administrator approval. Start the daemon; it becomes active once approved.\n", st.OwnerUsername, st.DeviceID)
 	} else {
-		fmt.Fprintf(a.Out, "Enrolled as %s (device id %s).\n", dev.OwnerUsername, dev.ID)
+		fmt.Fprintf(a.Out, "Enrolled as %s (device id %s).\n", st.OwnerUsername, st.DeviceID)
 	}
 	if a.Accounts != nil {
-		if err := a.EnsureOwnerAccount(st, a.Accounts); err != nil {
-			fmt.Fprintf(a.Out, "warning: could not prepare the local identity for %s: %v\n", dev.OwnerUsername, err)
-		} else {
-			fmt.Fprintf(a.Out, "Identity %s is ready on this machine; sign in with `ssh %s@<host>` to finish setup.\n", dev.OwnerUsername, dev.OwnerUsername)
-		}
+		fmt.Fprintf(a.Out, "Identity %s is ready on this machine; sign in with `ssh %s@<host>` to finish setup.\n", st.OwnerUsername, st.OwnerUsername)
 	}
-	return st, nil
 }
 
 func orDefault(v, def string) string {

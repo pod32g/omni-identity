@@ -115,6 +115,18 @@ func (ti *testIssuer) approvePending(t *testing.T) {
 	for _, c := range pendingUserCodes(t, ti.DB) {
 		stale[c] = true
 	}
+	ti.approveSince(t, stale)
+}
+
+// approveAllPending approves whatever is pending right now (for callers that
+// started the grant before calling).
+func (ti *testIssuer) approveAllPending(t *testing.T) {
+	t.Helper()
+	ti.approveSince(t, map[string]bool{})
+}
+
+func (ti *testIssuer) approveSince(t *testing.T, stale map[string]bool) {
+	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		var codes []string

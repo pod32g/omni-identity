@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Omni Enrollment</title>
+<style>
+  :root{color-scheme:dark;--bg:oklch(.16 .003 250);--surface:oklch(.195 .003 250);--fg:oklch(.97 .002 250);--fg2:oklch(.72 .003 250);--fg3:oklch(.55 .003 250);--accent:oklch(.74 .13 255);--ok:oklch(.74 .14 150);--warn:oklch(.80 .14 80);--danger:oklch(.68 .18 25);--sep:color-mix(in oklch,white 8%,transparent)}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Inter",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:720px;margin:40px auto;padding:0 20px}h1{font-size:22px;margin:0 0 4px}.desc{color:var(--fg2);margin:0 0 20px}
+  .panel{background:var(--surface);border-radius:12px;box-shadow:inset 0 0 0 .5px var(--sep);padding:18px 20px;margin-bottom:14px}
+  .panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--fg3);margin:0 0 12px}
+  label{display:block;font-size:13px;color:var(--fg2);margin:10px 0 4px}input,select{width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--sep);background:var(--bg);color:var(--fg);font:inherit}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btn{padding:8px 14px;border-radius:6px;border:1px solid var(--sep);background:color-mix(in oklch,white 10%,transparent);color:var(--fg);font:inherit;cursor:pointer}
+  .btn.primary{background:var(--accent);color:#0b1020;border-color:transparent}.btn.danger{color:var(--danger)}.btn:disabled{opacity:.5;cursor:default}
+  .chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;background:color-mix(in oklch,white 10%,transparent)}.chip.ok{color:var(--ok)}.chip.warn{color:var(--warn)}.chip.off{color:var(--danger)}
+  .alert{padding:10px 12px;border-radius:8px;margin:12px 0;font-size:14px}.alert.error{background:color-mix(in oklch,var(--danger) 18%,transparent)}.alert.success{background:color-mix(in oklch,var(--ok) 18%,transparent)}.alert.warn{background:color-mix(in oklch,var(--warn) 18%,transparent)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;word-break:break-all}table{width:100%;border-collapse:collapse}td{padding:6px 0;border-bottom:1px solid var(--sep);vertical-align:top}td:first-child{color:var(--fg3);width:160px}
+  .qr{display:block;width:220px;height:220px;border-radius:8px;background:#fff;padding:8px}.code{font-family:ui-monospace,monospace;font-size:26px;letter-spacing:.12em}
+  .muted{color:var(--fg2)}.hidden{display:none}
+</style></head>
+<body><div class="wrap">
+<h1>Omni Enrollment</h1><p class="desc">Give this machine its own identity under your Omni Identity account. The private key is generated here and never leaves.</p>
+<div id="msg" class="alert hidden"></div>
+
+<div id="enrolled" class="panel {{if not .Enrolled}}hidden{{end}}">
+  <h2>This device</h2>
+  <table id="statusTable"></table>
+  <div class="row" style="margin-top:14px">
+    <button class="btn" data-act="renew">Check trust now</button>
+    <button class="btn" data-act="rotate">Rotate key</button>
+    <button class="btn danger" data-act="unenroll" data-confirm="Unenroll this device? Its key is deleted and Omni stops trusting it.">Unenroll</button>
+  </div>
+</div>
+
+<div id="form" class="panel {{if .Enrolled}}hidden{{end}}">
+  <h2>Enroll</h2>
+  <form id="enrollForm">
+    <label>Omni Identity server<input name="issuer" value="{{.Issuer}}" placeholder="https://identity.example" required></label>
+    <label>Device name<input name="name" value="{{.Name}}" maxlength="64"></label>
+    <div class="row">
+      <label style="flex:1">Key storage<select name="key_backend"><option value="file" {{if eq .KeyBackend "file"}}selected{{end}}>Software key (file)</option><option value="tpm" {{if eq .KeyBackend "tpm"}}selected{{end}}>TPM 2.0</option></select></label>
+      <label style="flex:1">TPM device (optional)<input name="tpm_device" value="{{.TPMDevice}}" placeholder="/dev/tpmrm0"></label>
+    </div>
+    <label class="row" style="margin-top:10px"><input type="checkbox" name="allow_insecure_http" style="width:auto" {{if .Insecure}}checked{{end}}> allow an http:// server (private network testing only)</label>
+    <div class="row" style="margin-top:14px"><button class="btn primary" type="submit">Enroll this device</button></div>
+  </form>
+</div>
+
+<div id="waiting" class="panel hidden">
+  <h2>Approve the enrollment</h2>
+  <div class="row" style="gap:24px;align-items:flex-start">
+    <img id="qr" class="qr" alt="QR code of the approval link" src="">
+    <div style="flex:1;min-width:240px">
+      <p class="muted" style="margin-top:0">Sign in to Omni Identity and approve this device. Either open the link on this computer, or scan the code with your phone.</p>
+      <p><a id="link" class="btn primary" href="#" target="_blank" rel="noopener">Approve on this computer</a></p>
+      <p class="muted">Code <span id="code" class="code"></span><br><span id="expires"></span></p>
+      <p class="muted">Key: <code id="fp"></code></p>
+      <button class="btn" data-act="cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+</div>
+<script>
+(function(){
+  var token = {{.Token}};
+  function el(id){return document.getElementById(id)}
+  function show(id,on){el(id).classList.toggle('hidden',!on)}
+  function msg(kind,text){var m=el('msg');if(!text){m.classList.add('hidden');return}m.className='alert '+kind;m.textContent=text}
+  function post(path,body){return fetch(path,{method:'POST',headers:{'X-Omni-GUI':token,'Content-Type':'application/x-www-form-urlencoded'},body:body||''}).then(function(r){if(!r.ok)return r.text().then(function(t){throw new Error(t||('HTTP '+r.status))});return r})}
+  function esc(s){return String(s==null?'':s)}
+  function render(v){
+    show('enrolled',v.Enrolled);show('form',!v.Enrolled&&v.Phase!=='waiting');show('waiting',v.Phase==='waiting');
+    if(v.Enrolled&&v.State){var s=v.State,d=v.Daemon||{};var chip=s.Status==='active'?'ok':(s.Status==='pending'?'warn':'off');
+      el('statusTable').innerHTML=
+       '<tr><td>Name</td><td>'+esc(s.name)+' <span class="chip '+chip+'">'+esc(s.status)+'</span></td></tr>'+
+       '<tr><td>Owner</td><td>'+esc(s.owner_username)+'</td></tr>'+
+       '<tr><td>Server</td><td>'+esc(s.issuer)+'</td></tr>'+
+       '<tr><td>Key</td><td>'+(s.key_backend==='tpm'?'TPM 2.0 ('+esc(s.tpm_device||'/dev/tpmrm0')+')':'software file')+'<br><code>'+esc(s.fingerprint)+'</code></td></tr>'+
+       '<tr><td>Daemon</td><td>'+(d.device_id?(d.issuer_reachable?'server reachable':'server unreachable')+(d.last_renewed_at?', trust renewed '+new Date(d.last_renewed_at).toLocaleString():'')+(d.last_error?'<br><span class="muted">'+esc(d.last_error)+'</span>':''):'<span class="muted">not running</span>')+'</td></tr>';}
+    if(v.Phase==='waiting'){el('link').href=v.Link;el('code').textContent=v.Code;el('expires').textContent='expires at '+v.Expires;el('fp').textContent=v.KeyAlg+' '+v.Fingerprint;if(!el('qr').src.endsWith('/qr.svg'))el('qr').src='/qr.svg';}
+    msg(v.Phase==='error'?'error':(v.Phase==='done'?'success':''),v.Message);
+  }
+  function refresh(){fetch('/status').then(function(r){return r.json()}).then(render).catch(function(){})}
+  document.addEventListener('click',function(e){var b=e.target.closest('[data-act]');if(!b)return;e.preventDefault();if(b.dataset.confirm&&!confirm(b.dataset.confirm))return;b.disabled=true;post('/'+b.dataset.act).then(refresh).catch(function(err){msg('error',err.message)}).finally(function(){b.disabled=false})});
+  el('enrollForm').addEventListener('submit',function(e){e.preventDefault();var fd=new URLSearchParams(new FormData(e.target));post('/enroll',fd.toString()).then(refresh).catch(function(err){msg('error',err.message)})});
+  render({{.}});setInterval(refresh,2000);
+})();
+</script>
+</body></html>

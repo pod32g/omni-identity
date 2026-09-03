@@ -74,10 +74,30 @@ sudo systemctl enable --now omni-enrollment
 (`0700 root`); see *Files* below. For private-network testing against an
 `http://` issuer add `--allow-insecure-http` (never in production).
 
+## Graphical enrollment
+
+```bash
+sudo omni-enrollment gui --issuer https://identity.example
+```
+
+serves a small page on the loopback interface and opens it in your browser
+(like `tailscale web`): pick the server, device name, and key storage
+(software file or TPM 2.0), press **Enroll this device**, then approve either
+on this computer (button) or by scanning the QR code with your phone. Once
+enrolled the same page shows the device's status, owner, key, and daemon
+health with **Check trust now**, **Rotate key**, and **Unenroll**. It runs
+the exact ceremony the CLI runs.
+
+The page binds to 127.0.0.1 only; the printed URL carries a one-time token
+that becomes a cookie, every action also needs that token in a request
+header (so a web page in the same browser cannot drive it), and the Host
+header must be loopback. Stop it with Ctrl-C when done.
+
 ## Commands
 
 | Command | What it does |
 |---|---|
+| `gui [--issuer URL] [--listen 127.0.0.1:0] [--no-open]` | Local web page to enroll and manage this device (see above). |
 | `enroll --issuer URL [--name N] [--no-qr\|--qr-light] [--browser] [--key-backend file\|tpm]` | Generate the key and run the enrollment ceremony. Refuses if already enrolled. `--browser` authorizes through this machine's browser (RFC 8252 loopback redirect, authorization code + PKCE) instead of showing a code for another device. `--key-backend tpm` holds the device key in the TPM 2.0. |
 | `status [--json]` | Show the enrollment record and the daemon's last renewal / error. Works offline. |
 | `renew` | Obtain one device token now (RFC 7523 jwt-bearer grant). Exit 1 if Omni refuses (revoked) or is unreachable. |
