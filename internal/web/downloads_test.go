@@ -32,7 +32,7 @@ func TestDownloadsPageAndArtifactServing(t *testing.T) {
 		t.Fatalf("enroll page = %d", rr.Code)
 	}
 	page := rr.Body.String()
-	for _, want := range []string{"/downloads/omni-enrollment-linux-arm64", hex.EncodeToString(sum[:]), "omni-enrollment enroll --issuer http://localhost:8080 --allow-insecure-http", "arm64 (Raspberry Pi"} {
+	for _, want := range []string{"/downloads/omni-enrollment-linux-arm64", hex.EncodeToString(sum[:]), "omni-enrollment --issuer http://localhost:8080 --allow-insecure-http", "omni-enrollment enroll --issuer http://localhost:8080", "arm64 (Raspberry Pi"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page missing %q", want)
 		}

@@ -42,9 +42,15 @@ const defaultConfigPath = "/etc/omni-enrollment/config.yaml"
 
 func main() {
 	enrollment.Version = version
-	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
+	// No command, or flags only (`omni-enrollment --issuer …`), opens the
+	// graphical page: it is the default way to enroll and manage a device.
+	// The subcommands remain for terminals, SSH sessions, and scripts.
+	if len(os.Args) < 2 || strings.HasPrefix(os.Args[1], "-") && !isHelpOrVersion(os.Args[1]) {
+		if err := runGUI(os.Args[1:]); err != nil {
+			fmt.Fprintln(os.Stderr, "omni-enrollment:", err)
+			os.Exit(1)
+		}
+		return
 	}
 	cmd, args := os.Args[1], os.Args[2:]
 	var err error
@@ -82,8 +88,20 @@ func main() {
 	}
 }
 
+func isHelpOrVersion(arg string) bool {
+	switch arg {
+	case "-h", "--help", "-v", "--version":
+		return true
+	}
+	return false
+}
+
 func usage() {
 	fmt.Fprint(os.Stderr, `omni-enrollment — enroll this machine with Omni Identity
+
+Usage:
+  omni-enrollment [--issuer URL] [gui flags]   Open the local enrollment page (default)
+  omni-enrollment <command> [flags]
 
 Commands:
   enroll      Generate a device key and enroll it under your Omni account
@@ -96,6 +114,7 @@ Commands:
   pam-test    Run the Linux login conversation for a user on this terminal
   token       Ask the local broker for an access token (--audience <client id>)
   gui         Open a local web page to enroll and manage this device
+              (the default when no command is given)
   version     Print the version
 
 Run "omni-enrollment <command> -h" for command-specific flags.

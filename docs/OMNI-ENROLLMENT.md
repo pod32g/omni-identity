@@ -35,6 +35,20 @@ sudo systemctl daemon-reload
 
 ## Enroll
 
+The default is the graphical page. Run the agent with no command and it
+serves a small page on the loopback interface and opens it in your browser:
+
+```bash
+sudo omni-enrollment --issuer https://identity.example
+```
+
+Pick the device name and key storage, press **Enroll this device**, then
+approve on this computer or by scanning the QR code with your phone. See
+*Graphical enrollment* below for details.
+
+On a machine without a display, over SSH, or in scripts, use the terminal
+ceremony instead:
+
 ```
 $ sudo omni-enrollment enroll --issuer https://identity.example
 Generating device identity...
@@ -77,7 +91,7 @@ sudo systemctl enable --now omni-enrollment
 ## Graphical enrollment
 
 ```bash
-sudo omni-enrollment gui --issuer https://identity.example
+sudo omni-enrollment --issuer https://identity.example      # same as: omni-enrollment gui …
 ```
 
 serves a small page on the loopback interface and opens it in your browser
@@ -97,7 +111,7 @@ header must be loopback. Stop it with Ctrl-C when done.
 
 | Command | What it does |
 |---|---|
-| `gui [--issuer URL] [--listen 127.0.0.1:0] [--no-open]` | Local web page to enroll and manage this device (see above). |
+| `gui [--issuer URL] [--listen 127.0.0.1:0] [--no-open]` | Local web page to enroll and manage this device (see above). **Default:** running `omni-enrollment` with no command, or with flags only, is the same as `gui`. |
 | `enroll --issuer URL [--name N] [--no-qr\|--qr-light] [--browser] [--key-backend file\|tpm]` | Generate the key and run the enrollment ceremony. Refuses if already enrolled. `--browser` authorizes through this machine's browser (RFC 8252 loopback redirect, authorization code + PKCE) instead of showing a code for another device. `--key-backend tpm` holds the device key in the TPM 2.0. |
 | `status [--json]` | Show the enrollment record and the daemon's last renewal / error. Works offline. |
 | `renew` | Obtain one device token now (RFC 7523 jwt-bearer grant). Exit 1 if Omni refuses (revoked) or is unreachable. |
