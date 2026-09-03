@@ -218,3 +218,34 @@ func TestBuiltInEnrollmentClientSeeded(t *testing.T) {
 		t.Error("built-in client lacks device:enroll scope")
 	}
 }
+
+func TestDeviceApprovalAndOwnerOnly(t *testing.T) {
+	db := tempDB(t)
+	ctx := context.Background()
+	u := seedUser(t, db, "dave")
+	other := seedUser(t, db, "erin")
+	d := seedDevice(t, db, u.ID, "fp-p")
+	_, _ = db.sql.ExecContext(ctx, `UPDATE devices SET status = 'pending', enrolled_at = NULL WHERE id = ?`, d.ID)
+	if n, _ := db.CountPendingDevices(ctx); n != 1 {
+		t.Errorf("pending = %d", n)
+	}
+	if err := db.SetDeviceOwnerOnly(ctx, d.ID, other.ID, true); err != ErrNotFound {
+		t.Errorf("non-owner set policy: %v", err)
+	}
+	if err := db.SetDeviceOwnerOnly(ctx, d.ID, u.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ApproveDevice(ctx, d.ID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.ApproveDevice(ctx, d.ID, time.Now()); err != ErrNotFound {
+		t.Errorf("second approve: %v", err)
+	}
+	got, _ := db.GetDevice(ctx, d.ID)
+	if !got.IsActive() || got.EnrolledAt.IsZero() || !got.OwnerOnly {
+		t.Errorf("approved device = %+v", got)
+	}
+	if st, _ := db.GetSettings(ctx); st.RequireDeviceApproval {
+		t.Error("require_device_approval should default off")
+	}
+}

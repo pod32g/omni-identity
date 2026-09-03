@@ -165,7 +165,11 @@ func (a *Agent) Enroll(ctx context.Context, cfg Config) (*State, error) {
 	if err := SaveState(a.StateDir, st); err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(a.Out, "Enrolled as %s (device id %s).\n", dev.OwnerUsername, dev.ID)
+	if dev.Status == "pending" {
+		fmt.Fprintf(a.Out, "Enrolled as %s (device id %s) — PENDING administrator approval. Start the daemon; it becomes active once approved.\n", dev.OwnerUsername, dev.ID)
+	} else {
+		fmt.Fprintf(a.Out, "Enrolled as %s (device id %s).\n", dev.OwnerUsername, dev.ID)
+	}
 	if a.Accounts != nil {
 		if err := a.EnsureOwnerAccount(st, a.Accounts); err != nil {
 			fmt.Fprintf(a.Out, "warning: could not prepare the local identity for %s: %v\n", dev.OwnerUsername, err)
@@ -223,6 +227,11 @@ func (a *Agent) Renew(ctx context.Context) (*State, *TokenResponse, error) {
 		status.TokenExpiresAt = now.Add(time.Duration(tok.ExpiresIn) * time.Second)
 	case IsConnectivityError(err):
 		status.Status, status.IssuerReachable, status.LastError = st.Status, false, err.Error()
+	case IsOAuthError(err, "authorization_pending"):
+		// Not yet approved by an administrator: keep waiting, never "revoked".
+		st.Status = "pending"
+		st.LastCheckedAt = now
+		status.Status, status.IssuerReachable, status.LastError = "pending", true, "awaiting administrator approval"
 	default:
 		// Omni answered and refused: treat as revoked/unknown, never as active.
 		st.Status = "revoked"
@@ -351,6 +360,9 @@ func (a *Agent) RunDaemon(ctx context.Context, opt DaemonOptions, logf func(stri
 				backoff *= 2
 			}
 			logf("omni identity unreachable, retrying in %s: %v", wait, err)
+		case IsOAuthError(err, "authorization_pending"):
+			wait = time.Minute
+			logf("device pending administrator approval; checking again in %s", wait)
 		default:
 			// Refused: revoked (or disabled owner). Re-check slowly; the operator
 			// must re-enroll. Local login policy reads status.json.

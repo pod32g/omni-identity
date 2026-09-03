@@ -234,8 +234,10 @@ type Settings struct {
 	LogHTTPRequests string
 	// DeviceTokenTTL is the lifetime of device tokens issued to enrolled devices.
 	DeviceTokenTTL string
-	Seeded         bool
-	UpdatedAt      time.Time
+	// RequireDeviceApproval makes new enrollments pending until an admin approves.
+	RequireDeviceApproval bool
+	Seeded                bool
+	UpdatedAt             time.Time
 }
 
 // Branding holds the configurable look of the hosted pages (single global row).
@@ -336,14 +338,19 @@ type Device struct {
 	PreviousFingerprint string // set after a key rotation
 	Status              string
 	TrustLevel          string
-	CreatedAt           time.Time
-	EnrolledAt          time.Time // zero when pending
-	LastSeenAt          time.Time // zero when never authenticated
-	RevokedAt           time.Time // zero unless revoked
+	// OwnerOnly restricts device-bound logins to the device's owner.
+	OwnerOnly  bool
+	CreatedAt  time.Time
+	EnrolledAt time.Time // zero when pending
+	LastSeenAt time.Time // zero when never authenticated
+	RevokedAt  time.Time // zero unless revoked
 }
 
 // IsActive reports whether the device may obtain credentials.
 func (d *Device) IsActive() bool { return d.Status == DeviceStatusActive }
+
+// IsPending reports whether the device awaits admin approval.
+func (d *Device) IsPending() bool { return d.Status == DeviceStatusPending }
 
 // Device-code (RFC 8628) grant states.
 const (

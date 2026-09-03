@@ -164,6 +164,10 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 	return s, nil
 }
 
+// ReloadSettings re-reads the live settings row (used by tests and by tools
+// that write settings directly to the store).
+func (s *Server) ReloadSettings(ctx context.Context) { s.settings.Reload(ctx) }
+
 // cookieSecure reports the live cookie Secure flag from editable settings.
 func (s *Server) cookieSecure() bool { return s.settings.Current().CookieSecure }
 
@@ -228,6 +232,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /downloads/{name}", s.handleDownload)
 	s.mux.HandleFunc("GET /account/devices", s.requireUser(s.handleAccountDevices))
 	s.mux.HandleFunc("POST /account/devices/{id}/revoke", s.requireUser(s.handleAccountRevokeDevice))
+	s.mux.HandleFunc("POST /account/devices/{id}/policy", s.requireUser(s.handleAccountDevicePolicy))
 
 	s.mux.HandleFunc("GET /admin", s.requireAdmin(s.handleAdminHome))
 	s.mux.HandleFunc("GET /admin/users", s.requireAdmin(s.handleAdminUsers))
@@ -259,6 +264,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /admin/devices", s.requireAdmin(s.handleAdminDevices))
 	s.mux.HandleFunc("GET /admin/devices/{id}", s.requireAdmin(s.handleAdminDeviceDetail))
 	s.mux.HandleFunc("POST /admin/devices/{id}/revoke", s.requireAdmin(s.handleAdminRevokeDevice))
+	s.mux.HandleFunc("POST /admin/devices/{id}/approve", s.requireAdmin(s.handleAdminApproveDevice))
 	s.mux.HandleFunc("POST /admin/devices/{id}/delete", s.requireAdmin(s.handleAdminDeleteDevice))
 
 	s.mux.HandleFunc("GET /{$}", s.handleRoot)

@@ -102,6 +102,7 @@ type deviceJSON struct {
 	TrustLevel   string `json:"trust_level"`
 	OwnerSub     string `json:"owner_sub"`
 	OwnerName    string `json:"owner_username,omitempty"`
+	OwnerOnly    bool   `json:"owner_only"`
 	EnrolledAt   string `json:"enrolled_at,omitempty"`
 	LastSeenAt   string `json:"last_seen_at,omitempty"`
 	RevokedAt    string `json:"revoked_at,omitempty"`
@@ -111,7 +112,7 @@ func deviceToJSON(d *model.Device, ownerName string) deviceJSON {
 	j := deviceJSON{
 		ID: d.ID, Name: d.Name, Hostname: d.Hostname, Platform: d.Platform, Architecture: d.Architecture,
 		Fingerprint: d.Fingerprint, Algorithm: d.PublicKeyAlgorithm, Status: d.Status, TrustLevel: d.TrustLevel,
-		OwnerSub: d.OwnerUserID, OwnerName: ownerName,
+		OwnerSub: d.OwnerUserID, OwnerName: ownerName, OwnerOnly: d.OwnerOnly,
 	}
 	if !d.EnrolledAt.IsZero() {
 		j.EnrolledAt = d.EnrolledAt.UTC().Format(time.RFC3339)
@@ -207,6 +208,10 @@ func (s *Server) handleEnrollDevice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
+	status, enrolledAt := model.DeviceStatusActive, now
+	if s.settings.Current().RequireDeviceApproval {
+		status, enrolledAt = model.DeviceStatusPending, time.Time{}
+	}
 	dev := &model.Device{
 		ID:                 uuid.NewString(),
 		OwnerUserID:        user.ID,
@@ -217,10 +222,10 @@ func (s *Server) handleEnrollDevice(w http.ResponseWriter, r *http.Request) {
 		PublicKey:          canon,
 		PublicKeyAlgorithm: proof.Alg,
 		Fingerprint:        proof.JKT,
-		Status:             model.DeviceStatusActive,
+		Status:             status,
 		TrustLevel:         model.DeviceTrustEnrolled,
 		CreatedAt:          now,
-		EnrolledAt:         now,
+		EnrolledAt:         enrolledAt,
 	}
 	if err := s.db.CreateDevice(r.Context(), dev); err != nil {
 		fail(http.StatusConflict, "key_already_registered", "this key is already registered", "create failed")
@@ -228,7 +233,7 @@ func (s *Server) handleEnrollDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	s.metrics.recordDeviceEnrollment("success")
 	s.audit(r, evtDeviceEnrollCompleted, auditEntry{actorUserID: user.ID, username: user.Username,
-		clientID: vt.Audience, success: true, detail: "device=" + dev.ID + " alg=" + dev.PublicKeyAlgorithm})
+		clientID: vt.Audience, success: true, detail: "device=" + dev.ID + " alg=" + dev.PublicKeyAlgorithm + " status=" + dev.Status})
 	writeJSON(w, http.StatusCreated, deviceToJSON(dev, user.Username))
 }
 
@@ -364,6 +369,14 @@ func (s *Server) grantJWTBearer(w http.ResponseWriter, r *http.Request) {
 	dev, err := s.db.GetDevice(r.Context(), deviceID)
 	if err != nil {
 		fail("unknown device")
+		return
+	}
+	if dev.IsPending() {
+		// Not a refusal of the device's identity: it simply is not approved yet.
+		// RFC 8628's authorization_pending is the natural code; the agent keeps
+		// polling instead of treating this as a revocation.
+		s.audit(r, evtDeviceAuthFailed, auditEntry{clientID: client.ClientID, detail: "device=" + dev.ID + " pending approval"})
+		oauthError(w, http.StatusBadRequest, "authorization_pending", "device is pending administrator approval")
 		return
 	}
 	if !dev.IsActive() {

@@ -75,6 +75,7 @@ Table `devices` (SQLite and Postgres migration `0013_devices.sql`):
 | `fingerprint` | TEXT UNIQUE | RFC 7638 thumbprint of `public_key` |
 | `status` | TEXT | `pending` \| `active` \| `revoked` |
 | `trust_level` | TEXT | V1: `enrolled` (software key). Reserved: `hardware` (attested TPM/Secure Enclave key). |
+| `owner_only` | BOOL | only the owner may sign in on this device (§7) |
 | `created_at`, `enrolled_at`, `last_seen_at`, `revoked_at` | timestamps | `last_seen_at` updated on successful device authentication |
 | `previous_fingerprint` | TEXT | set on key rotation, for audit/forensics |
 
@@ -90,9 +91,13 @@ Supporting tables:
 
 `status` semantics:
 
-- `pending` is reserved for a future "admin must approve" mode; V1 enrollments
-  go straight to `active` because the user's authenticated approval *is* the
-  authorization.
+- `pending` is used when the admin setting *Require admin approval for new
+  device enrollments* is on: the enrollment succeeds but the device cannot
+  obtain credentials (the jwt-bearer grant answers `authorization_pending`,
+  which the agent treats as "keep waiting", not as a revocation) until an
+  administrator approves it under *Devices*. Rejecting is a revocation. With
+  the setting off (default) enrollments go straight to `active` because the
+  user's authenticated approval *is* the authorization.
 - `revoked` is terminal. The row stays (with `revoked_at`) so audit history and
   the fingerprint blacklist survive. Admins may **delete** a revoked device
   row; deletion is a housekeeping action and is audited. A never-revoked
@@ -304,11 +309,11 @@ is — they are asserted by Omni after a proof-of-possession, never copied from
 client input. A client that needs them must verify the JWT and check
 `device_trust == "enrolled"`; a client that does not care ignores them.
 
-Owner vs. login user: V1 allows any active Omni user to sign in on any active
-device (a shared homelab box). The ID token carries `device_id`; the endpoint
-can look up the owner via `/api/v1/devices/me` and enforce local policy. A
-server-side "owner-only" flag is a possible V2 policy knob, deliberately not a
-policy engine.
+Owner vs. login user: by default any active Omni user may sign in on any
+active device (a shared homelab box). An owner can flip a device to
+**owner only** under *My Devices*; Omni then refuses device-bound login
+approvals by anyone else, both on the approval page and at the token
+endpoint. That is the whole policy surface — deliberately not a policy engine.
 
 ---
 
@@ -395,7 +400,8 @@ Discovery additions: `device_authorization_endpoint`, grant types
 Audit events: `device.enrollment.started`, `device.enrollment.completed`,
 `device.enrollment.failed`, `device.authentication.success`,
 `device.authentication.failed`, `device.key.rotated`, `device.revoked`,
-`device.deleted`, `device.login.approved` (user-on-device grant approved).
+`device.deleted`, `device.approved`, `device.policy.updated`,
+`device.login.approved` (user-on-device grant approved).
 
 Metrics: `omni_identity_device_enrollments_total{result}`,
 `omni_identity_device_auth_total{result}`, `omni_identity_devices_active`
@@ -408,7 +414,6 @@ No device ids, hostnames, users, or fingerprints as labels.
 
 - Software keys only; a copied filesystem is a cloned device (threat model §4).
 - Revocation of already-issued JWTs is bounded by their TTL.
-- No admin-approval (`pending`) workflow; enrollment is user self-service.
 - No attestation; `trust_level` is a label, not a measurement.
 - One built-in enrollment client; third-party enrollment clients are not a
   goal.

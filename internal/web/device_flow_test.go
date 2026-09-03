@@ -177,7 +177,7 @@ func enrollDevice(t *testing.T, srv *Server, user *model.User, key deviceKey, na
 		t.Fatalf("enroll = %d: %s", rr.Code, rr.Body.String())
 	}
 	dev := decodeJSON(t, rr)
-	if dev["fingerprint"] != key.jkt || dev["status"] != "active" || dev["owner_sub"] != user.ID || dev["trust_level"] != "enrolled" {
+	if dev["fingerprint"] != key.jkt || (dev["status"] != "active" && dev["status"] != "pending") || dev["owner_sub"] != user.ID || dev["trust_level"] != "enrolled" {
 		t.Errorf("device = %v", dev)
 	}
 	return dev["device_id"].(string)
@@ -474,6 +474,92 @@ func TestDeviceAPIRequiresBoundProof(t *testing.T) {
 	req2.Header.Set("DPoP", proof)
 	if rr := do(srv, req2); rr.Code != http.StatusUnauthorized {
 		t.Errorf("replayed DPoP proof accepted: %d", rr.Code)
+	}
+}
+
+func TestAdminApprovalGatesEnrollment(t *testing.T) {
+	srv := testServer(t)
+	admin := createUser(t, srv, "root", "pw", true)
+	alice := createUser(t, srv, "alice", "pw", false)
+	// Turn the policy on through the live settings row.
+	st, _ := srv.db.GetSettings(context.Background())
+	st.RequireDeviceApproval = true
+	_ = srv.db.UpdateSettings(context.Background(), st)
+	srv.settings.Reload(context.Background())
+
+	key := newDeviceKey(t)
+	id := enrollDevice(t, srv, alice, key, "laptop")
+	dev, _ := srv.db.GetDevice(context.Background(), id)
+	if !dev.IsPending() || !dev.EnrolledAt.IsZero() {
+		t.Fatalf("device should be pending: %+v", dev)
+	}
+	// The device cannot get credentials, and is told to wait rather than refused.
+	rr := deviceToken(t, srv, id, key, true)
+	if rr.Code != http.StatusBadRequest || decodeJSON(t, rr)["error"] != "authorization_pending" {
+		t.Errorf("pending device token = %d %s", rr.Code, rr.Body.String())
+	}
+	// Admin approves.
+	sid := startSession(t, srv, admin.ID)
+	if rr := do(srv, sessionReq(sid, "/admin/devices/"+id+"/approve", nil)); rr.Code != http.StatusSeeOther {
+		t.Fatalf("approve = %d", rr.Code)
+	}
+	if rr := deviceToken(t, srv, id, key, true); rr.Code != http.StatusOK {
+		t.Errorf("approved device token = %d %s", rr.Code, rr.Body.String())
+	}
+	if rr := do(srv, sessionReq(sid, "/admin/devices/"+id+"/approve", nil)); rr.Code != http.StatusBadRequest {
+		t.Errorf("double approve = %d", rr.Code)
+	}
+	// Non-admins cannot approve.
+	if rr := do(srv, sessionReq(startSession(t, srv, alice.ID), "/admin/devices/"+id+"/approve", nil)); rr.Code != http.StatusSeeOther || !strings.Contains(rr.Header().Get("Location"), "/login") {
+		t.Errorf("user approve = %d %s", rr.Code, rr.Header().Get("Location"))
+	}
+}
+
+func TestOwnerOnlyDeviceRefusesOtherUsers(t *testing.T) {
+	srv := testServer(t)
+	alice := createUser(t, srv, "alice", "pw", false)
+	bob := createUser(t, srv, "bob", "pw", false)
+	key := newDeviceKey(t)
+	id := enrollDevice(t, srv, alice, key, "laptop")
+	aliceSID := startSession(t, srv, alice.ID)
+	// Bob cannot change alice's device policy.
+	if rr := do(srv, sessionReq(startSession(t, srv, bob.ID), "/account/devices/"+id+"/policy", url.Values{"owner_only": {"true"}})); rr.Code != http.StatusNotFound {
+		t.Errorf("stranger policy change = %d", rr.Code)
+	}
+	if rr := do(srv, sessionReq(aliceSID, "/account/devices/"+id+"/policy", url.Values{"owner_only": {"true"}})); rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Only you can sign in") {
+		t.Fatalf("policy = %d", rr.Code)
+	}
+	devTok := decodeJSON(t, deviceToken(t, srv, id, key, true))["access_token"].(string)
+	withDevice := func(req *http.Request) {
+		req.Header.Set("Authorization", "DPoP "+devTok)
+		key.dpop(t, req, devTok)
+	}
+	// Bob approves a device-bound login on alice's owner-only device: refused.
+	deviceCode, userCode := startDeviceGrant(t, srv, "openid", nil, withDevice)
+	bobSID := startSession(t, srv, bob.ID)
+	rr := do(srv, sessionReq(bobSID, "/device", url.Values{"user_code": {userCode}}))
+	if !strings.Contains(rr.Body.String(), "only allows its owner") {
+		t.Errorf("confirmation page lacks the owner-only warning")
+	}
+	rr = do(srv, sessionReq(bobSID, "/device/confirm", url.Values{"user_code": {userCode}, "action": {"allow"}}))
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("owner-only approval by bob = %d", rr.Code)
+	}
+	if rr := pollDeviceCode(t, srv, deviceCode, &key, withDevice); decodeJSON(t, rr)["error"] != "access_denied" {
+		t.Errorf("grant after refused approval: %s", rr.Body.String())
+	}
+	// Alice herself still can.
+	deviceCode, userCode = startDeviceGrant(t, srv, "openid", nil, withDevice)
+	approveUserCode(t, srv, aliceSID, userCode, "allow")
+	if rr := pollDeviceCode(t, srv, deviceCode, &key, withDevice); rr.Code != http.StatusOK {
+		t.Errorf("owner login = %d %s", rr.Code, rr.Body.String())
+	}
+	// Turning it off lets bob in again.
+	do(srv, sessionReq(aliceSID, "/account/devices/"+id+"/policy", url.Values{"owner_only": {"false"}}))
+	deviceCode, userCode = startDeviceGrant(t, srv, "openid", nil, withDevice)
+	approveUserCode(t, srv, bobSID, userCode, "allow")
+	if rr := pollDeviceCode(t, srv, deviceCode, &key, withDevice); rr.Code != http.StatusOK {
+		t.Errorf("bob after policy off = %d %s", rr.Code, rr.Body.String())
 	}
 }
 

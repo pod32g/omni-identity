@@ -41,6 +41,7 @@ type SettingsView struct {
 	LogLevel                        string // debug|info|warn|error
 	LogHTTPRequests                 string // all|errors|off
 	DeviceTokenTTL                  time.Duration
+	RequireDeviceApproval           bool
 }
 
 // PasswordPolicy renders the live complexity policy.
@@ -188,6 +189,7 @@ func viewFromModel(m *model.Settings, def SettingsView) SettingsView {
 		LogLevel:                        m.LogLevel,
 		LogHTTPRequests:                 m.LogHTTPRequests,
 		DeviceTokenTTL:                  parseDurOr(m.DeviceTokenTTL, def.DeviceTokenTTL),
+		RequireDeviceApproval:           m.RequireDeviceApproval,
 	}
 }
 
@@ -242,6 +244,7 @@ func (v SettingsView) toModel() *model.Settings {
 		LogLevel:                        v.LogLevel,
 		LogHTTPRequests:                 v.LogHTTPRequests,
 		DeviceTokenTTL:                  v.DeviceTokenTTL.String(),
+		RequireDeviceApproval:           v.RequireDeviceApproval,
 	}
 }
 

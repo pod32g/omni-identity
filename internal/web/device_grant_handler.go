@@ -185,6 +185,10 @@ func (s *Server) grantDeviceCode(w http.ResponseWriter, r *http.Request) {
 			oauthError(w, http.StatusBadRequest, "invalid_grant", "device authentication required for this grant")
 			return
 		}
+		if dev.OwnerOnly && dev.OwnerUserID != dc.UserID {
+			oauthError(w, http.StatusBadRequest, "access_denied", "this device only allows its owner to sign in")
+			return
+		}
 		tc.device = dev
 	}
 
@@ -241,6 +245,7 @@ type devicePage struct {
 	Enrolled       bool   // the request was authenticated by an enrolled device
 	OwnerName      string // owner of that enrolled device
 	OwnerIsMe      bool
+	OwnerOnly      bool // the device refuses sign-ins by anyone but its owner
 }
 
 func (s *Server) handleDeviceForm(w http.ResponseWriter, r *http.Request) {
@@ -298,7 +303,7 @@ func (s *Server) pageForGrant(r *http.Request, dc *model.DeviceCode) devicePage 
 	if dc.DeviceID != "" {
 		p.Enrolled = true
 		if dev, err := s.db.GetDevice(r.Context(), dc.DeviceID); err == nil {
-			p.DeviceName, p.DevicePlatform = dev.Name, dev.Platform
+			p.DeviceName, p.DevicePlatform, p.OwnerOnly = dev.Name, dev.Platform, dev.OwnerOnly
 			if owner, err := s.db.GetUserByID(r.Context(), dev.OwnerUserID); err == nil {
 				p.OwnerName = owner.Username
 				if me := currentUser(r); me != nil {
@@ -339,6 +344,16 @@ func (s *Server) handleDeviceConfirm(w http.ResponseWriter, r *http.Request) {
 		detail: "device_code=" + dc.ID}
 	if dc.DeviceID != "" {
 		entry.detail += " device=" + dc.DeviceID
+		// Owner-only devices accept sign-ins from their owner alone.
+		if dev, err := s.db.GetDevice(r.Context(), dc.DeviceID); err == nil && dev.OwnerOnly && dev.OwnerUserID != user.ID {
+			_ = s.db.DenyDeviceCode(r.Context(), dc.ID)
+			entry.detail += " owner_only"
+			s.audit(r, evtDeviceLoginDenied, entry)
+			s.metrics.recordDeviceGrant("denied")
+			s.renderDevice(w, r, http.StatusForbidden, devicePage{Stage: "done",
+				Message: "This device only allows its owner to sign in. The request was denied."})
+			return
+		}
 	}
 
 	if r.PostFormValue("action") != "allow" {

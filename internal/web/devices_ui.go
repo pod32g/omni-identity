@@ -29,6 +29,8 @@ type deviceView struct {
 	Revoked      string
 	IsActive     bool
 	IsRevoked    bool
+	IsPending    bool
+	OwnerOnly    bool
 }
 
 func viewDevice(d model.Device, owner string, now time.Time) deviceView {
@@ -36,7 +38,7 @@ func viewDevice(d model.Device, owner string, now time.Time) deviceView {
 		ID: d.ID, Name: d.Name, Hostname: d.Hostname, Platform: d.Platform, Architecture: d.Architecture,
 		Fingerprint: d.Fingerprint, ShortFP: truncate(d.Fingerprint, 12), Algorithm: d.PublicKeyAlgorithm,
 		Status: d.Status, TrustLevel: d.TrustLevel, Owner: owner, OwnerID: d.OwnerUserID,
-		IsActive: d.IsActive(), IsRevoked: d.Status == model.DeviceStatusRevoked,
+		IsActive: d.IsActive(), IsRevoked: d.Status == model.DeviceStatusRevoked, IsPending: d.IsPending(), OwnerOnly: d.OwnerOnly,
 	}
 	if !d.EnrolledAt.IsZero() {
 		v.Enrolled = d.EnrolledAt.Local().Format("2006-01-02 15:04 MST")
@@ -130,6 +132,27 @@ func (s *Server) handleAccountRevokeDevice(w http.ResponseWriter, r *http.Reques
 	s.audit(r, evtDeviceRevoked, auditEntry{actorUserID: user.ID, username: user.Username, success: true,
 		detail: "device=" + dev.ID + " by=owner"})
 	s.renderAccountDevices(w, r, http.StatusOK, "", "Device revoked. It can no longer obtain credentials.")
+}
+
+// handleAccountDevicePolicy lets an owner toggle owner-only sign-in.
+func (s *Server) handleAccountDevicePolicy(w http.ResponseWriter, r *http.Request) {
+	if !s.csrfOK(w, r) {
+		return
+	}
+	user := currentUser(r)
+	id := r.PathValue("id")
+	ownerOnly := r.PostFormValue("owner_only") == "on" || r.PostFormValue("owner_only") == "true"
+	if err := s.db.SetDeviceOwnerOnly(r.Context(), id, user.ID, ownerOnly); err != nil {
+		s.renderAccountDevices(w, r, http.StatusNotFound, "Device not found.", "")
+		return
+	}
+	s.audit(r, evtDevicePolicyUpdated, auditEntry{actorUserID: user.ID, username: user.Username, success: true,
+		detail: "device=" + id + " owner_only=" + boolStr(ownerOnly)})
+	msg := "Anyone with an Omni account may now sign in on this device."
+	if ownerOnly {
+		msg = "Only you can sign in on this device now."
+	}
+	s.renderAccountDevices(w, r, http.StatusOK, "", msg)
 }
 
 // --- admin: /admin/devices ---
@@ -235,6 +258,30 @@ func (s *Server) handleAdminRevokeDevice(w http.ResponseWriter, r *http.Request)
 	}
 	s.audit(r, evtDeviceRevoked, auditEntry{actorUserID: actorID(r), success: true,
 		detail: "device=" + id + " owner=" + dev.OwnerUserID + " by=admin"})
+	if fromDetail(r) {
+		http.Redirect(w, r, "/admin/devices/"+id, http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/admin/devices", http.StatusSeeOther)
+}
+
+// handleAdminApproveDevice activates a pending enrollment.
+func (s *Server) handleAdminApproveDevice(w http.ResponseWriter, r *http.Request) {
+	if !s.csrfOK(w, r) {
+		return
+	}
+	id := r.PathValue("id")
+	dev, err := s.db.GetDevice(r.Context(), id)
+	if err != nil {
+		s.renderAdminDevices(w, r, http.StatusNotFound, "Device not found.", "")
+		return
+	}
+	if err := s.db.ApproveDevice(r.Context(), id, time.Now().UTC()); err != nil {
+		s.renderAdminDeviceDetail(w, r, http.StatusBadRequest, dev, "That device is not pending approval.")
+		return
+	}
+	s.audit(r, evtDeviceApproved, auditEntry{actorUserID: actorID(r), success: true,
+		detail: "device=" + id + " owner=" + dev.OwnerUserID})
 	if fromDetail(r) {
 		http.Redirect(w, r, "/admin/devices/"+id, http.StatusSeeOther)
 		return

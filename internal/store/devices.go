@@ -11,18 +11,18 @@ import (
 
 const deviceColumns = `id, owner_user_id, name, hostname, platform, architecture, public_key, ` +
 	`public_key_algorithm, fingerprint, previous_fingerprint, status, trust_level, ` +
-	`created_at, enrolled_at, last_seen_at, revoked_at`
+	`created_at, enrolled_at, last_seen_at, revoked_at, owner_only`
 
 // CreateDevice inserts a new device. The fingerprint must be unique across all
 // devices, including revoked ones (a revoked key can never be re-registered).
 func (d *DB) CreateDevice(ctx context.Context, dev *model.Device) error {
 	_, err := d.sql.ExecContext(ctx, `
 		INSERT INTO devices (`+deviceColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		dev.ID, dev.OwnerUserID, dev.Name, dev.Hostname, dev.Platform, dev.Architecture,
 		dev.PublicKey, dev.PublicKeyAlgorithm, dev.Fingerprint, dev.PreviousFingerprint,
 		dev.Status, dev.TrustLevel, dev.CreatedAt.UTC(), nullTime(dev.EnrolledAt),
-		nullTime(dev.LastSeenAt), nullTime(dev.RevokedAt),
+		nullTime(dev.LastSeenAt), nullTime(dev.RevokedAt), dev.OwnerOnly,
 	)
 	return err
 }
@@ -129,6 +129,37 @@ func (d *DB) RotateDeviceKey(ctx context.Context, id, publicKey, alg, fingerprin
 	return requireRow(res)
 }
 
+// ApproveDevice moves a pending device to active (admin approval). Returns
+// ErrNotFound when the device is not pending.
+func (d *DB) ApproveDevice(ctx context.Context, id string, at time.Time) error {
+	res, err := d.sql.ExecContext(ctx,
+		`UPDATE devices SET status = ?, enrolled_at = ? WHERE id = ? AND status = ?`,
+		model.DeviceStatusActive, at.UTC(), id, model.DeviceStatusPending)
+	if err != nil {
+		return err
+	}
+	return requireRow(res)
+}
+
+// SetDeviceOwnerOnly sets the owner-only login policy of a device that the
+// given user owns. ErrNotFound when the device is not theirs.
+func (d *DB) SetDeviceOwnerOnly(ctx context.Context, id, ownerID string, ownerOnly bool) error {
+	res, err := d.sql.ExecContext(ctx,
+		`UPDATE devices SET owner_only = ? WHERE id = ? AND owner_user_id = ?`, ownerOnly, id, ownerID)
+	if err != nil {
+		return err
+	}
+	return requireRow(res)
+}
+
+// CountPendingDevices returns how many devices await admin approval.
+func (d *DB) CountPendingDevices(ctx context.Context) (int64, error) {
+	var n int64
+	err := d.sql.QueryRowContext(ctx,
+		`SELECT count(*) FROM devices WHERE status = ?`, model.DeviceStatusPending).Scan(&n)
+	return n, err
+}
+
 // RevokeRefreshTokensForDevice revokes every refresh token bound to a device.
 func (d *DB) RevokeRefreshTokensForDevice(ctx context.Context, deviceID string) error {
 	_, err := d.sql.ExecContext(ctx,
@@ -177,7 +208,7 @@ func scanDevice(s scanner) (*model.Device, error) {
 	err := s.Scan(
 		&dev.ID, &dev.OwnerUserID, &dev.Name, &dev.Hostname, &dev.Platform, &dev.Architecture,
 		&dev.PublicKey, &dev.PublicKeyAlgorithm, &dev.Fingerprint, &dev.PreviousFingerprint,
-		&dev.Status, &dev.TrustLevel, &dev.CreatedAt, &enrolled, &lastSeen, &revoked,
+		&dev.Status, &dev.TrustLevel, &dev.CreatedAt, &enrolled, &lastSeen, &revoked, &dev.OwnerOnly,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound

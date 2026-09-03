@@ -61,6 +61,8 @@ const (
 	evtDeviceKeyRotated      = "device.key.rotated"
 	evtDeviceRevoked         = "device.revoked"
 	evtDeviceDeleted         = "device.deleted"
+	evtDeviceApproved        = "device.approved"
+	evtDevicePolicyUpdated   = "device.policy.updated"
 
 	// Passkeys (WebAuthn).
 	evtPasskeyRegistered     = "passkey.registered"

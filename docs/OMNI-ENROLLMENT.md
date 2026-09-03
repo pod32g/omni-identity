@@ -116,6 +116,14 @@ issuer. The Linux login integration talks to the daemon over two Unix sockets: t
 root-only PAM socket and the read-only NSS socket; that is the extent of its
 local surface.
 
+## Admin approval
+
+If the server's *Require admin approval for new device enrollments* setting is
+on, `enroll` ends with **PENDING administrator approval**. Start the daemon
+anyway: it checks every minute (`status: pending` in `status.json`, never
+"revoked") and becomes active as soon as an administrator approves the device
+under **Devices**; a rejection shows up as revoked.
+
 ## Revocation from the user's side
 
 **My Devices → Revoke** (or an admin under **Devices**). The next renewal fails

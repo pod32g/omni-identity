@@ -173,7 +173,8 @@ SQLite-specific maintenance (`backup`, `integrity`) is not available on Postgres
 The `security`, `cookies`, `uploads`, and identity (`issuer`/`public_url`) values above are
 **seeded from config on first start**, then become editable from
 **Admin → Settings** and apply **live** (no restart): token/refresh TTLs, lockout
-threshold + duration, device token TTL, rate-limit window, pre-hash IP budget, password-verification
+threshold + duration, device token TTL, admin approval for device
+enrollments, rate-limit window, pre-hash IP budget, password-verification
 concurrency, login field caps, redirect URI loopback / private-network policy, password minimum
 length, session lifetime + idle timeout, logo upload size, the cookie `Secure`
 flag, and the issuer/public URL. A "Reset to config defaults"

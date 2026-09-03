@@ -5,8 +5,8 @@
   <div class="titles">
     <h1>{{.Device.Name}}</h1>
     <p class="desc">{{.Device.Platform}}{{if .Device.Architecture}} / {{.Device.Architecture}}{{end}}
-      {{if .Device.IsActive}}<span class="chip ok"><span class="dot"></span>active</span>{{else if .Device.IsRevoked}}<span class="chip off"><span class="dot"></span>revoked</span>{{else}}<span class="chip">{{.Device.Status}}</span>{{end}}
-      <span class="chip">{{.Device.TrustLevel}}</span>
+      {{if .Device.IsActive}}<span class="chip ok"><span class="dot"></span>active</span>{{else if .Device.IsRevoked}}<span class="chip off"><span class="dot"></span>revoked</span>{{else if .Device.IsPending}}<span class="chip warn"><span class="dot"></span>pending approval</span>{{else}}<span class="chip">{{.Device.Status}}</span>{{end}}
+      <span class="chip">{{.Device.TrustLevel}}</span>{{if .Device.OwnerOnly}} <span class="chip">owner only</span>{{end}}
     </p>
   </div>
   <div class="actions"><a class="btn" href="/admin/devices">Back</a></div>
@@ -24,7 +24,8 @@
           <tr><td class="t-tertiary">Key fingerprint</td><td style="font-family:var(--font-mono)">{{.Device.Fingerprint}}</td></tr>
           <tr><td class="t-tertiary">Key algorithm</td><td>{{.Device.Algorithm}}</td></tr>
           <tr><td class="t-tertiary">Trust level</td><td>{{.Device.TrustLevel}} <span class="t-caption">(software key registered under user authorization; no attestation)</span></td></tr>
-          <tr><td class="t-tertiary">Enrolled</td><td>{{.Device.Enrolled}}</td></tr>
+          <tr><td class="t-tertiary">Sign-in policy</td><td>{{if .Device.OwnerOnly}}Owner only{{else}}Any Omni user{{end}} <span class="t-caption">(set by the owner under My Devices)</span></td></tr>
+          <tr><td class="t-tertiary">Enrolled</td><td>{{if .Device.Enrolled}}{{.Device.Enrolled}}{{else}}—{{end}}</td></tr>
           <tr><td class="t-tertiary">Last seen</td><td>{{.Device.LastSeen}}</td></tr>
           {{if .Device.Revoked}}<tr><td class="t-tertiary">Revoked</td><td>{{.Device.Revoked}}</td></tr>{{end}}
         </tbody>
@@ -38,6 +39,21 @@
   <div class="panel">
     <div class="panel-hd">{{template "ic-lock" .}} Danger zone</div>
     <div class="panel-bd">
+      {{if .Device.IsPending}}
+      <div class="row-actions" style="margin-bottom:12px">
+        <form method="post" action="/admin/devices/{{.Device.ID}}/approve">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="return" value="detail">
+          <button class="btn primary" type="submit">Approve enrollment</button>
+        </form>
+        <form method="post" action="/admin/devices/{{.Device.ID}}/revoke">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <input type="hidden" name="return" value="detail">
+          <button class="btn danger" type="submit">Reject</button>
+        </form>
+      </div>
+      <p class="t-caption" style="margin:0">Pending devices cannot obtain credentials until approved. Rejecting revokes the enrollment; the user can enroll again with a new key.</p>
+      {{end}}
       {{if .Device.IsActive}}
       <form method="post" action="/admin/devices/{{.Device.ID}}/revoke">
         <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">

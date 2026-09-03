@@ -35,7 +35,7 @@
           </div>
         </div>
         {{if and .Enrolled (not .OwnerIsMe)}}
-        <div class="alert warn" style="margin-top:14px">This device is enrolled to another user. Only continue if you expect to sign in on their machine.</div>
+        <div class="alert {{if .OwnerOnly}}error{{else}}warn{{end}}" style="margin-top:14px">{{if .OwnerOnly}}This device only allows its owner to sign in; approving will be refused.{{else}}This device is enrolled to another user. Only continue if you expect to sign in on their machine.{{end}}</div>
         {{end}}
         <div class="alert warn" style="margin-top:14px">Code <strong style="font-family:var(--font-mono)">{{.UserCode}}</strong>. If you did not start this on a device in front of you, deny it.</div>
         <form class="stack" method="post" action="/device/confirm">

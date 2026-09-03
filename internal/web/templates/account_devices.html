@@ -22,13 +22,21 @@
           <td><strong>{{.Name}}</strong>{{if and .Hostname (ne .Hostname .Name)}}<div class="t-caption">{{.Hostname}}</div>{{end}}<div class="t-caption" style="font-family:var(--font-mono)">{{.ShortFP}}…</div></td>
           <td class="t-secondary">{{.Platform}}{{if .Architecture}} / {{.Architecture}}{{end}}</td>
           <td class="t-secondary">{{.LastSeen}}</td>
-          <td>{{if .IsActive}}<span class="chip ok"><span class="dot"></span>Active</span>{{else if .IsRevoked}}<span class="chip off"><span class="dot"></span>Revoked</span>{{else}}<span class="chip">{{.Status}}</span>{{end}}</td>
+          <td>{{if .IsActive}}<span class="chip ok"><span class="dot"></span>Active</span>{{else if .IsRevoked}}<span class="chip off"><span class="dot"></span>Revoked</span>{{else if .IsPending}}<span class="chip"><span class="dot"></span>Pending approval</span>{{else}}<span class="chip">{{.Status}}</span>{{end}}
+            {{if .OwnerOnly}}<span class="chip" title="Only you can sign in on this device">owner only</span>{{end}}</td>
           <td>
-            {{if .IsActive}}
-            <form method="post" action="/account/devices/{{.ID}}/revoke" onsubmit="return confirm('Revoke {{.Name}}? It will no longer be able to sign in as you or renew its credentials.');">
-              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-              <button class="btn danger sm" type="submit">Revoke</button>
-            </form>
+            {{if or .IsActive .IsPending}}
+            <div class="row-actions">
+              <form method="post" action="/account/devices/{{.ID}}/policy">
+                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                <input type="hidden" name="owner_only" value="{{if .OwnerOnly}}false{{else}}true{{end}}">
+                <button class="btn sm" type="submit" title="{{if .OwnerOnly}}Let other Omni users sign in on this device{{else}}Only allow yourself to sign in on this device{{end}}">{{if .OwnerOnly}}Allow others{{else}}Owner only{{end}}</button>
+              </form>
+              <form method="post" action="/account/devices/{{.ID}}/revoke" onsubmit="return confirm('Revoke {{.Name}}? It will no longer be able to sign in as you or renew its credentials.');">
+                <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                <button class="btn danger sm" type="submit">Revoke</button>
+              </form>
+            </div>
             {{end}}
           </td>
         </tr>

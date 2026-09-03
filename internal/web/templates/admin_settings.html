@@ -88,6 +88,10 @@
           <label class="field">Device token TTL <span class="muted">(enrolled devices; bounds revocation latency)</span>
             <input name="device_token_ttl" value="{{.Settings.DeviceTokenTTL}}" required>
           </label>
+          <label class="field inline">
+            <input type="checkbox" name="require_device_approval" {{if .Settings.RequireDeviceApproval}}checked{{end}}>
+            Require admin approval for new device enrollments <span class="muted">(devices stay pending, unable to sign in, until approved under Devices)</span>
+          </label>
         </div>
       </div>
       <div class="save-bar"><button class="btn primary" type="submit">Save settings</button></div>

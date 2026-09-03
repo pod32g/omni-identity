@@ -13,7 +13,7 @@ const settingsColumns = `issuer, public_url, token_ttl, refresh_token_ttl, max_f
 	`allow_private_scheme_redirects, allow_private_network_http_redirects, ` +
 	`password_min_length, require_upper, require_lower, require_number, require_symbol, ` +
 	`session_idle_timeout, session_lifetime, cookie_secure, max_logo_bytes, ldap_manage_enabled, ` +
-	`log_level, log_http_requests, device_token_ttl, seeded, updated_at`
+	`log_level, log_http_requests, device_token_ttl, require_device_approval, seeded, updated_at`
 
 // GetSettings returns the single settings row (id = 1), seeded by migration.
 func (d *DB) GetSettings(ctx context.Context) (*model.Settings, error) {
@@ -27,7 +27,7 @@ func (d *DB) GetSettings(ctx context.Context) (*model.Settings, error) {
 		&s.AllowPrivateSchemeRedirect, &s.AllowPrivateNetworkHTTPRedirect,
 		&s.PasswordMinLength, &s.RequireUpper, &s.RequireLower, &s.RequireNumber,
 		&s.RequireSymbol, &s.SessionIdleTimeout, &s.SessionLifetime, &s.CookieSecure,
-		&s.MaxLogoBytes, &s.LDAPManageEnabled, &s.LogLevel, &s.LogHTTPRequests, &s.DeviceTokenTTL,
+		&s.MaxLogoBytes, &s.LDAPManageEnabled, &s.LogLevel, &s.LogHTTPRequests, &s.DeviceTokenTTL, &s.RequireDeviceApproval,
 		&s.Seeded, &s.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -48,7 +48,7 @@ func (d *DB) UpdateSettings(ctx context.Context, s *model.Settings) error {
 			require_upper = ?, require_lower = ?, require_number = ?, require_symbol = ?,
 			session_idle_timeout = ?, session_lifetime = ?, cookie_secure = ?,
 			max_logo_bytes = ?, ldap_manage_enabled = ?, log_level = ?,
-			log_http_requests = ?, device_token_ttl = ?, seeded = TRUE, updated_at = ?
+			log_http_requests = ?, device_token_ttl = ?, require_device_approval = ?, seeded = TRUE, updated_at = ?
 		WHERE id = 1`,
 		s.Issuer, s.PublicURL, s.TokenTTL, s.RefreshTokenTTL, s.MaxFailedLogins,
 		s.LockoutDuration, s.RateLimitWindow, s.LoginIPMaxAttempts,
@@ -58,6 +58,6 @@ func (d *DB) UpdateSettings(ctx context.Context, s *model.Settings) error {
 		s.PasswordMinLength, s.RequireUpper, s.RequireLower,
 		s.RequireNumber, s.RequireSymbol, s.SessionIdleTimeout, s.SessionLifetime,
 		s.CookieSecure, s.MaxLogoBytes, s.LDAPManageEnabled, s.LogLevel,
-		s.LogHTTPRequests, s.DeviceTokenTTL, time.Now().UTC())
+		s.LogHTTPRequests, s.DeviceTokenTTL, s.RequireDeviceApproval, time.Now().UTC())
 	return err
 }

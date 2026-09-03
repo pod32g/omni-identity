@@ -28,12 +28,13 @@ import (
 // testIssuer runs a real Omni Identity server on a loopback port and returns
 // its base URL, store, and a seeded user with a browser session.
 type testIssuer struct {
-	URL   string
-	DB    *store.DB
-	User  *model.User
-	SID   string
-	srv   *httptest.Server
-	proxy *recordingTransport
+	URL     string
+	DB      *store.DB
+	User    *model.User
+	SID     string
+	srv     *httptest.Server
+	handler *web.Server
+	proxy   *recordingTransport
 }
 
 func newTestIssuer(t *testing.T) *testIssuer {
@@ -67,6 +68,8 @@ func newTestIssuer(t *testing.T) *testIssuer {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ti0 := &testIssuer{handler: handler}
+	_ = ti0
 	hs := httptest.NewUnstartedServer(handler)
 	hs.Listener = l
 	hs.Start()
@@ -81,7 +84,14 @@ func newTestIssuer(t *testing.T) *testIssuer {
 	if err := db.CreateSession(context.Background(), sess); err != nil {
 		t.Fatal(err)
 	}
-	return &testIssuer{URL: base, DB: db, User: u, SID: sess.ID, srv: hs}
+	return &testIssuer{URL: base, DB: db, User: u, SID: sess.ID, srv: hs, handler: handler}
+}
+
+// reloadSettings makes the running server pick up settings written directly
+// to the store (the admin UI does this after every save).
+func (ti *testIssuer) reloadSettings(t *testing.T) {
+	t.Helper()
+	ti.handler.ReloadSettings(context.Background())
 }
 
 // seedIssuerUser creates another Omni user and returns its id.
@@ -340,3 +350,42 @@ func TestLoadKeyRefusesWorldReadableKey(t *testing.T) {
 }
 
 var _ ed25519.PrivateKey // keep the import for the Seed() assertion above
+
+// A pending enrollment is a wait state for the agent, never a revocation.
+func TestAgentTreatsPendingApprovalAsWaiting(t *testing.T) {
+	ti := newTestIssuer(t)
+	st, _ := ti.DB.GetSettings(context.Background())
+	st.RequireDeviceApproval = true
+	_ = ti.DB.UpdateSettings(context.Background(), st)
+	// The running server caches settings; poke it through the admin path the
+	// same way the UI does by reloading via a fresh settings read.
+	ti.reloadSettings(t)
+
+	var out bytes.Buffer
+	agent := &enrollment.Agent{StateDir: filepath.Join(t.TempDir(), "s"), RuntimeDir: filepath.Join(t.TempDir(), "r"), Out: &out}
+	done := make(chan error, 1)
+	go func() {
+		_, err := agent.Enroll(context.Background(), enrollment.Config{Issuer: ti.URL, AllowInsecureHTTP: true})
+		done <- err
+	}()
+	ti.approvePending(t)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "PENDING administrator approval") {
+		t.Errorf("output lacks the pending notice:\n%s", out.String())
+	}
+	state, _, err := agent.Renew(context.Background())
+	if err == nil || !enrollment.IsOAuthError(err, "authorization_pending") || state.Status != "pending" {
+		t.Fatalf("renew while pending: err=%v state=%+v", err, state)
+	}
+	if rt, _ := enrollment.ReadStatus(agent.RuntimeDir); rt.Status != "pending" || !rt.IssuerReachable {
+		t.Errorf("status.json = %+v", rt)
+	}
+	if err := ti.DB.ApproveDevice(context.Background(), state.DeviceID, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if state, _, err := agent.Renew(context.Background()); err != nil || state.Status != "active" {
+		t.Errorf("renew after approval: err=%v state=%+v", err, state)
+	}
+}

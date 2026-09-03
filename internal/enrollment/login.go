@@ -206,6 +206,8 @@ func (a *Agent) offlineAllowed(uc *UserCache, now time.Time, pol LoginPolicy) (b
 	}
 	if rt, err := ReadStatus(a.RuntimeDir); err == nil && rt.Status == "revoked" {
 		return false, "this device was revoked; sign in online"
+	} else if err == nil && rt.Status == "pending" {
+		return false, "this device is pending administrator approval"
 	}
 	return true, ""
 }

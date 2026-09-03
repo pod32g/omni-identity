@@ -22,13 +22,23 @@
           <td class="t-secondary">{{.Platform}}{{if .Architecture}} / {{.Architecture}}{{end}}</td>
           <td class="t-secondary">{{.Enrolled}}</td>
           <td class="t-secondary">{{.LastSeen}}</td>
-          <td>{{if .IsActive}}<span class="chip ok"><span class="dot"></span>active</span>{{else if .IsRevoked}}<span class="chip off"><span class="dot"></span>revoked</span>{{else}}<span class="chip">{{.Status}}</span>{{end}}</td>
+          <td>{{if .IsActive}}<span class="chip ok"><span class="dot"></span>active</span>{{else if .IsRevoked}}<span class="chip off"><span class="dot"></span>revoked</span>{{else if .IsPending}}<span class="chip warn"><span class="dot"></span>pending</span>{{else}}<span class="chip">{{.Status}}</span>{{end}}{{if .OwnerOnly}} <span class="chip">owner only</span>{{end}}</td>
           <td>
             <details class="menu">
               <summary aria-label="Actions">{{template "ic-more" .}}</summary>
               <div class="menu-pop">
                 <a href="/admin/devices/{{.ID}}">{{template "ic-settings" .}} Inspect</a>
                 <div class="menu-sep"></div>
+                {{if .IsPending}}
+                <form method="post" action="/admin/devices/{{.ID}}/approve">
+                  <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                  <button type="submit">Approve enrollment</button>
+                </form>
+                <form method="post" action="/admin/devices/{{.ID}}/revoke">
+                  <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                  <button type="submit">Reject (revoke)</button>
+                </form>
+                {{end}}
                 {{if .IsActive}}
                 <form method="post" action="/admin/devices/{{.ID}}/revoke">
                   <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
