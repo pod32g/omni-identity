@@ -424,6 +424,19 @@ func (c *Client) RotateKey(ctx context.Context, deviceToken, deviceID string, ne
 	return &out, nil
 }
 
+// Revoke asks Omni to revoke a refresh token (RFC 7009). The endpoint is
+// derived from the issuer; a device-bound token needs no proof to be
+// revoked, only to be used.
+func (c *Client) Revoke(ctx context.Context, token string) error {
+	form := url.Values{"token": {token}, "client_id": {c.ClientID}, "token_type_hint": {"refresh_token"}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Issuer+"/oauth2/revoke", strings.NewReader(form.Encode()))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return c.doJSON(req, &struct{}{})
+}
+
 // Unenroll revokes the device on the server.
 func (c *Client) Unenroll(ctx context.Context, deviceToken string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Issuer+"/api/v1/devices/me/unenroll", nil)

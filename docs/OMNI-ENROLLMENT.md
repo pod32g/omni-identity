@@ -141,7 +141,10 @@ install the binary elsewhere.
 | `renew` | Obtain one device token now (RFC 7523 jwt-bearer grant). Exit 1 if Omni refuses (revoked) or is unreachable. |
 | `rotate-key` | Generate a new key, register it (signed by both old and new key), then commit it locally. |
 | `unenroll` | Revoke the device server-side (best effort) and delete the local key and record. |
-| `daemon` | Renewal loop used by the systemd unit. |
+| `daemon` | Renewal loop used by the systemd unit (and by the per-user agent on desktop endpoints). |
+| `signin [--json]` | Sign the calling user in on this device without the Linux login integration: shows the link, code, and QR, waits for approval, and stores the device-bound refresh token the broker uses. `--json` prints one event per line (`verification`, then `signed_in`) for a desktop helper. |
+| `signout` | Revoke the calling user's refresh token at Omni (best effort) and forget the sign-in. |
+| `whoami [--json]` | Show who is signed in as the calling user (username, sub, device, last online sign-in). Never prints tokens. |
 
 Configuration precedence: flag > `OMNI_ENROLLMENT_*` environment > `/etc/omni-enrollment/config.yaml`.
 The QR code (`qr: dark|light|off`) also applies to the Linux login prompt on
@@ -195,6 +198,30 @@ The caller is identified by its uid on `/run/omni-enrollment/broker.sock`;
 only users who have signed in online on this machine (and are not revoked)
 get tokens, and only for the allowlisted audiences. The app never sees a
 refresh token or the device key. Details: device architecture §10.
+
+## Desktop endpoints (macOS)
+
+On a desktop that has no PAM/NSS integration — PAM and NSS are Linux-only —
+the daemon runs **as the desktop user** rather than root, with `--state-dir`
+and `--runtime-dir` (or `OMNI_ENROLLMENT_STATE_DIR` / `OMNI_ENROLLMENT_RUNTIME_DIR`)
+pointing at a per-user directory such as `~/Library/Application Support/omni-enrollment`.
+It renews the device token, refreshes the signed-in user's trust, and serves
+the token broker; it provisions no accounts and creates no home directories.
+
+```bash
+omni-enrollment enroll --issuer https://identity.example --state-dir "$DIR" --runtime-dir "$DIR/run"
+omni-enrollment daemon --state-dir "$DIR" --runtime-dir "$DIR/run" &      # or a launchd agent
+omni-enrollment signin --state-dir "$DIR" --runtime-dir "$DIR/run"        # link + code + QR
+omni-enrollment token  --audience omni-access --runtime-dir "$DIR/run"    # via the broker
+```
+
+`signin` is what produces the device-bound refresh token the broker needs:
+it runs the same device-aware login as the Linux PAM path (device token,
+RFC 8628 grant bound to this device, verification in the browser) and stores
+the result under the caller's own uid, which is how the broker identifies
+the caller (`LOCAL_PEERCRED` on macOS, `SO_PEERCRED` on Linux). The device
+key stays in the software file backend (`device.key`, mode `0600`); the TPM
+backend is Linux-only.
 
 ## Admin approval
 

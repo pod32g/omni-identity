@@ -8,7 +8,10 @@
 //	omni-enrollment renew                 # obtain a device token once
 //	omni-enrollment rotate-key            # replace the device key
 //	omni-enrollment unenroll              # revoke server-side and wipe local state
-//	omni-enrollment daemon                # renewal loop (systemd service)
+//	omni-enrollment daemon                # renewal loop (systemd service / per-user agent)
+//	omni-enrollment signin     [--json]   # sign the current user in on this device
+//	omni-enrollment signout               # forget the current user's sign-in
+//	omni-enrollment whoami     [--json]   # show who is signed in as the current user
 //	omni-enrollment version
 //
 // Flags may also come from OMNI_ENROLLMENT_* environment variables or from
@@ -72,6 +75,12 @@ func main() {
 		err = runPAMTest(args)
 	case "token":
 		err = runToken(args)
+	case "signin":
+		err = runSignIn(args)
+	case "signout":
+		err = runSignOut(args)
+	case "whoami":
+		err = runWhoami(args)
 	case "gui":
 		err = runGUI(args)
 	case "version", "-v", "--version":
@@ -114,6 +123,11 @@ Commands:
   daemon      Run the renewal loop + PAM socket (used by the systemd service)
   pam-test    Run the Linux login conversation for a user on this terminal
   token       Ask the local broker for an access token (--audience <client id>)
+  signin      Sign the current user in on this device (desktop endpoints without
+              the Linux login integration); stores the device-bound refresh token
+              the broker uses (--json: one event per line)
+  signout     Forget the current user's sign-in and revoke its refresh token
+  whoami      Show who is signed in as the current user (--json)
   gui         Open a local web page to enroll and manage this device
               (the default when no command is given)
   version     Print the version
@@ -438,6 +452,91 @@ func runToken(args []string) error {
 		return json.NewEncoder(os.Stdout).Encode(map[string]any{"access_token": tok, "expires_in": expires, "token_type": "Bearer"})
 	}
 	fmt.Println(tok)
+	return nil
+}
+
+// runSignIn signs the calling user in on this device: it prints the
+// verification link and code (plus the QR code, like enroll), waits for the
+// approval, and stores the device-bound refresh token for the broker. With
+// --json every step is one JSON object per line for a desktop helper.
+func runSignIn(args []string) error {
+	fs := flag.NewFlagSet("signin", flag.ExitOnError)
+	resolve := commonFlags(fs)
+	asJSON := fs.Bool("json", false, "print one JSON object per line as the sign-in progresses")
+	_ = fs.Parse(args)
+	cfg, err := resolve()
+	if err != nil {
+		return err
+	}
+	ctx, stop := signalContext()
+	defer stop()
+	enc := json.NewEncoder(os.Stdout)
+	notify := func(ev enrollment.SignInEvent) {
+		if *asJSON {
+			_ = enc.Encode(ev)
+			return
+		}
+		switch ev.Kind {
+		case enrollment.SignInVerification:
+			fmt.Printf("Sign in with Omni Identity:\n\n    %s\n\n    (or open %s and enter the code %s)\n\n",
+				ev.VerificationURIComplete, ev.VerificationURI, ev.UserCode)
+			if qr, err := enrollment.RenderQR(ev.VerificationURIComplete, cfg.QR); err == nil && qr != "" {
+				fmt.Println(qr)
+			}
+			fmt.Println("Waiting for approval...")
+		case enrollment.SignInSignedIn:
+			fmt.Printf("Signed in as %s\n", ev.Username)
+		}
+	}
+	_, err = agentFor(cfg).SignIn(ctx, os.Getuid(), notify)
+	return err
+}
+
+// runSignOut forgets the calling user's sign-in on this device.
+func runSignOut(args []string) error {
+	fs := flag.NewFlagSet("signout", flag.ExitOnError)
+	resolve := commonFlags(fs)
+	_ = fs.Parse(args)
+	cfg, err := resolve()
+	if err != nil {
+		return err
+	}
+	ctx, stop := signalContext()
+	defer stop()
+	if err := agentFor(cfg).SignOut(ctx, os.Getuid()); err != nil {
+		return err
+	}
+	fmt.Println("signed out")
+	return nil
+}
+
+// runWhoami shows the calling user's sign-in on this device, never its tokens.
+func runWhoami(args []string) error {
+	fs := flag.NewFlagSet("whoami", flag.ExitOnError)
+	resolve := commonFlags(fs)
+	asJSON := fs.Bool("json", false, "machine-readable output")
+	_ = fs.Parse(args)
+	cfg, err := resolve()
+	if err != nil {
+		return err
+	}
+	uc, err := agentFor(cfg).Whoami(os.Getuid())
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(uc)
+	}
+	if uc == nil {
+		fmt.Println("not signed in")
+		return nil
+	}
+	fmt.Printf("Signed in as %s (sub %s) on device %s\n", uc.Username, uc.Sub, uc.DeviceID)
+	fmt.Printf("Last online sign-in: %s; trust refreshed %s\n",
+		uc.LastOnlineAuth.Local().Format(time.RFC1123), uc.LastTrustRefresh.Local().Format(time.RFC1123))
+	if uc.Revoked {
+		fmt.Printf("Revoked: %s\n", uc.RevokedReason)
+	}
 	return nil
 }
 

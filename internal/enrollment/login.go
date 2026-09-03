@@ -115,6 +115,15 @@ func (a *Agent) SaveUserCache(uc *UserCache) error {
 	return os.Rename(path+".tmp", path)
 }
 
+// RemoveUserCache deletes a user's record (absent is not an error).
+func (a *Agent) RemoveUserCache(name string) error {
+	err := os.Remove(filepath.Join(a.usersDir(), name+".json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
 // ListUserCaches returns every cached user.
 func (a *Agent) ListUserCaches() ([]*UserCache, error) {
 	entries, err := os.ReadDir(a.usersDir())
