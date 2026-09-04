@@ -162,14 +162,21 @@ Send the user to the end-session endpoint to clear their Omni Identity session:
 ```
 GET https://<issuer>/logout
   ?id_token_hint=<the_id_token_you_received>
+  &client_id=<your_client_id>                # alternative to, or alongside, the hint
   &post_logout_redirect_uri=<an_allowlisted_uri>
   &state=<optional_state>
 ```
 
-Omni Identity validates `id_token_hint`, clears the session, revokes the
-browser's refresh tokens for your client, and (when `post_logout_redirect_uri`
-exactly matches your registered allowlist) redirects back with `state`.
-Otherwise it shows the branded "You've signed out" page.
+Omni Identity clears the session and, when a valid `id_token_hint` identifies
+the user, revokes that browser's refresh tokens for your client. The client
+is identified by `id_token_hint`, by `client_id`, or both (they must agree).
+When `post_logout_redirect_uri` exactly matches one of the application's
+**Post-logout redirect URIs** (set when registering the application under
+*Admin → Applications*, or later on its edit page) the browser is redirected
+there with `state`. Otherwise the branded "You've signed out" page is shown;
+if a redirect was requested but refused, that page says why (unknown
+application, or address not on the list) so the misconfiguration is visible
+without reading the server log.
 
 ## Security notes
 

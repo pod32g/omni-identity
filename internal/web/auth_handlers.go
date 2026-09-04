@@ -431,10 +431,12 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 // renderSignedOut shows the hosted "you've signed out" page. continueURL, when
 // non-empty, is offered as a link back to the application.
-func (s *Server) renderSignedOut(w http.ResponseWriter, r *http.Request, continueURL string) {
-	s.tmpl.render(w, http.StatusOK, "logout", map[string]any{
-		"ContinueURL": continueURL,
-	})
+func (s *Server) renderSignedOut(w http.ResponseWriter, r *http.Request, continueURL string, notice ...string) {
+	data := map[string]any{"ContinueURL": continueURL}
+	if len(notice) > 0 && notice[0] != "" {
+		data["Notice"] = notice[0]
+	}
+	s.tmpl.render(w, http.StatusOK, "logout", data)
 }
 
 func (s *Server) handleSetupForm(w http.ResponseWriter, r *http.Request) {

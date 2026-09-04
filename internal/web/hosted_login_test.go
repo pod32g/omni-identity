@@ -434,3 +434,121 @@ func TestSessionRotationOnLogin(t *testing.T) {
 		t.Error("old session should be deleted after rotation")
 	}
 }
+
+// OpenID Connect RP-Initiated Logout 1.0 §2 lets the RP identify itself with
+// client_id instead of (or alongside) id_token_hint; many applications send
+// only client_id. The allowlist still applies, and a hint for another client
+// must not be combined with a foreign client_id.
+func TestLogoutIdentifiesClientByClientID(t *testing.T) {
+	srv := testServer(t)
+	user := createUser(t, srv, "alice", "pw", false)
+	createClientFull(t, srv, &model.Client{
+		ClientID: "jellyfin", Name: "Jellyfin", ClientSecretHash: auth.HashToken("topsecret"),
+		RedirectURIs:           []string{"https://jelly.example.com/cb"},
+		AllowedScopes:          []string{"openid"},
+		PostLogoutRedirectURIs: []string{"https://jelly.example.com/bye"},
+		Type:                   model.ClientTypeConfidential, SkipConsent: true,
+	})
+	createClientFull(t, srv, &model.Client{
+		ClientID: "grafana", Name: "Grafana", ClientSecretHash: auth.HashToken("othersecret"),
+		RedirectURIs:           []string{"https://grafana.example.com/cb"},
+		AllowedScopes:          []string{"openid"},
+		PostLogoutRedirectURIs: []string{"https://grafana.example.com/bye"},
+		Type:                   model.ClientTypeConfidential, SkipConsent: true,
+	})
+
+	// client_id alone, registered URI: redirect with state, session gone.
+	sid := startSession(t, srv, user.ID)
+	req := httptest.NewRequest(http.MethodGet, "/logout?"+url.Values{
+		"client_id": {"jellyfin"}, "post_logout_redirect_uri": {"https://jelly.example.com/bye"}, "state": {"s1"},
+	}.Encode(), nil)
+	req.AddCookie(&http.Cookie{Name: "omni_session", Value: sid})
+	rr := do(srv, req)
+	if rr.Code != http.StatusSeeOther || !strings.HasPrefix(rr.Header().Get("Location"), "https://jelly.example.com/bye?state=s1") {
+		t.Fatalf("client_id logout: code=%d loc=%q", rr.Code, rr.Header().Get("Location"))
+	}
+	if _, err := srv.db.GetSession(context.Background(), sid); err == nil {
+		t.Error("session should be destroyed")
+	}
+
+	// client_id alone, URI registered for a different client: no redirect.
+	rr = do(srv, httptest.NewRequest(http.MethodGet, "/logout?"+url.Values{
+		"client_id": {"grafana"}, "post_logout_redirect_uri": {"https://jelly.example.com/bye"},
+	}.Encode(), nil))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "not on its post-logout redirect list") {
+		t.Errorf("cross-client URI: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// Unknown client_id: no redirect, page says the app was not identified.
+	rr = do(srv, httptest.NewRequest(http.MethodGet, "/logout?"+url.Values{
+		"client_id": {"nope"}, "post_logout_redirect_uri": {"https://jelly.example.com/bye"},
+	}.Encode(), nil))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "could not be identified") {
+		t.Errorf("unknown client: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// No identification at all: no redirect, page says so.
+	rr = do(srv, httptest.NewRequest(http.MethodGet, "/logout?post_logout_redirect_uri=https://jelly.example.com/bye", nil))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "did not identify itself") {
+		t.Errorf("anonymous: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+	// The rejected URI itself is never echoed into the page.
+	if strings.Contains(rr.Body.String(), "jelly.example.com") {
+		t.Error("rejected URI echoed into the page")
+	}
+
+	// A valid hint for jellyfin combined with client_id=grafana must not
+	// redirect to grafana's URI.
+	sid = startSession(t, srv, user.ID)
+	authReq := authorizeReq("openid", pkceChallenge)
+	authReq.AddCookie(&http.Cookie{Name: "omni_session", Value: sid})
+	loc, _ := url.Parse(do(srv, authReq).Header().Get("Location"))
+	tokRR := do(srv, tokenPost(url.Values{
+		"grant_type": {"authorization_code"}, "code": {loc.Query().Get("code")},
+		"redirect_uri": {"https://jelly.example.com/cb"}, "client_id": {"jellyfin"},
+		"client_secret": {"topsecret"}, "code_verifier": {pkceVerifier},
+	}))
+	var tok tokenResponse
+	_ = json.Unmarshal(tokRR.Body.Bytes(), &tok)
+	rr = do(srv, httptest.NewRequest(http.MethodGet, "/logout?"+url.Values{
+		"id_token_hint": {tok.IDToken}, "client_id": {"grafana"}, "post_logout_redirect_uri": {"https://grafana.example.com/bye"},
+	}.Encode(), nil))
+	if rr.Code != http.StatusOK {
+		t.Errorf("mismatched hint/client_id redirected: code=%d loc=%q", rr.Code, rr.Header().Get("Location"))
+	}
+	// Matching hint + client_id still works.
+	rr = do(srv, httptest.NewRequest(http.MethodGet, "/logout?"+url.Values{
+		"id_token_hint": {tok.IDToken}, "client_id": {"jellyfin"}, "post_logout_redirect_uri": {"https://jelly.example.com/bye"},
+	}.Encode(), nil))
+	if rr.Code != http.StatusSeeOther {
+		t.Errorf("matching hint + client_id: code=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+// The registration form (not only the edit page) accepts post-logout URIs.
+func TestCreateClientFormAcceptsPostLogoutURIs(t *testing.T) {
+	srv := testServer(t)
+	sid := adminSession(t, srv)
+	rr := adminPost(srv, "/admin/clients", url.Values{
+		"name": {"Nextcloud"}, "client_id": {"nextcloud"}, "type": {"confidential"},
+		"redirect_uris":             {"https://cloud.example.com/cb"},
+		"post_logout_redirect_uris": {"https://cloud.example.com/\nhttps://cloud.example.com/bye"},
+		"scopes":                    {"openid email"},
+	}, sid)
+	if rr.Code != http.StatusOK && rr.Code != http.StatusSeeOther {
+		t.Fatalf("create code = %d body=%s", rr.Code, rr.Body.String())
+	}
+	c, err := srv.db.GetClient(context.Background(), "nextcloud")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.PostLogoutRedirectURIs) != 2 || c.PostLogoutRedirectURIs[1] != "https://cloud.example.com/bye" {
+		t.Errorf("post-logout URIs = %v", c.PostLogoutRedirectURIs)
+	}
+	listReq := httptest.NewRequest(http.MethodGet, "/admin/clients", nil)
+	listReq.AddCookie(&http.Cookie{Name: "omni_session", Value: sid})
+	list := do(srv, listReq)
+	if !strings.Contains(list.Body.String(), `name="post_logout_redirect_uris"`) {
+		t.Error("registration form lacks the post_logout_redirect_uris field")
+	}
+}

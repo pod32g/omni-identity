@@ -63,6 +63,9 @@
         <label class="field">Redirect URIs (one per line)
           <textarea name="redirect_uris" rows="3" placeholder="https://app.example.com/callback" required></textarea>
         </label>
+        <label class="field">Post-logout redirect URIs (one per line) <span class="muted">(optional — where the app may send users after <code>/logout</code>)</span>
+          <textarea name="post_logout_redirect_uris" rows="2" placeholder="https://app.example.com/"></textarea>
+        </label>
         <label class="field">Scopes (space separated)
           <input name="scopes" value="openid email profile" required>
         </label>
