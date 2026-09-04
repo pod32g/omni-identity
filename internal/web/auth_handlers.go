@@ -117,6 +117,13 @@ func clientRedirectOrigins(c *model.Client) []string {
 			continue
 		}
 		o := u.Scheme + "://" + u.Host
+		// A registered literal-loopback http:// redirect without a port is
+		// the RFC 8252 §7.3 native-app case: the client listens on an
+		// ephemeral port, and browsers enforce form-action across the
+		// redirect chain, so the CSP source must allow any port.
+		if u.Scheme == "http" && u.Port() == "" && (u.Hostname() == "127.0.0.1" || u.Hostname() == "::1") {
+			o += ":*"
+		}
 		if !seen[o] {
 			seen[o] = true
 			out = append(out, o)
