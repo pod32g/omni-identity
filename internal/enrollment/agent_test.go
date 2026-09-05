@@ -1,6 +1,7 @@
 package enrollment_test
 
 import (
+	"runtime"
 	"bytes"
 	"context"
 	"crypto/ed25519"
@@ -348,6 +349,9 @@ func TestClientRefusesPlainHTTPWithoutOptIn(t *testing.T) {
 }
 
 func TestLoadKeyRefusesWorldReadableKey(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix file modes do not exist on NTFS; the key is DPAPI-wrapped there")
+	}
 	dir := t.TempDir()
 	if _, err := enrollment.GenerateKey(dir, false); err != nil {
 		t.Fatal(err)
