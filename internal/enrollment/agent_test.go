@@ -1,7 +1,6 @@
 package enrollment_test
 
 import (
-	"runtime"
 	"bytes"
 	"context"
 	"crypto/ed25519"
@@ -13,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
