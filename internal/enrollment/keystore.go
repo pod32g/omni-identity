@@ -106,7 +106,10 @@ func writeKey(path string, priv ed25519.PrivateKey) error {
 	if err != nil {
 		return err
 	}
-	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+	pemBytes, err := protectKeyFile(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+	if err != nil {
+		return err
+	}
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, pemBytes, 0o600); err != nil {
 		return err
@@ -134,8 +137,12 @@ func LoadKey(dir string) (Signer, error) {
 	if err != nil {
 		return nil, err
 	}
-	if fi, err := os.Stat(path); err == nil && fi.Mode().Perm()&0o077 != 0 {
-		return nil, fmt.Errorf("%s is readable by others (mode %04o); refusing to use it", path, fi.Mode().Perm())
+	if err := checkKeyFileMode(path); err != nil {
+		return nil, err
+	}
+	raw, err = unprotectKeyFile(raw)
+	if err != nil {
+		return nil, fmt.Errorf("device key: %w", err)
 	}
 	block, _ := pem.Decode(raw)
 	if block == nil {

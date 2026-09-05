@@ -181,6 +181,9 @@ type MetricsConfig struct {
 // download section. The Docker image populates /downloads at build time.
 type DownloadsConfig struct {
 	Dir string
+	// ExtraDir holds artifacts built outside the image (the Omni Access
+	// desktop clients); listed after Dir's and served from the same URL.
+	ExtraDir string
 }
 
 // UploadsConfig holds upload size limits. Values are intentionally config/env
@@ -241,7 +244,8 @@ type fileConfig struct {
 		MaxLogoBytes int `yaml:"max_logo_bytes"`
 	} `yaml:"uploads"`
 	Downloads struct {
-		Dir string `yaml:"dir"`
+		Dir      string `yaml:"dir"`
+		ExtraDir string `yaml:"extra_dir"`
 	} `yaml:"downloads"`
 	SMTP struct {
 		Host     string `yaml:"host"`
@@ -417,6 +421,7 @@ func Load(path string) (*Config, error) {
 	cfg.Metrics.BearerToken = fc.Metrics.BearerToken
 	cfg.Uploads.MaxLogoBytes = orDefaultInt(fc.Uploads.MaxLogoBytes, defaultMaxLogoBytes)
 	cfg.Downloads.Dir = strings.TrimSpace(fc.Downloads.Dir)
+	cfg.Downloads.ExtraDir = strings.TrimSpace(fc.Downloads.ExtraDir)
 
 	cfg.SMTP.Host = fc.SMTP.Host
 	cfg.SMTP.Port = orDefaultInt(fc.SMTP.Port, 587)
@@ -788,6 +793,9 @@ func applyEnvOverrides(fc *fileConfig) {
 	}
 	if v := os.Getenv("OMNI_DOWNLOADS_DIR"); v != "" {
 		fc.Downloads.Dir = v
+	}
+	if v := os.Getenv("OMNI_DOWNLOADS_EXTRA_DIR"); v != "" {
+		fc.Downloads.ExtraDir = v
 	}
 	if v := os.Getenv("OMNI_UPLOADS_MAX_LOGO_BYTES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {

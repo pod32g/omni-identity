@@ -73,6 +73,8 @@ services:
       OMNI_UPLOADS_MAX_LOGO_BYTES: ${OMNI_UPLOADS_MAX_LOGO_BYTES:-524288}
       # Endpoint agent binaries built into the image, offered on /account/enroll.
       OMNI_DOWNLOADS_DIR: /downloads
+      # Artifacts built elsewhere (the Omni Access desktop clients) dropped on the host.
+      OMNI_DOWNLOADS_EXTRA_DIR: /downloads-extra
       # Empty disables /metrics. Set a strong value and scrape with Authorization: Bearer.
       OMNI_METRICS_TOKEN: ${OMNI_METRICS_TOKEN:-}
       # Optional LDAP / Active Directory backend. Off unless OMNI_LDAP_ENABLED=true.
@@ -98,6 +100,7 @@ services:
       NO_PROXY: "${NO_PROXY:-localhost,127.0.0.1,omni-identity}"
     volumes:
       - omni-identity-data:/data
+      - ${OMNI_DOWNLOADS_EXTRA_DIR:-./downloads-extra}:/downloads-extra:ro
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=16m
     healthcheck:

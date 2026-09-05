@@ -154,7 +154,7 @@ func NewServer(cfg *config.Config, db *store.DB) (*Server, error) {
 		connectors: connectors,
 		directory:  directory,
 		metrics:    newMetrics(),
-		downloads:  newDownloadsService(cfg.Downloads.Dir),
+		downloads:  newDownloadsService(cfg.Downloads.Dir, cfg.Downloads.ExtraDir),
 		mux:        http.NewServeMux(),
 	}
 	// Render branding on every page; read live so admin edits take effect.

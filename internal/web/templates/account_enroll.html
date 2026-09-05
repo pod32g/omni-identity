@@ -4,7 +4,7 @@
 <div class="page-hd">
   <div class="titles">
     <h1>Enroll a device</h1>
-    <p class="desc">Give a Linux machine its own identity under your account. It generates a key locally; the private key never leaves it.</p>
+    <p class="desc">Give a Linux or Windows machine its own identity under your account. It generates a key locally; the private key never leaves it.</p>
   </div>
   <div class="actions"><a class="btn" href="/account/devices">My Devices</a></div>
 </div>
@@ -50,6 +50,14 @@ sudo omni-enrollment --issuer {{.Issuer}}{{if .Insecure}} --allow-insecure-http{
       <p class="muted" style="margin-top:12px">For a menu entry, unpack the endpoint sources above and run <code>sudo make -C endpoint/desktop install</code>: "Omni Enrollment" then appears in the application menu and asks for an administrator password through the desktop's own dialog.</p>
       <p class="muted" style="margin-top:12px">No display, or working over SSH? <code>sudo omni-enrollment enroll --issuer {{.Issuer}}</code> runs the same steps in the terminal and prints the link, the code, and a QR code. Add <code>--browser</code> to approve in that machine's browser directly instead of using a code.</p>
       {{if .Insecure}}<div class="alert warn" style="margin-top:12px">This server's issuer uses plain <code>http://</code>. The agent refuses that unless <code>--allow-insecure-http</code> is passed; use it only on a private network you trust.</div>{{end}}
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-hd">Windows</div>
+    <div class="panel-bd">
+      <p class="muted">Download <strong>omni-access-windows-amd64.zip</strong> above (the Omni Access tray client, which includes the Windows agent), unzip it anywhere (for example <code>%LOCALAPPDATA%\Programs\Omni Access</code>) and run <code>omni-access.exe</code>. It sits in the notification area, adds itself to your startup apps, and opens its settings page: enter the Omni Access gateway address, then <strong>Enroll this PC</strong> and <strong>Sign in</strong>; approval happens here in your browser, as on Linux. If your gateway uses a private certificate authority, import its root under <em>Trusted Root Certification Authorities</em> for your user first.</p>
+      <p class="t-caption" style="margin:10px 0 0">The agent alone (<code>omni-enrollment-windows-amd64.exe</code>) offers the same commands as on Linux: <code>enroll</code>, <code>signin</code>, <code>daemon</code>. The device key is protected with DPAPI for your Windows user.</p>
     </div>
   </div>
 

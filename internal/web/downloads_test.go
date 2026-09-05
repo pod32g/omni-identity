@@ -21,7 +21,7 @@ func TestDownloadsPageAndArtifactServing(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(dir, ".hidden"), []byte("x"), 0o644)
 	_ = os.Mkdir(filepath.Join(dir, "sub"), 0o755)
 	_ = os.WriteFile(filepath.Join(dir, "sub", "secret"), []byte("no"), 0o644)
-	srv.downloads = newDownloadsService(dir)
+	srv.downloads = newDownloadsService(dir, "")
 	sum := sha256.Sum256(body)
 
 	alice := createUser(t, srv, "alice", "pw", false)
@@ -69,5 +69,38 @@ func TestDownloadsDisabled(t *testing.T) {
 	}
 	if rr := do(srv, httptest.NewRequest(http.MethodGet, "/downloads/omni-enrollment-linux-amd64", nil)); rr.Code != http.StatusNotFound {
 		t.Errorf("download with no dir = %d", rr.Code)
+	}
+}
+
+func TestDownloadsExtraDirectory(t *testing.T) {
+	dir, extra := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "omni-enrollment-linux-amd64"), []byte("linux"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(extra, "omni-access-windows-amd64.zip"), []byte("zip"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A duplicate name in the extra directory never shadows the image's copy.
+	if err := os.WriteFile(filepath.Join(extra, "omni-enrollment-linux-amd64"), []byte("impostor"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d := newDownloadsService(dir, extra)
+	list := d.List()
+	if len(list) != 2 || list[0].Name != "omni-access-windows-amd64.zip" && list[1].Name != "omni-access-windows-amd64.zip" {
+		t.Fatalf("list = %+v", list)
+	}
+	if d.path("omni-enrollment-linux-amd64") != filepath.Join(dir, "omni-enrollment-linux-amd64") {
+		t.Fatalf("path = %q", d.path("omni-enrollment-linux-amd64"))
+	}
+	if d.path("omni-access-windows-amd64.zip") != filepath.Join(extra, "omni-access-windows-amd64.zip") {
+		t.Fatalf("extra path = %q", d.path("omni-access-windows-amd64.zip"))
+	}
+	for _, bad := range []string{"", "../etc/passwd", ".hidden", "missing"} {
+		if d.path(bad) != "" {
+			t.Fatalf("path(%q) served", bad)
+		}
+	}
+	if !newDownloadsService("", extra).Enabled() || newDownloadsService("", "").Enabled() {
+		t.Fatal("Enabled wrong")
 	}
 }

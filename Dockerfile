@@ -14,11 +14,12 @@ RUN go test ./...
 RUN go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...
 RUN mkdir /data && go build -ldflags "-X main.version=docker" -o /omni-identity ./cmd/omni-identity
 # Endpoint artifacts served on the "Enroll a device" page: the omni-enrollment
-# agent for Linux (pure Go, no CGO) and the PAM/systemd sources, all built from
+# agent for Linux and Windows (pure Go, no CGO) and the PAM/systemd sources, all built from
 # the same commit as the server so versions always match.
 RUN mkdir /downloads \
     && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-X main.version=docker" -o /downloads/omni-enrollment-linux-amd64 ./cmd/omni-enrollment \
     && CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "-X main.version=docker" -o /downloads/omni-enrollment-linux-arm64 ./cmd/omni-enrollment \
+    && CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags "-X main.version=docker" -o /downloads/omni-enrollment-windows-amd64.exe ./cmd/omni-enrollment \
     && tar -czf /downloads/omni-enrollment-endpoint.tar.gz endpoint/pam endpoint/nss endpoint/systemd endpoint/desktop
 
 # Runtime stage: distroless with glibc (the CGO binary is dynamically linked

@@ -34,41 +34,72 @@ type artifact struct {
 }
 
 var artifactLabels = map[string]string{
-	"omni-enrollment-linux-amd64":     "Linux agent, x86-64",
-	"omni-enrollment-linux-arm64":     "Linux agent, arm64 (Raspberry Pi, Apple-silicon VMs)",
-	"omni-enrollment-endpoint.tar.gz": "PAM module and systemd unit sources",
+	"omni-enrollment-linux-amd64":       "Linux agent, x86-64",
+	"omni-enrollment-linux-arm64":       "Linux agent, arm64 (Raspberry Pi, Apple-silicon VMs)",
+	"omni-enrollment-windows-amd64.exe": "Windows agent, x86-64 (used by the Omni Access desktop client)",
+	"omni-enrollment-endpoint.tar.gz":   "PAM module and systemd unit sources",
+	"omni-access-windows-amd64.zip":     "Omni Access for Windows: tray client with the agent, x86-64",
+	"omni-access-macos-arm64.zip":       "Omni Access for macOS, Apple silicon",
 }
 
 // downloadsService lists and checksums the artifacts, caching by mtime.
+// Artifacts come from the image's own directory and, optionally, an extra
+// directory for files built elsewhere (for example the Omni Access desktop
+// clients, dropped there by that project's deployment); the image's copy
+// wins when both hold the same name.
 type downloadsService struct {
 	dir   string
+	extra string
 	mu    sync.Mutex
 	cache map[string]artifact
 }
 
-func newDownloadsService(dir string) *downloadsService {
-	return &downloadsService{dir: dir, cache: map[string]artifact{}}
+func newDownloadsService(dir, extra string) *downloadsService {
+	return &downloadsService{dir: dir, extra: extra, cache: map[string]artifact{}}
 }
 
 // Enabled reports whether a downloads directory is configured.
-func (d *downloadsService) Enabled() bool { return d != nil && d.dir != "" }
+func (d *downloadsService) Enabled() bool { return d != nil && (d.dir != "" || d.extra != "") }
+
+// path resolves a base name to the file to serve, or "" when absent.
+func (d *downloadsService) path(name string) string {
+	if name == "" || name != filepath.Base(name) || strings.HasPrefix(name, ".") {
+		return ""
+	}
+	for _, dir := range []string{d.dir, d.extra} {
+		if dir == "" {
+			continue
+		}
+		if fi, err := os.Stat(filepath.Join(dir, name)); err == nil && fi.Mode().IsRegular() {
+			return filepath.Join(dir, name)
+		}
+	}
+	return ""
+}
 
 // List returns the artifacts sorted by name (labelled ones first).
 func (d *downloadsService) List() []artifact {
 	if !d.Enabled() {
 		return nil
 	}
-	entries, err := os.ReadDir(d.dir)
-	if err != nil {
-		return nil
-	}
+	seen := map[string]bool{}
 	var out []artifact
-	for _, e := range entries {
-		if !e.Type().IsRegular() || strings.HasPrefix(e.Name(), ".") {
+	for _, dir := range []string{d.dir, d.extra} {
+		if dir == "" {
 			continue
 		}
-		if a, ok := d.describe(e.Name()); ok {
-			out = append(out, a)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !e.Type().IsRegular() || strings.HasPrefix(e.Name(), ".") || seen[e.Name()] {
+				continue
+			}
+			if a, ok := d.describe(e.Name()); ok {
+				seen[e.Name()] = true
+				out = append(out, a)
+			}
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -83,8 +114,12 @@ func (d *downloadsService) List() []artifact {
 
 // describe stats and (when needed) re-hashes one artifact.
 func (d *downloadsService) describe(name string) (artifact, bool) {
-	fi, err := os.Stat(filepath.Join(d.dir, name))
-	if err != nil || !fi.Mode().IsRegular() {
+	full := d.path(name)
+	if full == "" {
+		return artifact{}, false
+	}
+	fi, err := os.Stat(full)
+	if err != nil {
 		return artifact{}, false
 	}
 	d.mu.Lock()
@@ -92,7 +127,7 @@ func (d *downloadsService) describe(name string) (artifact, bool) {
 	if a, ok := d.cache[name]; ok && a.Modified.Equal(fi.ModTime()) {
 		return a, true
 	}
-	f, err := os.Open(filepath.Join(d.dir, name))
+	f, err := os.Open(full)
 	if err != nil {
 		return artifact{}, false
 	}
@@ -139,7 +174,12 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	f, err := os.Open(filepath.Join(s.downloads.dir, name))
+	full := s.downloads.path(name)
+	if full == "" {
+		http.NotFound(w, r)
+		return
+	}
+	f, err := os.Open(full)
 	if err != nil {
 		http.NotFound(w, r)
 		return
