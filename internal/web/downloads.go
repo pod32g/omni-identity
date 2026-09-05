@@ -38,7 +38,7 @@ var artifactLabels = map[string]string{
 	"omni-enrollment-linux-arm64":       "Linux agent, arm64 (Raspberry Pi, Apple-silicon VMs)",
 	"omni-enrollment-windows-amd64.exe": "Windows agent, x86-64 (used by the Omni Access desktop client)",
 	"omni-enrollment-endpoint.tar.gz":   "PAM module and systemd unit sources",
-	"omni-access-windows-amd64.zip":     "Omni Access for Windows: tray client with the agent, x86-64",
+	"omni-access-windows-amd64.zip":     "Omni Access for Windows, pre-configured for this server (one file, agent included), x86-64",
 	"omni-access-macos-arm64.zip":       "Omni Access for macOS, Apple silicon",
 }
 
