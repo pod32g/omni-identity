@@ -12,6 +12,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -52,6 +53,8 @@ func Main(argv []string) int {
 		err = runEnroll(args)
 	case "status":
 		err = runStatus(args)
+	case "diagnostics":
+		err = runDiagnostics(args)
 	case "renew":
 		err = runRenew(args)
 	case "rotate-key":
@@ -108,6 +111,8 @@ Commands:
               (--browser: use this machine's browser instead of a code)
   status      Show enrollment and daemon status
   renew       Obtain a fresh device token once (checks the device is still trusted)
+  diagnostics Upload a log file (--file PATH, default stdin; last 256 KiB) under
+              this device so an administrator can read it on Omni Identity
   rotate-key  Replace the device key (requires the current key)
   unenroll    Revoke this device server-side and remove local state
   daemon      Run the renewal loop + PAM socket (used by the systemd service)
@@ -324,6 +329,38 @@ func runRenew(args []string) error {
 		return err
 	}
 	fmt.Printf("device %s is %s (trust=%s); token valid for %ds\n", st.DeviceID, st.Status, tok.DeviceTrust, tok.ExpiresIn)
+	return nil
+}
+
+func runDiagnostics(args []string) error {
+	fs := flag.NewFlagSet("diagnostics", flag.ExitOnError)
+	resolve := commonFlags(fs)
+	file := fs.String("file", "", "file to upload (default: standard input)")
+	_ = fs.Parse(args)
+	cfg, err := resolve()
+	if err != nil {
+		return err
+	}
+	var content []byte
+	if *file == "" {
+		content, err = io.ReadAll(io.LimitReader(os.Stdin, 4<<20))
+	} else {
+		content, err = os.ReadFile(*file)
+	}
+	if err != nil {
+		return err
+	}
+	const limit = 256 * 1024
+	if len(content) > limit {
+		content = content[len(content)-limit:]
+	}
+	ctx, stop := signalContext()
+	defer stop()
+	name, err := agentFor(cfg).SendDiagnostics(ctx, content)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("uploaded %d bytes as %s\n", len(content), name)
 	return nil
 }
 

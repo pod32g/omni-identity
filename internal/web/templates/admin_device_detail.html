@@ -70,6 +70,24 @@
       {{end}}
     </div>
   </div>
+  {{if .Diagnostics}}
+  <div class="card" style="margin-top:16px">
+    <h2 class="t-title">Diagnostics</h2>
+    <p class="t-caption" style="margin:0 0 10px">Log bundles the device uploaded (its client sends one after a failed check, or on request). Plain text, newest first; the ten most recent are kept.</p>
+    <table class="table">
+      <thead><tr><th>Uploaded</th><th>Size</th><th></th></tr></thead>
+      <tbody>
+      {{range .Diagnostics}}
+      <tr>
+        <td>{{.Modified.UTC.Format "2006-01-02 15:04:05"}} UTC</td>
+        <td>{{.Size}} bytes</td>
+        <td><a class="btn" href="/admin/devices/{{$.Device.ID}}/diagnostics/{{.Name}}" target="_blank" rel="noopener">Open</a></td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
 </div>
 {{template "shell-end" .}}
 {{end}}

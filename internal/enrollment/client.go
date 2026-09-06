@@ -375,6 +375,28 @@ func (c *Client) Me(ctx context.Context, deviceToken string) (*Device, error) {
 	return &out, nil
 }
 
+// UploadDiagnostics sends a plain-text log bundle for this device
+// (POST /api/v1/devices/me/diagnostics, DPoP-bound like every device API
+// call). Administrators read it on the device's page. Returns the stored
+// file name.
+func (c *Client) UploadDiagnostics(ctx context.Context, deviceToken string, content []byte) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Issuer+"/api/v1/devices/me/diagnostics", bytes.NewReader(content))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "text/plain; charset=utf-8")
+	if err := c.authorize(req, deviceToken); err != nil {
+		return "", err
+	}
+	var out struct {
+		Stored string `json:"stored"`
+	}
+	if err := c.doJSON(req, &out); err != nil {
+		return "", err
+	}
+	return out.Stored, nil
+}
+
 // UserLookup is the answer to an enrolled device's username lookup.
 type UserLookup struct {
 	Sub      string `json:"sub"`

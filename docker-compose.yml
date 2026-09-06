@@ -75,6 +75,8 @@ services:
       OMNI_DOWNLOADS_DIR: /downloads
       # Artifacts built elsewhere (the Omni Access desktop clients) dropped on the host.
       OMNI_DOWNLOADS_EXTRA_DIR: /downloads-extra
+      # Logs uploaded by enrolled devices (Omni Access clients), per device, on the data volume.
+      OMNI_DIAGNOSTICS_DIR: /data/diagnostics
       # Empty disables /metrics. Set a strong value and scrape with Authorization: Bearer.
       OMNI_METRICS_TOKEN: ${OMNI_METRICS_TOKEN:-}
       # Optional LDAP / Active Directory backend. Off unless OMNI_LDAP_ENABLED=true.

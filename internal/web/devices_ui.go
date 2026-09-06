@@ -174,6 +174,9 @@ type adminDeviceDetailPage struct {
 	Device    deviceView
 	PublicKey string
 	Error     string
+	// Diagnostics are the log bundles the device uploaded, newest first
+	// (empty when uploads are disabled or none were sent).
+	Diagnostics []diagFile
 }
 
 // usernameIndex maps user ids to usernames for display.
@@ -239,6 +242,12 @@ func (s *Server) renderAdminDeviceDetail(w http.ResponseWriter, r *http.Request,
 		Device:    viewDevice(*dev, owner, time.Now()),
 		PublicKey: dev.PublicKey,
 		Error:     errMsg,
+		Diagnostics: func() []diagFile {
+			if !s.diagnosticsEnabled() {
+				return nil
+			}
+			return listDiagnostics(s.diagnosticsDir(dev.ID))
+		}(),
 	})
 }
 

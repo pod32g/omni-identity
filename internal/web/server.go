@@ -198,6 +198,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/users/lookup", s.requireDevice(s.handleDeviceUserLookup))
 	s.mux.HandleFunc("POST /api/v1/devices/me/key", s.requireDevice(s.handleDeviceRotateKey))
 	s.mux.HandleFunc("POST /api/v1/devices/me/unenroll", s.requireDevice(s.handleDeviceUnenroll))
+	s.mux.HandleFunc("POST /api/v1/devices/me/diagnostics", s.requireDevice(s.handleDeviceDiagnosticsUpload))
 
 	s.mux.HandleFunc("GET /login", s.handleLoginForm)
 	s.mux.HandleFunc("POST /login", s.handleLoginSubmit)
@@ -266,6 +267,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /admin/devices/{id}/revoke", s.requireAdmin(s.handleAdminRevokeDevice))
 	s.mux.HandleFunc("POST /admin/devices/{id}/approve", s.requireAdmin(s.handleAdminApproveDevice))
 	s.mux.HandleFunc("POST /admin/devices/{id}/delete", s.requireAdmin(s.handleAdminDeleteDevice))
+	s.mux.HandleFunc("GET /admin/devices/{id}/diagnostics/{name}", s.requireAdmin(s.handleAdminDeviceDiagnostic))
 
 	s.mux.HandleFunc("GET /{$}", s.handleRoot)
 }

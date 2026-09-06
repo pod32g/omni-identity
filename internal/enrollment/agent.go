@@ -229,6 +229,20 @@ func (a *Agent) Open() (*State, Signer, *Client, error) {
 
 // Renew obtains a fresh device token, updates the persisted status, and
 // returns the token. A revocation is recorded as sticky state.
+// SendDiagnostics uploads a log bundle under this device with a fresh
+// device token. It never touches the stored state or status.
+func (a *Agent) SendDiagnostics(ctx context.Context, content []byte) (string, error) {
+	st, _, client, err := a.Open()
+	if err != nil {
+		return "", err
+	}
+	tok, err := client.DeviceToken(ctx, st.DeviceID)
+	if err != nil {
+		return "", err
+	}
+	return client.UploadDiagnostics(ctx, tok.AccessToken, content)
+}
+
 func (a *Agent) Renew(ctx context.Context) (*State, *TokenResponse, error) {
 	st, _, client, err := a.Open()
 	if err != nil {

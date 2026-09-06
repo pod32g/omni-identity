@@ -18,16 +18,17 @@ import (
 
 // Config is the validated, runtime configuration.
 type Config struct {
-	Server    ServerConfig
-	Database  DatabaseConfig
-	Security  SecurityConfig
-	Cookies   CookieConfig
-	Metrics   MetricsConfig
-	Uploads   UploadsConfig
-	Downloads DownloadsConfig
-	SMTP      SMTPConfig
-	LDAP      LDAPConfig
-	Logging   LoggingConfig
+	Server      ServerConfig
+	Database    DatabaseConfig
+	Security    SecurityConfig
+	Cookies     CookieConfig
+	Metrics     MetricsConfig
+	Uploads     UploadsConfig
+	Downloads   DownloadsConfig
+	Diagnostics DiagnosticsConfig
+	SMTP        SMTPConfig
+	LDAP        LDAPConfig
+	Logging     LoggingConfig
 }
 
 // LoggingConfig configures optional shipping of structured logs to an external
@@ -179,6 +180,13 @@ type MetricsConfig struct {
 // omni-enrollment agent binaries and endpoint sources) that the server offers
 // for download on the "Enroll a device" page. Empty disables the page's
 // download section. The Docker image populates /downloads at build time.
+// DiagnosticsConfig is where enrolled devices' uploaded logs are kept
+// (POST /api/v1/devices/me/diagnostics), one directory per device, the ten
+// most recent uploads each. Empty disables uploads.
+type DiagnosticsConfig struct {
+	Dir string
+}
+
 type DownloadsConfig struct {
 	Dir string
 	// ExtraDir holds artifacts built outside the image (the Omni Access
@@ -247,6 +255,9 @@ type fileConfig struct {
 		Dir      string `yaml:"dir"`
 		ExtraDir string `yaml:"extra_dir"`
 	} `yaml:"downloads"`
+	Diagnostics struct {
+		Dir string `yaml:"dir"`
+	} `yaml:"diagnostics"`
 	SMTP struct {
 		Host     string `yaml:"host"`
 		Port     int    `yaml:"port"`
@@ -422,6 +433,7 @@ func Load(path string) (*Config, error) {
 	cfg.Uploads.MaxLogoBytes = orDefaultInt(fc.Uploads.MaxLogoBytes, defaultMaxLogoBytes)
 	cfg.Downloads.Dir = strings.TrimSpace(fc.Downloads.Dir)
 	cfg.Downloads.ExtraDir = strings.TrimSpace(fc.Downloads.ExtraDir)
+	cfg.Diagnostics.Dir = strings.TrimSpace(fc.Diagnostics.Dir)
 
 	cfg.SMTP.Host = fc.SMTP.Host
 	cfg.SMTP.Port = orDefaultInt(fc.SMTP.Port, 587)
@@ -796,6 +808,9 @@ func applyEnvOverrides(fc *fileConfig) {
 	}
 	if v := os.Getenv("OMNI_DOWNLOADS_EXTRA_DIR"); v != "" {
 		fc.Downloads.ExtraDir = v
+	}
+	if v := os.Getenv("OMNI_DIAGNOSTICS_DIR"); v != "" {
+		fc.Diagnostics.Dir = v
 	}
 	if v := os.Getenv("OMNI_UPLOADS_MAX_LOGO_BYTES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
