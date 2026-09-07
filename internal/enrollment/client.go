@@ -355,6 +355,9 @@ type Metadata struct {
 	Hostname     string `json:"hostname"`
 	Platform     string `json:"platform"`
 	Architecture string `json:"architecture"`
+	// KeyBackend is where the key lives (file, dpapi, tpm); tpm earns the
+	// "hardware" trust level. Self-reported.
+	KeyBackend string `json:"key_backend,omitempty"`
 }
 
 // Enroll registers this client's key as a device of the user who owns the

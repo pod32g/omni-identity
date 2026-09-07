@@ -143,6 +143,13 @@ func pollDeviceCode(t *testing.T, srv *Server, deviceCode string, key *deviceKey
 // enrollDevice runs the whole enrollment ceremony and returns the device id.
 func enrollDevice(t *testing.T, srv *Server, user *model.User, key deviceKey, name string) string {
 	t.Helper()
+	return enrollDeviceWith(t, srv, user, key, name, nil)
+}
+
+// enrollDeviceWith enrolls with extra fields in the registration body
+// (key_backend and the like).
+func enrollDeviceWith(t *testing.T, srv *Server, user *model.User, key deviceKey, name string, extra map[string]any) string {
+	t.Helper()
 	sid := startSession(t, srv, user.ID)
 	deviceCode, userCode := startDeviceGrant(t, srv, "openid device:enroll", url.Values{"device_name": {name}, "device_platform": {"linux"}}, nil)
 
@@ -168,7 +175,11 @@ func enrollDevice(t *testing.T, srv *Server, user *model.User, key deviceKey, na
 		t.Errorf("access token not bound to the device key: %v", c["cnf"])
 	}
 
-	body, _ := json.Marshal(map[string]string{"name": name, "hostname": name + ".lan", "platform": "linux", "architecture": "arm64"})
+	fields := map[string]any{"name": name, "hostname": name + ".lan", "platform": "linux", "architecture": "arm64"}
+	for k, v := range extra {
+		fields[k] = v
+	}
+	body, _ := json.Marshal(fields)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/devices", bytes.NewReader(body))
 	req.Header.Set("Authorization", "DPoP "+access)
 	key.dpop(t, req, access)
@@ -177,7 +188,11 @@ func enrollDevice(t *testing.T, srv *Server, user *model.User, key deviceKey, na
 		t.Fatalf("enroll = %d: %s", rr.Code, rr.Body.String())
 	}
 	dev := decodeJSON(t, rr)
-	if dev["fingerprint"] != key.jkt || (dev["status"] != "active" && dev["status"] != "pending") || dev["owner_sub"] != user.ID || dev["trust_level"] != "enrolled" {
+	wantTrust := model.DeviceTrustEnrolled
+	if kb, _ := extra["key_backend"].(string); kb != "" {
+		wantTrust = model.TrustForKeyBackend(normalizeKeyBackend(kb))
+	}
+	if dev["fingerprint"] != key.jkt || (dev["status"] != "active" && dev["status"] != "pending") || dev["owner_sub"] != user.ID || dev["trust_level"] != wantTrust {
 		t.Errorf("device = %v", dev)
 	}
 	return dev["device_id"].(string)

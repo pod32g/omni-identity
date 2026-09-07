@@ -11,19 +11,32 @@ import (
 
 const deviceColumns = `id, owner_user_id, name, hostname, platform, architecture, public_key, ` +
 	`public_key_algorithm, fingerprint, previous_fingerprint, status, trust_level, ` +
-	`created_at, enrolled_at, last_seen_at, revoked_at, owner_only`
+	`created_at, enrolled_at, last_seen_at, revoked_at, owner_only, key_backend, posture, posture_at`
 
 // CreateDevice inserts a new device. The fingerprint must be unique across all
 // devices, including revoked ones (a revoked key can never be re-registered).
 func (d *DB) CreateDevice(ctx context.Context, dev *model.Device) error {
 	_, err := d.sql.ExecContext(ctx, `
 		INSERT INTO devices (`+deviceColumns+`)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		dev.ID, dev.OwnerUserID, dev.Name, dev.Hostname, dev.Platform, dev.Architecture,
 		dev.PublicKey, dev.PublicKeyAlgorithm, dev.Fingerprint, dev.PreviousFingerprint,
 		dev.Status, dev.TrustLevel, dev.CreatedAt.UTC(), nullTime(dev.EnrolledAt),
 		nullTime(dev.LastSeenAt), nullTime(dev.RevokedAt), dev.OwnerOnly,
+		dev.KeyBackend, dev.Posture, nullTime(dev.PostureAt),
 	)
+	return err
+}
+
+// SetDevicePosture stores what the device reported about itself, and the
+// key backend / trust level when the report names a backend.
+func (d *DB) SetDevicePosture(ctx context.Context, id, posture string, at time.Time, keyBackend, trust string) error {
+	if keyBackend != "" {
+		_, err := d.sql.ExecContext(ctx, `UPDATE devices SET posture = ?, posture_at = ?, key_backend = ?, trust_level = ? WHERE id = ?`,
+			posture, at.UTC(), keyBackend, trust, id)
+		return err
+	}
+	_, err := d.sql.ExecContext(ctx, `UPDATE devices SET posture = ?, posture_at = ? WHERE id = ?`, posture, at.UTC(), id)
 	return err
 }
 
@@ -202,13 +215,14 @@ func collectDevices(rows *sql.Rows) ([]model.Device, error) {
 
 func scanDevice(s scanner) (*model.Device, error) {
 	var (
-		dev                         model.Device
-		enrolled, lastSeen, revoked sql.NullTime
+		dev                                    model.Device
+		enrolled, lastSeen, revoked, postureAt sql.NullTime
 	)
 	err := s.Scan(
 		&dev.ID, &dev.OwnerUserID, &dev.Name, &dev.Hostname, &dev.Platform, &dev.Architecture,
 		&dev.PublicKey, &dev.PublicKeyAlgorithm, &dev.Fingerprint, &dev.PreviousFingerprint,
 		&dev.Status, &dev.TrustLevel, &dev.CreatedAt, &enrolled, &lastSeen, &revoked, &dev.OwnerOnly,
+		&dev.KeyBackend, &dev.Posture, &postureAt,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -224,6 +238,9 @@ func scanDevice(s scanner) (*model.Device, error) {
 	}
 	if revoked.Valid {
 		dev.RevokedAt = revoked.Time
+	}
+	if postureAt.Valid {
+		dev.PostureAt = postureAt.Time.UTC()
 	}
 	return &dev, nil
 }

@@ -123,6 +123,11 @@ func (s *Server) grantTokenExchange(w http.ResponseWriter, r *http.Request) {
 		extra["auth_time"] = rt.AuthTime.Unix()
 	}
 	extra = withGroups(extra, user)
+	// What the device last reported about itself (self-asserted), so a
+	// gateway can gate on posture without calling back.
+	if p := parsePosture(dev.Posture); p != nil {
+		extra["device_posture"] = p
+	}
 	// The audience is typically a gateway that turns this token into identity
 	// headers for an upstream without calling back (Omni Access bearer mode):
 	// give it the profile claims the scope allows.

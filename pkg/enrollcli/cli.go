@@ -55,6 +55,8 @@ func Main(argv []string) int {
 		err = runStatus(args)
 	case "diagnostics":
 		err = runDiagnostics(args)
+	case "posture":
+		err = runPosture(args)
 	case "renew":
 		err = runRenew(args)
 	case "rotate-key":
@@ -113,6 +115,8 @@ Commands:
   renew       Obtain a fresh device token once (checks the device is still trusted)
   diagnostics Upload a log file (--file PATH, default stdin; last 256 KiB) under
               this device so an administrator can read it on Omni Identity
+  posture     Report this device's posture (OS, disk encryption, screen lock,
+              key backend) to Omni Identity now (also done at every renewal)
   rotate-key  Replace the device key (requires the current key)
   unenroll    Revoke this device server-side and remove local state
   daemon      Run the renewal loop + PAM socket (used by the systemd service)
@@ -362,6 +366,47 @@ func runDiagnostics(args []string) error {
 	}
 	fmt.Printf("uploaded %d bytes as %s\n", len(content), name)
 	return nil
+}
+
+func runPosture(args []string) error {
+	fs := flag.NewFlagSet("posture", flag.ExitOnError)
+	resolve := commonFlags(fs)
+	asJSON := fs.Bool("json", false, "print the posture that was reported")
+	_ = fs.Parse(args)
+	cfg, err := resolve()
+	if err != nil {
+		return err
+	}
+	ctx, stop := signalContext()
+	defer stop()
+	a := agentFor(cfg)
+	st, _, client, err := a.Open()
+	if err != nil {
+		return err
+	}
+	tok, err := client.DeviceToken(ctx, st.DeviceID)
+	if err != nil {
+		return err
+	}
+	p := enrollment.LocalPosture(st.KeyBackend)
+	if err := client.ReportPosture(ctx, tok.AccessToken, p); err != nil {
+		return err
+	}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(p)
+	}
+	fmt.Printf("posture reported: os=%s %s disk_encrypted=%s screen_lock=%s key_backend=%s\n", p.OSName, p.OSVersion, fmtBoolPtr(p.DiskEncrypted), fmtBoolPtr(p.ScreenLock), p.KeyBackend)
+	return nil
+}
+
+func fmtBoolPtr(b *bool) string {
+	if b == nil {
+		return "unknown"
+	}
+	if *b {
+		return "yes"
+	}
+	return "no"
 }
 
 func runRotate(args []string) error {

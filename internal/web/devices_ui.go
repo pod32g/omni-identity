@@ -31,6 +31,9 @@ type deviceView struct {
 	IsRevoked    bool
 	IsPending    bool
 	OwnerOnly    bool
+	KeyBackend   string
+	Posture      *model.DevicePosture
+	PostureAt    string
 }
 
 func viewDevice(d model.Device, owner string, now time.Time) deviceView {
@@ -39,6 +42,10 @@ func viewDevice(d model.Device, owner string, now time.Time) deviceView {
 		Fingerprint: d.Fingerprint, ShortFP: truncate(d.Fingerprint, 12), Algorithm: d.PublicKeyAlgorithm,
 		Status: d.Status, TrustLevel: d.TrustLevel, Owner: owner, OwnerID: d.OwnerUserID,
 		IsActive: d.IsActive(), IsRevoked: d.Status == model.DeviceStatusRevoked, IsPending: d.IsPending(), OwnerOnly: d.OwnerOnly,
+		KeyBackend: d.KeyBackend, Posture: parsePosture(d.Posture),
+	}
+	if !d.PostureAt.IsZero() {
+		v.PostureAt = humanSince(now, d.PostureAt)
 	}
 	if !d.EnrolledAt.IsZero() {
 		v.Enrolled = d.EnrolledAt.Local().Format("2006-01-02 15:04 MST")

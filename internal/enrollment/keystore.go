@@ -54,6 +54,14 @@ var ErrNoKey = errors.New("no device key found")
 // it in dir. For the TPM backend, tpmDevice names the TPM (empty = default).
 func GenerateKeyWith(dir, backend, tpmDevice string, overwrite bool) (Signer, error) {
 	switch backend {
+	case KeyBackendAuto:
+		// Prefer a hardware key; a machine without a usable TPM gets the
+		// file key (DPAPI-wrapped on Windows). The caller records which one
+		// it got through BackendOf.
+		if k, err := GenerateKeyWith(dir, KeyBackendTPM, tpmDevice, overwrite); err == nil {
+			return k, nil
+		}
+		return GenerateKey(dir, overwrite)
 	case "", KeyBackendFile:
 		return GenerateKey(dir, overwrite)
 	case KeyBackendTPM:
@@ -121,6 +129,7 @@ func writeKey(path string, priv ed25519.PrivateKey) error {
 const (
 	KeyBackendFile = "file" // software Ed25519 key in the state dir (default)
 	KeyBackendTPM  = "tpm"  // ECDSA P-256 key resident in a TPM 2.0
+	KeyBackendAuto = "auto" // tpm when the machine has one, file otherwise
 )
 
 // LoadKey reads the device key from dir: the TPM blobs when present,
@@ -185,4 +194,12 @@ func wrapKey(priv ed25519.PrivateKey) (Signer, error) {
 		return nil, err
 	}
 	return &fileKey{PrivateKey: priv, jwk: jwk, fp: fp}, nil
+}
+
+// BackendOf reports where a generated key actually lives.
+func BackendOf(k Signer) string {
+	if _, ok := k.(*tpmKey); ok {
+		return KeyBackendTPM
+	}
+	return KeyBackendFile
 }

@@ -49,6 +49,7 @@ func (a *Agent) BeginEnrollment(ctx context.Context, cfg Config) (*Enrollment, e
 		return nil, err
 	}
 	meta := LocalMetadata(cfg.Name)
+	meta.KeyBackend = reportedKeyBackend(BackendOf(key))
 	da, err := client.StartDeviceAuthorization(ctx, ScopeEnroll,
 		map[string]string{"device_name": meta.Name, "device_platform": meta.Platform}, "")
 	if err != nil {
@@ -83,7 +84,7 @@ func (e *Enrollment) complete(ctx context.Context, tok *TokenResponse) (*State, 
 		Name: dev.Name, OwnerSub: dev.OwnerSub, OwnerUsername: dev.OwnerUsername, EnrolledAt: enrolledAt,
 		Status: dev.Status, LastCheckedAt: time.Now().UTC(),
 		AllowInsecureHTTP: cfg.AllowInsecureHTTP, CAFile: cfg.CAFile,
-		KeyBackend: orDefault(cfg.KeyBackend, KeyBackendFile), TPMDevice: cfg.TPMDevice,
+		KeyBackend: BackendOf(e.key), TPMDevice: cfg.TPMDevice,
 	}
 	if err := SaveState(a.StateDir, st); err != nil {
 		return nil, err

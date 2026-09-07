@@ -35,6 +35,8 @@ func loadTemplates() (*templates, error) {
 	}
 	t := &templates{set: map[string]*template.Template{}, brand: defaultBranding}
 	funcs := template.FuncMap{
+		// deref reads a *bool posture fact (nil means unknown; guard with if first).
+		"deref": func(b *bool) bool { return b != nil && *b },
 		"brand": func() BrandingView { return t.brand() },
 	}
 	for _, e := range entries {

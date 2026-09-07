@@ -199,6 +199,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/devices/me/key", s.requireDevice(s.handleDeviceRotateKey))
 	s.mux.HandleFunc("POST /api/v1/devices/me/unenroll", s.requireDevice(s.handleDeviceUnenroll))
 	s.mux.HandleFunc("POST /api/v1/devices/me/diagnostics", s.requireDevice(s.handleDeviceDiagnosticsUpload))
+	s.mux.HandleFunc("POST /api/v1/devices/me/posture", s.requireDevice(s.handleDevicePosture))
 
 	s.mux.HandleFunc("GET /login", s.handleLoginForm)
 	s.mux.HandleFunc("POST /login", s.handleLoginSubmit)

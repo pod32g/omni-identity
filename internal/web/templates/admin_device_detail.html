@@ -23,7 +23,9 @@
           <tr><td class="t-tertiary">Device ID</td><td style="font-family:var(--font-mono)">{{.Device.ID}}</td></tr>
           <tr><td class="t-tertiary">Key fingerprint</td><td style="font-family:var(--font-mono)">{{.Device.Fingerprint}}</td></tr>
           <tr><td class="t-tertiary">Key algorithm</td><td>{{.Device.Algorithm}}</td></tr>
-          <tr><td class="t-tertiary">Trust level</td><td>{{.Device.TrustLevel}} <span class="t-caption">(software key registered under user authorization; no attestation)</span></td></tr>
+          <tr><td class="t-tertiary">Trust level</td><td>{{.Device.TrustLevel}} <span class="t-caption">{{if eq .Device.TrustLevel "hardware"}}(the client reports a TPM / Secure Enclave key; not attested){{else}}(software key registered under user authorization; no attestation){{end}}</span></td></tr>
+          <tr><td class="t-tertiary">Key backend</td><td>{{if .Device.KeyBackend}}{{.Device.KeyBackend}}{{else}}<span class="t-caption">not reported</span>{{end}}</td></tr>
+          <tr><td class="t-tertiary">Posture</td><td>{{if .Device.Posture}}{{with .Device.Posture}}{{if .OSName}}{{.OSName}} {{.OSVersion}}{{end}}{{if .DiskEncrypted}} · disk {{if deref .DiskEncrypted}}encrypted{{else}}<strong>not encrypted</strong>{{end}}{{end}}{{if .ScreenLock}} · screen lock {{if deref .ScreenLock}}on{{else}}<strong>off</strong>{{end}}{{end}}{{end}} <span class="t-caption">reported {{.Device.PostureAt}}, self-asserted</span>{{else}}<span class="t-caption">never reported</span>{{end}}</td></tr>
           <tr><td class="t-tertiary">Sign-in policy</td><td>{{if .Device.OwnerOnly}}Owner only{{else}}Any Omni user{{end}} <span class="t-caption">(set by the owner under My Devices)</span></td></tr>
           <tr><td class="t-tertiary">Enrolled</td><td>{{if .Device.Enrolled}}{{.Device.Enrolled}}{{else}}—{{end}}</td></tr>
           <tr><td class="t-tertiary">Last seen</td><td>{{.Device.LastSeen}}</td></tr>

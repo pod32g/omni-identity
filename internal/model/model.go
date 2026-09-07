@@ -317,11 +317,40 @@ const (
 	DeviceStatusRevoked = "revoked"
 )
 
-// Device trust levels. V1 has a single level; "hardware" is reserved for
-// attested TPM / Secure Enclave keys.
+// Device trust levels. "enrolled" is a software key registered under user
+// authorization; "hardware" is a key the client reports as living in a TPM
+// or Secure Enclave (self-reported: no attestation is verified).
 const (
 	DeviceTrustEnrolled = "enrolled"
+	DeviceTrustHardware = "hardware"
 )
+
+// Key backends clients report.
+const (
+	KeyBackendFile          = "file"
+	KeyBackendDPAPI         = "dpapi"
+	KeyBackendTPM           = "tpm"
+	KeyBackendSecureEnclave = "secure-enclave"
+)
+
+// TrustForKeyBackend maps a reported key backend to the trust level it earns.
+func TrustForKeyBackend(backend string) string {
+	switch backend {
+	case KeyBackendTPM, KeyBackendSecureEnclave:
+		return DeviceTrustHardware
+	}
+	return DeviceTrustEnrolled
+}
+
+// DevicePosture is what a device last reported about itself. Pointers are
+// "unknown" when nil; the client only asserts what it can determine.
+type DevicePosture struct {
+	OSName        string `json:"os_name,omitempty"`
+	OSVersion     string `json:"os_version,omitempty"`
+	DiskEncrypted *bool  `json:"disk_encrypted,omitempty"`
+	ScreenLock    *bool  `json:"screen_lock,omitempty"`
+	KeyBackend    string `json:"key_backend,omitempty"`
+}
 
 // Device is an enrolled endpoint. Only the public half of its key pair is ever
 // stored; the endpoint proves possession of the private key to authenticate.
@@ -338,6 +367,11 @@ type Device struct {
 	PreviousFingerprint string // set after a key rotation
 	Status              string
 	TrustLevel          string
+	// KeyBackend is where the client reports its key lives (see KeyBackend*).
+	KeyBackend string
+	// Posture is the last reported DevicePosture as JSON ("" = never).
+	Posture   string
+	PostureAt time.Time
 	// OwnerOnly restricts device-bound logins to the device's owner.
 	OwnerOnly  bool
 	CreatedAt  time.Time

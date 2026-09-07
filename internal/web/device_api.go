@@ -100,6 +100,9 @@ type deviceJSON struct {
 	Algorithm    string `json:"public_key_algorithm"`
 	Status       string `json:"status"`
 	TrustLevel   string `json:"trust_level"`
+	KeyBackend   string `json:"key_backend,omitempty"`
+	Posture      any    `json:"posture,omitempty"`
+	PostureAt    string `json:"posture_at,omitempty"`
 	OwnerSub     string `json:"owner_sub"`
 	OwnerName    string `json:"owner_username,omitempty"`
 	OwnerOnly    bool   `json:"owner_only"`
@@ -112,7 +115,13 @@ func deviceToJSON(d *model.Device, ownerName string) deviceJSON {
 	j := deviceJSON{
 		ID: d.ID, Name: d.Name, Hostname: d.Hostname, Platform: d.Platform, Architecture: d.Architecture,
 		Fingerprint: d.Fingerprint, Algorithm: d.PublicKeyAlgorithm, Status: d.Status, TrustLevel: d.TrustLevel,
-		OwnerSub: d.OwnerUserID, OwnerName: ownerName, OwnerOnly: d.OwnerOnly,
+		KeyBackend: d.KeyBackend, OwnerSub: d.OwnerUserID, OwnerName: ownerName, OwnerOnly: d.OwnerOnly,
+	}
+	if p := parsePosture(d.Posture); p != nil {
+		j.Posture = p
+	}
+	if !d.PostureAt.IsZero() {
+		j.PostureAt = d.PostureAt.UTC().Format(time.RFC3339)
 	}
 	if !d.EnrolledAt.IsZero() {
 		j.EnrolledAt = d.EnrolledAt.UTC().Format(time.RFC3339)
@@ -174,6 +183,7 @@ func (s *Server) handleEnrollDevice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
+		KeyBackend   string `json:"key_backend"`
 		Name         string `json:"name"`
 		Hostname     string `json:"hostname"`
 		Platform     string `json:"platform"`
@@ -223,7 +233,8 @@ func (s *Server) handleEnrollDevice(w http.ResponseWriter, r *http.Request) {
 		PublicKeyAlgorithm: proof.Alg,
 		Fingerprint:        proof.JKT,
 		Status:             status,
-		TrustLevel:         model.DeviceTrustEnrolled,
+		KeyBackend:         normalizeKeyBackend(body.KeyBackend),
+		TrustLevel:         model.TrustForKeyBackend(normalizeKeyBackend(body.KeyBackend)),
 		CreatedAt:          now,
 		EnrolledAt:         enrolledAt,
 	}
@@ -442,4 +453,65 @@ func (s *Server) grantJWTBearer(w http.ResponseWriter, r *http.Request) {
 		"device_id":    dev.ID,
 		"device_trust": dev.TrustLevel,
 	})
+}
+
+// --- posture ---
+
+// knownKeyBackends are the values clients may report.
+var knownKeyBackends = map[string]bool{model.KeyBackendFile: true, model.KeyBackendDPAPI: true, model.KeyBackendTPM: true, model.KeyBackendSecureEnclave: true}
+
+func normalizeKeyBackend(v string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	if knownKeyBackends[v] {
+		return v
+	}
+	return ""
+}
+
+// parsePosture decodes a stored posture document (nil when empty or bad).
+func parsePosture(raw string) *model.DevicePosture {
+	if raw == "" {
+		return nil
+	}
+	var p model.DevicePosture
+	if err := json.Unmarshal([]byte(raw), &p); err != nil {
+		return nil
+	}
+	return &p
+}
+
+// handleDevicePosture stores what an enrolled device reports about itself:
+// OS, disk encryption, screen lock, key backend. Self-reported and unproven
+// (no attestation), which is why it is shown to administrators and offered
+// to relying parties as facts the device asserts, never as a verdict. A
+// reported key backend also sets the trust level (tpm / secure-enclave →
+// hardware) so that a client whose key moved is not stuck at "enrolled".
+func (s *Server) handleDevicePosture(w http.ResponseWriter, r *http.Request, dev *model.Device) {
+	var in model.DevicePosture
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in); err != nil {
+		apiError(w, http.StatusBadRequest, "invalid_request", "malformed JSON body")
+		return
+	}
+	in.OSName = truncate(strings.TrimSpace(in.OSName), 64)
+	in.OSVersion = truncate(strings.TrimSpace(in.OSVersion), 64)
+	in.KeyBackend = normalizeKeyBackend(in.KeyBackend)
+	raw, err := json.Marshal(in)
+	if err != nil {
+		apiError(w, http.StatusBadRequest, "invalid_request", "bad posture")
+		return
+	}
+	now := time.Now().UTC()
+	trust := dev.TrustLevel
+	if in.KeyBackend != "" {
+		trust = model.TrustForKeyBackend(in.KeyBackend)
+	}
+	if err := s.db.SetDevicePosture(r.Context(), dev.ID, string(raw), now, in.KeyBackend, trust); err != nil {
+		apiError(w, http.StatusInternalServerError, "server_error", "could not store posture")
+		return
+	}
+	if trust != dev.TrustLevel {
+		s.audit(r, evtDeviceTrustChanged, auditEntry{actorUserID: dev.OwnerUserID, success: true,
+			detail: "device=" + dev.ID + " key_backend=" + in.KeyBackend + " trust " + dev.TrustLevel + " -> " + trust})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"trust_level": trust, "posture_at": now.Format(time.RFC3339)})
 }

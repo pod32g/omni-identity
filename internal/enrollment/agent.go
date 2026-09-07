@@ -125,7 +125,7 @@ func (a *Agent) Enroll(ctx context.Context, cfg Config) (*State, error) {
 	}
 	meta := e.Device()
 	fmt.Fprintf(a.Out, "\nDevice:\n    name:        %s\n    hostname:    %s\n    platform:    %s (%s)\n    key:         %s (%s)\n    fingerprint: %s\n\n",
-		meta.Name, meta.Hostname, meta.Platform, meta.Architecture, e.KeyAlgorithm(), orDefault(cfg.KeyBackend, KeyBackendFile), e.Fingerprint())
+		meta.Name, meta.Hostname, meta.Platform, meta.Architecture, e.KeyAlgorithm(), meta.KeyBackend, e.Fingerprint())
 	fmt.Fprintf(a.Out, "Authenticate with Omni Identity:\n\n    %s\n\n    (or open %s and enter the code %s)\n\n",
 		e.VerificationURIComplete(), e.VerificationURI(), e.UserCode())
 	if qr, err := RenderQR(e.VerificationURIComplete(), cfg.qrMode()); err == nil && qr != "" {
@@ -158,8 +158,9 @@ func (a *Agent) enrollViaBrowser(ctx context.Context, cfg Config) (*State, error
 		return nil, err
 	}
 	meta := LocalMetadata(cfg.Name)
+	meta.KeyBackend = reportedKeyBackend(BackendOf(key))
 	fmt.Fprintf(a.Out, "\nDevice:\n    name:        %s\n    hostname:    %s\n    platform:    %s (%s)\n    key:         %s (%s)\n    fingerprint: %s\n\n",
-		meta.Name, meta.Hostname, meta.Platform, meta.Architecture, key.Algorithm(), orDefault(cfg.KeyBackend, KeyBackendFile), key.Fingerprint())
+		meta.Name, meta.Hostname, meta.Platform, meta.Architecture, key.Algorithm(), BackendOf(key), key.Fingerprint())
 	tok, err := client.AuthorizeViaBrowser(ctx, ScopeEnroll, cfg.OpenURL, func(msg string) {
 		if strings.HasPrefix(msg, "http") {
 			fmt.Fprintf(a.Out, "Authenticate with Omni Identity in your browser:\n\n    %s\n\nWaiting for the browser...\n", msg)
@@ -273,6 +274,12 @@ func (a *Agent) Renew(ctx context.Context) (*State, *TokenResponse, error) {
 		st.Status = "active"
 		st.LastCheckedAt = now
 		status.Status, status.TrustLevel, status.IssuerReachable = "active", tok.DeviceTrust, true
+		// Tell Omni Identity what this device looks like (self-asserted
+		// posture; docs/DEVICE-IDENTITY-ARCHITECTURE.md). Best effort: a
+		// failure here never affects the renewal.
+		if perr := client.ReportPosture(ctx, tok.AccessToken, LocalPosture(st.KeyBackend)); perr != nil {
+			a.logfn("posture report failed: %v", perr)
+		}
 		status.LastRenewedAt = now
 		status.TokenExpiresAt = now.Add(time.Duration(tok.ExpiresIn) * time.Second)
 	case IsConnectivityError(err):
