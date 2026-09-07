@@ -412,6 +412,7 @@ func fmtBoolPtr(b *bool) string {
 func runRotate(args []string) error {
 	fs := flag.NewFlagSet("rotate-key", flag.ExitOnError)
 	resolve := commonFlags(fs)
+	backend := fs.String("backend", "", "move the key to this backend (tpm to earn hardware trust); empty keeps the current one")
 	_ = fs.Parse(args)
 	cfg, err := resolve()
 	if err != nil {
@@ -419,11 +420,15 @@ func runRotate(args []string) error {
 	}
 	ctx, stop := signalContext()
 	defer stop()
-	st, err := agentFor(cfg).RotateKey(ctx)
+	st, err := agentFor(cfg).RotateKeyTo(ctx, *backend)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("device key rotated; new fingerprint %s\n", st.Fingerprint)
+	kb := st.KeyBackend
+	if kb == "" {
+		kb = "file"
+	}
+	fmt.Printf("device key rotated; new fingerprint %s (backend %s)\n", st.Fingerprint, kb)
 	return nil
 }
 

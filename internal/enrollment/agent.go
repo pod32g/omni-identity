@@ -303,12 +303,30 @@ func (a *Agent) Renew(ctx context.Context) (*State, *TokenResponse, error) {
 	return st, tok, nil
 }
 
-// RotateKey generates a new key, rotates it on the server, then commits it to
-// disk. Requires proof of possession of the current key (device token).
+// RotateKey generates a new key of the same backend, rotates it on the
+// server, then commits it to disk.
 func (a *Agent) RotateKey(ctx context.Context) (*State, error) {
+	return a.RotateKeyTo(ctx, "")
+}
+
+// RotateKeyTo rotates the device key, optionally changing the backend
+// (empty keeps the current one; "tpm" moves a software/DPAPI key into the
+// TPM to earn hardware trust). Requires proof of possession of the current
+// key, and commits the new key only after the server accepts it.
+func (a *Agent) RotateKeyTo(ctx context.Context, backend string) (*State, error) {
 	st, _, client, err := a.Open()
 	if err != nil {
 		return nil, err
+	}
+	if backend == "" {
+		backend = st.KeyBackend
+	}
+	if backend == KeyBackendTPM && st.KeyBackend != KeyBackendTPM {
+		// Moving into the TPM: make sure the machine actually has one before
+		// touching the enrollment, so a failure changes nothing.
+		if _, err := openDeviceTPM(orDefault(st.TPMDevice, DefaultTPMDevice)); err != nil {
+			return nil, fmt.Errorf("this machine has no usable TPM: %w", err)
+		}
 	}
 	tok, err := client.DeviceToken(ctx, st.DeviceID)
 	if err != nil {
@@ -318,7 +336,7 @@ func (a *Agent) RotateKey(ctx context.Context) (*State, error) {
 		newKey Signer
 		commit func() error
 	)
-	if st.KeyBackend == KeyBackendTPM {
+	if backend == KeyBackendTPM {
 		k, err := GenerateTPMKey(st.TPMDevice)
 		if err != nil {
 			return nil, err
@@ -339,6 +357,7 @@ func (a *Agent) RotateKey(ctx context.Context) (*State, error) {
 		return nil, fmt.Errorf("server accepted the new key but it could not be saved locally; re-enroll: %w", err)
 	}
 	st.Fingerprint = dev.Fingerprint
+	st.KeyBackend = backend
 	st.LastCheckedAt = time.Now().UTC()
 	if err := SaveState(a.StateDir, st); err != nil {
 		return nil, err
