@@ -39,6 +39,8 @@ services:
       OMNI_SERVER_PUBLIC_URL: ${OMNI_SERVER_PUBLIC_URL:-https://identity.omni.local}
       # Empty => issuer defaults to public_url.
       OMNI_SECURITY_ISSUER: ${OMNI_SECURITY_ISSUER:-}
+      # Former issuer values still accepted from devices that have not followed a move yet (comma-separated).
+      OMNI_SECURITY_ISSUER_ALIASES: ${OMNI_SECURITY_ISSUER_ALIASES:-}
       # Required for first-run setup when the public URL is not loopback.
       OMNI_SETUP_TOKEN: ${OMNI_SETUP_TOKEN:-}
       # Non-loopback http:// public URLs require an explicit dev/private-test opt-in.
