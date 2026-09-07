@@ -14,3 +14,8 @@ import (
 // reaching the socket at all is the credential; every caller is reported as
 // the daemon's own user, which is what SignIn/Whoami record.
 func peerUID(*net.UnixConn) (int, error) { return os.Getuid(), nil }
+
+// privilegedUID on Windows: there is no root uid to refuse (every process
+// reports -1, including the one that signed in), and the profile ACL on
+// the socket already keeps other accounts out. Never refuse.
+func privilegedUID(int) bool { return false }

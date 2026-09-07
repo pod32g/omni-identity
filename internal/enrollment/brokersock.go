@@ -128,7 +128,7 @@ func (a *Agent) BrokerToken(ctx context.Context, uid int, audience, scope string
 	if !pol.allows(audience) {
 		return nil, errors.New("audience is not allowed by this machine's broker policy")
 	}
-	if uid <= 0 {
+	if privilegedUID(uid) {
 		return nil, errors.New("root and system processes cannot use the broker")
 	}
 	users, err := a.ListUserCaches()
