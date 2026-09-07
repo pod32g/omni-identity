@@ -475,7 +475,9 @@ func (c *Client) RotateKey(ctx context.Context, deviceToken, deviceID string, ne
 	if err != nil {
 		return nil, err
 	}
-	body, _ := json.Marshal(map[string]any{"jwk": newKey.JWK(), "proof": proof})
+	// The new key may live somewhere stronger than the old one (a migrated
+	// file key rotated into a TPM); report it so trust follows.
+	body, _ := json.Marshal(map[string]any{"jwk": newKey.JWK(), "proof": proof, "key_backend": reportedKeyBackend(BackendOf(newKey))})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
 		return nil, err

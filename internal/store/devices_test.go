@@ -84,7 +84,7 @@ func TestDeviceLifecycle(t *testing.T) {
 	if got, _ := db.GetRefreshTokenByHash(ctx, "rth"); !got.Revoked {
 		t.Error("device-bound refresh token should be revoked with the device")
 	}
-	if err := db.RotateDeviceKey(ctx, d.ID, "k2", "EdDSA", "fp-2"); err != ErrNotFound {
+	if err := db.RotateDeviceKey(ctx, d.ID, "k2", "EdDSA", "fp-2", "", ""); err != ErrNotFound {
 		t.Errorf("rotation on a revoked device must fail, got %v", err)
 	}
 	// Revoked fingerprints stay reserved; the row can be deleted afterwards.
@@ -104,12 +104,15 @@ func TestDeviceRotateKeyKeepsPreviousFingerprint(t *testing.T) {
 	ctx := context.Background()
 	u := seedUser(t, db, "bob")
 	d := seedDevice(t, db, u.ID, "old")
-	if err := db.RotateDeviceKey(ctx, d.ID, "newkey", "ES256", "new"); err != nil {
+	if err := db.RotateDeviceKey(ctx, d.ID, "newkey", "ES256", "new", "secure-enclave", "hardware"); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := db.GetDevice(ctx, d.ID)
 	if got.Fingerprint != "new" || got.PreviousFingerprint != "old" || got.PublicKeyAlgorithm != "ES256" {
 		t.Errorf("rotate: %+v", got)
+	}
+	if got.KeyBackend != "secure-enclave" || got.TrustLevel != "hardware" {
+		t.Errorf("rotate did not upgrade the key backend/trust: %+v", got)
 	}
 	if inUse, _ := db.FingerprintInUse(ctx, "old"); !inUse {
 		t.Error("previous fingerprint must stay reserved")

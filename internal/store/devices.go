@@ -129,8 +129,21 @@ func (d *DB) DeleteDevice(ctx context.Context, id string) error {
 }
 
 // RotateDeviceKey replaces an active device's public key, remembering the
-// previous fingerprint. Returns ErrNotFound if the device is not active.
-func (d *DB) RotateDeviceKey(ctx context.Context, id, publicKey, alg, fingerprint string) error {
+// previous fingerprint. When keyBackend is non-empty it is recorded and the
+// trust level set from it (a migrated software key rotated into hardware).
+// Returns ErrNotFound if the device is not active.
+func (d *DB) RotateDeviceKey(ctx context.Context, id, publicKey, alg, fingerprint, keyBackend, trust string) error {
+	if keyBackend != "" {
+		res, err := d.sql.ExecContext(ctx, `
+			UPDATE devices SET previous_fingerprint = fingerprint, public_key = ?,
+				public_key_algorithm = ?, fingerprint = ?, key_backend = ?, trust_level = ?
+			WHERE id = ? AND status = ?`,
+			publicKey, alg, fingerprint, keyBackend, trust, id, model.DeviceStatusActive)
+		if err != nil {
+			return err
+		}
+		return requireRow(res)
+	}
 	res, err := d.sql.ExecContext(ctx, `
 		UPDATE devices SET previous_fingerprint = fingerprint, public_key = ?,
 			public_key_algorithm = ?, fingerprint = ?

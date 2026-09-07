@@ -296,8 +296,9 @@ func (s *Server) handleDeviceMe(w http.ResponseWriter, r *http.Request, dev *mod
 // signed by the NEW key that names the current fingerprint.
 func (s *Server) handleDeviceRotateKey(w http.ResponseWriter, r *http.Request, dev *model.Device) {
 	var body struct {
-		JWK   json.RawMessage `json:"jwk"`
-		Proof string          `json:"proof"`
+		JWK        json.RawMessage `json:"jwk"`
+		Proof      string          `json:"proof"`
+		KeyBackend string          `json:"key_backend"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxDeviceAPIBody)).Decode(&body); err != nil {
 		apiError(w, http.StatusBadRequest, "invalid_request", "malformed JSON body")
@@ -339,13 +340,25 @@ func (s *Server) handleDeviceRotateKey(w http.ResponseWriter, r *http.Request, d
 		return
 	}
 	canon, _ := newKey.Canonical()
-	if err := s.db.RotateDeviceKey(r.Context(), dev.ID, canon, newAlg, newFP); err != nil {
+	backend := normalizeKeyBackend(body.KeyBackend)
+	trust := dev.TrustLevel
+	if backend != "" {
+		trust = model.TrustForKeyBackend(backend)
+	}
+	if err := s.db.RotateDeviceKey(r.Context(), dev.ID, canon, newAlg, newFP, backend, trust); err != nil {
 		apiError(w, http.StatusConflict, "invalid_grant", "device is not active")
 		return
 	}
-	s.audit(r, evtDeviceKeyRotated, auditEntry{actorUserID: dev.OwnerUserID, success: true,
-		detail: "device=" + dev.ID + " alg=" + newAlg})
+	detail := "device=" + dev.ID + " alg=" + newAlg
+	if backend != "" && trust != dev.TrustLevel {
+		detail += " key_backend=" + backend + " trust=" + dev.TrustLevel + "->" + trust
+		s.audit(r, evtDeviceTrustChanged, auditEntry{actorUserID: dev.OwnerUserID, success: true, detail: detail})
+	}
+	s.audit(r, evtDeviceKeyRotated, auditEntry{actorUserID: dev.OwnerUserID, success: true, detail: detail})
 	dev.PublicKey, dev.PublicKeyAlgorithm, dev.PreviousFingerprint, dev.Fingerprint = canon, newAlg, dev.Fingerprint, newFP
+	if backend != "" {
+		dev.KeyBackend, dev.TrustLevel = backend, trust
+	}
 	writeJSON(w, http.StatusOK, deviceToJSON(dev, ""))
 }
 
