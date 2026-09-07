@@ -26,21 +26,27 @@ jobs:
         run: docker compose build
 
   windows-agent:
-    # The endpoint agent ships for Windows too: compile and test the pure-Go
-    # engine there (DPAPI key wrapping, AF_UNIX broker socket).
-    runs-on: windows-latest
+    # The endpoint agent ships for Windows too. Checked from Linux:
+    # cross-compile, and `go vet` with GOOS=windows type-checks the
+    # Windows-only files (DPAPI key wrapping, peer uid) and their tests.
+    # Hosted Windows runners bill at double rate; the real Windows test run
+    # is the manual windows-tests workflow.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - run: go build ./cmd/omni-enrollment
-      # The enrollment suite as a whole assumes Linux (PAM, NSS, file modes,
-      # home directories); on Windows run the key store and proof-of-possession
-      # tests, which is what the Windows agent depends on.
-      - run: go test ./internal/pop/... && go test ./internal/enrollment/ -run 'Key'
         env:
           CGO_ENABLED: "0"
+          GOOS: windows
+          GOARCH: amd64
+      - run: go vet ./internal/enrollment/ ./internal/pop/... ./pkg/enrollcli/
+        env:
+          CGO_ENABLED: "0"
+          GOOS: windows
+          GOARCH: amd64
 
   design-system:
     # SECURITY: dev-tool dependency audit and tests must run when design-system files change.
