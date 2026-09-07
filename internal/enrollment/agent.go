@@ -224,7 +224,24 @@ func (a *Agent) Open() (*State, Signer, *Client, error) {
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	// Omni Identity moved (say, onto a TLS name): the enrollment follows it,
+	// and the new issuer is what every later call and assertion uses.
+	client.OnIssuerMoved = func(from, to string) {
+		st.Issuer = to
+		if err := SaveState(a.StateDir, st); err != nil {
+			a.logfn("issuer moved from %s to %s but the enrollment record could not be updated: %v", from, to, err)
+			return
+		}
+		a.logfn("issuer moved: %s -> %s (enrollment record updated)", from, to)
+	}
 	return st, key, client, nil
+}
+
+// logfn logs through the daemon's logger when there is one.
+func (a *Agent) logfn(format string, args ...any) {
+	if a.logf != nil {
+		a.logf(format, args...)
+	}
 }
 
 // Renew obtains a fresh device token, updates the persisted status, and

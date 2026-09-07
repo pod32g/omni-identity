@@ -393,9 +393,12 @@ func (s *Server) grantJWTBearer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pub, _ := jwk.PublicKey()
-	a, err := pop.VerifyAssertion(raw, pop.AssertionOptions{
-		Key: pub, Alg: dev.PublicKeyAlgorithm, Audience: s.settings.Current().Issuer,
-	})
+	var a *pop.Assertion
+	for _, aud := range s.issuerAudiences() {
+		if a, err = pop.VerifyAssertion(raw, pop.AssertionOptions{Key: pub, Alg: dev.PublicKeyAlgorithm, Audience: aud}); err == nil {
+			break
+		}
+	}
 	if err != nil {
 		fail("device=" + dev.ID + " " + err.Error())
 		return

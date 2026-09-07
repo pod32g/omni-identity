@@ -130,7 +130,12 @@ func (c DatabaseConfig) DSN() string {
 
 // SecurityConfig holds issuer, token lifetime, and account-protection settings.
 type SecurityConfig struct {
-	Issuer          string
+	Issuer string
+	// IssuerAliases are former issuer values still accepted as the audience
+	// of device assertions and as the target of DPoP proofs while enrolled
+	// devices move to the current issuer (they follow it on their next
+	// discovery). Tokens are always minted with Issuer.
+	IssuerAliases   []string
 	TokenTTL        time.Duration
 	RefreshTokenTTL time.Duration
 	// Account lockout.
@@ -219,27 +224,28 @@ type fileConfig struct {
 		URL    string `yaml:"url"`
 	} `yaml:"database"`
 	Security struct {
-		Issuer                          string `yaml:"issuer"`
-		TokenTTL                        string `yaml:"token_ttl"`
-		RefreshTokenTTL                 string `yaml:"refresh_token_ttl"`
-		MaxFailedLogins                 int    `yaml:"max_failed_logins"`
-		LockoutDuration                 string `yaml:"lockout_duration"`
-		RateLimitWindow                 string `yaml:"rate_limit_window"`
-		LoginIPMaxAttempts              int    `yaml:"login_ip_max_attempts"`
-		PasswordVerifyConcurrency       int    `yaml:"password_verify_concurrency"`
-		MaxLoginUsernameBytes           int    `yaml:"max_login_username_bytes"`
-		MaxLoginPasswordBytes           int    `yaml:"max_login_password_bytes"`
-		AllowLoopbackHTTPRedirect       *bool  `yaml:"allow_loopback_http_redirects"`
-		AllowPrivateNetworkHTTPRedirect *bool  `yaml:"allow_private_network_http_redirects"`
-		AllowPrivateSchemeRedirect      *bool  `yaml:"allow_private_scheme_redirects"`
-		PasswordMinLength               int    `yaml:"password_min_length"`
-		RequireUpper                    *bool  `yaml:"require_upper"`
-		RequireLower                    *bool  `yaml:"require_lower"`
-		RequireNumber                   *bool  `yaml:"require_number"`
-		RequireSymbol                   *bool  `yaml:"require_symbol"`
-		SessionLifetime                 string `yaml:"session_lifetime"`
-		SessionIdleTimeout              string `yaml:"session_idle_timeout"`
-		SetupToken                      string `yaml:"setup_token"`
+		Issuer                          string   `yaml:"issuer"`
+		IssuerAliases                   []string `yaml:"issuer_aliases"`
+		TokenTTL                        string   `yaml:"token_ttl"`
+		RefreshTokenTTL                 string   `yaml:"refresh_token_ttl"`
+		MaxFailedLogins                 int      `yaml:"max_failed_logins"`
+		LockoutDuration                 string   `yaml:"lockout_duration"`
+		RateLimitWindow                 string   `yaml:"rate_limit_window"`
+		LoginIPMaxAttempts              int      `yaml:"login_ip_max_attempts"`
+		PasswordVerifyConcurrency       int      `yaml:"password_verify_concurrency"`
+		MaxLoginUsernameBytes           int      `yaml:"max_login_username_bytes"`
+		MaxLoginPasswordBytes           int      `yaml:"max_login_password_bytes"`
+		AllowLoopbackHTTPRedirect       *bool    `yaml:"allow_loopback_http_redirects"`
+		AllowPrivateNetworkHTTPRedirect *bool    `yaml:"allow_private_network_http_redirects"`
+		AllowPrivateSchemeRedirect      *bool    `yaml:"allow_private_scheme_redirects"`
+		PasswordMinLength               int      `yaml:"password_min_length"`
+		RequireUpper                    *bool    `yaml:"require_upper"`
+		RequireLower                    *bool    `yaml:"require_lower"`
+		RequireNumber                   *bool    `yaml:"require_number"`
+		RequireSymbol                   *bool    `yaml:"require_symbol"`
+		SessionLifetime                 string   `yaml:"session_lifetime"`
+		SessionIdleTimeout              string   `yaml:"session_idle_timeout"`
+		SetupToken                      string   `yaml:"setup_token"`
 	} `yaml:"security"`
 	Cookies struct {
 		// Secure is a pointer so we can tell "unset" from "false".
@@ -367,6 +373,11 @@ func Load(path string) (*Config, error) {
 	cfg.Database.Path = orDefault(fc.Database.Path, defaultDBPath)
 	cfg.Database.URL = fc.Database.URL
 	cfg.Security.Issuer = orDefault(fc.Security.Issuer, fc.Server.PublicURL)
+	for _, a := range fc.Security.IssuerAliases {
+		if a = strings.TrimSpace(a); a != "" {
+			cfg.Security.IssuerAliases = append(cfg.Security.IssuerAliases, strings.TrimRight(a, "/"))
+		}
+	}
 
 	cfg.Security.TokenTTL, err = parseDurationOr(fc.Security.TokenTTL, defaultTokenTTL)
 	if err != nil {
@@ -716,6 +727,9 @@ func applyEnvOverrides(fc *fileConfig) {
 	}
 	if v := os.Getenv("OMNI_SECURITY_ISSUER"); v != "" {
 		fc.Security.Issuer = v
+	}
+	if v := os.Getenv("OMNI_SECURITY_ISSUER_ALIASES"); v != "" {
+		fc.Security.IssuerAliases = strings.Split(v, ",")
 	}
 	if v := os.Getenv("OMNI_SECURITY_TOKEN_TTL"); v != "" {
 		fc.Security.TokenTTL = v

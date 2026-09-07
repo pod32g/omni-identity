@@ -161,7 +161,17 @@ func (s *Server) serverURLsFor(r *http.Request) []string {
 	if iss := strings.TrimRight(cur.Issuer, "/"); iss != "" && iss != pub {
 		urls = append(urls, iss+r.URL.Path)
 	}
+	for _, a := range s.cfg.Security.IssuerAliases {
+		urls = append(urls, a+r.URL.Path)
+	}
 	return urls
+}
+
+// issuerAudiences lists the values a device assertion may name as its
+// audience: the issuer and its aliases (config security.issuer_aliases).
+func (s *Server) issuerAudiences() []string {
+	out := []string{s.settings.Current().Issuer}
+	return append(out, s.cfg.Security.IssuerAliases...)
 }
 
 func (s *Server) grantAuthorizationCode(w http.ResponseWriter, r *http.Request) {

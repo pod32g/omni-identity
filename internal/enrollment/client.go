@@ -57,6 +57,14 @@ type Client struct {
 	HTTP     *http.Client
 	// Now is injectable for tests.
 	Now func() time.Time
+	// AllowInsecureHTTP permits following an issuer move to a plain-http
+	// issuer (LAN testing); an https issuer is always followed.
+	AllowInsecureHTTP bool
+	// OnIssuerMoved is told when discovery at the configured issuer names
+	// another issuer that confirms itself (the operator moved Omni Identity,
+	// e.g. to a TLS name). The client already switched; the callback
+	// persists the new value.
+	OnIssuerMoved func(from, to string)
 
 	endpoints *discovery
 }
@@ -130,6 +138,8 @@ func NewClient(opt Options) (*Client, error) {
 		Signer:   opt.Signer,
 		HTTP:     &http.Client{Timeout: opt.Timeout, Transport: rt},
 		Now:      time.Now,
+
+		AllowInsecureHTTP: opt.AllowInsecureHTTP,
 	}, nil
 }
 
@@ -141,8 +151,15 @@ func (c *Client) discover(ctx context.Context) (*discovery, error) {
 	if err := c.getJSON(ctx, c.Issuer+"/.well-known/openid-configuration", &d); err != nil {
 		return nil, fmt.Errorf("discovery: %w", err)
 	}
-	if strings.TrimRight(d.Issuer, "/") != c.Issuer {
-		return nil, fmt.Errorf("discovery issuer %q does not match %q", d.Issuer, c.Issuer)
+	if advertised := strings.TrimRight(d.Issuer, "/"); advertised != c.Issuer {
+		// The issuer we trust says it now lives elsewhere. Follow it only if
+		// the new address confirms it, exactly as a redirect would be
+		// confirmed: its own discovery must name itself.
+		moved, err := c.followIssuerMove(ctx, advertised)
+		if err != nil {
+			return nil, fmt.Errorf("discovery issuer %q does not match %q: %w", d.Issuer, c.Issuer, err)
+		}
+		d = *moved
 	}
 	if d.TokenEndpoint == "" || d.DeviceAuthorizationEndpoint == "" {
 		return nil, errors.New("discovery: issuer does not advertise the device authorization grant")
@@ -395,6 +412,31 @@ func (c *Client) UploadDiagnostics(ctx context.Context, deviceToken string, cont
 		return "", err
 	}
 	return out.Stored, nil
+}
+
+// followIssuerMove switches the client to the issuer the old one advertises,
+// after confirming the new address answers as that issuer.
+func (c *Client) followIssuerMove(ctx context.Context, advertised string) (*discovery, error) {
+	u, err := url.Parse(advertised)
+	if err != nil || u.Host == "" || (u.Scheme != "https" && !(u.Scheme == "http" && c.AllowInsecureHTTP)) {
+		return nil, fmt.Errorf("advertised issuer %q is not an acceptable URL", advertised)
+	}
+	var d discovery
+	if err := c.getJSON(ctx, advertised+"/.well-known/openid-configuration", &d); err != nil {
+		return nil, fmt.Errorf("advertised issuer does not answer: %w", err)
+	}
+	if strings.TrimRight(d.Issuer, "/") != advertised {
+		return nil, fmt.Errorf("advertised issuer %q names itself %q", advertised, d.Issuer)
+	}
+	if d.TokenEndpoint == "" || d.DeviceAuthorizationEndpoint == "" {
+		return nil, errors.New("advertised issuer does not advertise the device authorization grant")
+	}
+	from := c.Issuer
+	c.Issuer = advertised
+	if c.OnIssuerMoved != nil {
+		c.OnIssuerMoved(from, advertised)
+	}
+	return &d, nil
 }
 
 // UserLookup is the answer to an enrolled device's username lookup.
