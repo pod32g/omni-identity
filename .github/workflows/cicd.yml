@@ -18,8 +18,9 @@ concurrency:
 
 jobs:
   build:
-    # SECURITY: pull-request code, including fork PRs, runs only on a GitHub-hosted runner.
-    runs-on: ubuntu-latest
+    # Everything runs on chizu's own runner (no GitHub-hosted minutes; the
+    # repo is private, so no fork PR code reaches it).
+    runs-on: [self-hosted, omni-identity]
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - name: Build image (gate — must pass before deploy)
@@ -29,42 +30,34 @@ jobs:
     # The endpoint agent ships for Windows too. Checked from Linux:
     # cross-compile, and `go vet` with GOOS=windows type-checks the
     # Windows-only files (DPAPI key wrapping, peer uid) and their tests.
-    # Hosted Windows runners bill at double rate; the real Windows test run
-    # is the manual windows-tests workflow.
-    runs-on: ubuntu-latest
+    # No Windows runner; the Omni Access Windows PC is the runtime check.
+    runs-on: [self-hosted, omni-identity]
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - run: go build ./cmd/omni-enrollment
-        env:
-          CGO_ENABLED: "0"
-          GOOS: windows
-          GOARCH: amd64
-      - run: go vet ./internal/enrollment/ ./internal/pop/... ./pkg/enrollcli/
-        env:
-          CGO_ENABLED: "0"
-          GOOS: windows
-          GOARCH: amd64
+      - name: Cross-compile and vet for Windows
+        run: |
+          set -euo pipefail
+          GO_IMAGE="$(sed -nE 's/^FROM (golang:[^ ]+) AS build/\1/p' Dockerfile | head -1)"
+          CACHE="$HOME/.cache/omni-identity-ci"; mkdir -p "$CACHE/go-build" "$CACHE/go-mod"
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/src" -w /src -e HOME=/tmp -e GOFLAGS=-buildvcs=false \
+            -v "$CACHE/go-build:/tmp/gocache" -v "$CACHE/go-mod:/tmp/gomod" -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomod \
+            -e CGO_ENABLED=0 -e GOOS=windows -e GOARCH=amd64 "$GO_IMAGE" sh -c '
+              go build -o /dev/null ./cmd/omni-enrollment &&
+              go vet ./internal/enrollment/ ./internal/pop/... ./pkg/enrollcli/'
 
   design-system:
-    # SECURITY: dev-tool dependency audit and tests must run when design-system files change.
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: design-system
+    # Dev-tool dependency audit and tests for the design system, in a Node
+    # container on chizu's runner.
+    runs-on: [self-hosted, omni-identity]
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: '22.12.0'
-          cache: npm
-          cache-dependency-path: design-system/package-lock.json
-      - run: npm ci
-      - run: npm audit --audit-level=moderate
-      - run: npm run typecheck
-      - run: npm test
+      - name: npm ci, audit, typecheck, test
+        run: |
+          set -euo pipefail
+          CACHE="$HOME/.cache/omni-identity-ci"; mkdir -p "$CACHE/npm"
+          docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/design-system:/src" -w /src -e HOME=/tmp \
+            -v "$CACHE/npm:/tmp/.npm" node:22.12.0-bookworm sh -c '
+              npm ci && npm audit --audit-level=moderate && npm run typecheck && npm test'
 
   tpm-key:
     # Exercise the TPM 2.0 device-key backend against a software TPM (swtpm).
