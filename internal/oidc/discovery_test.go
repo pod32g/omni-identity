@@ -2,18 +2,19 @@ package oidc
 
 import (
 	"slices"
+	"strings"
 	"testing"
 )
 
 func TestBuildDiscoveryTrimsTrailingSlash(t *testing.T) {
-	d := BuildDiscovery("https://id.example.com/")
+	d := BuildDiscovery("https://id.example.com/", "")
 	if d.Issuer != "https://id.example.com" {
 		t.Errorf("issuer = %q, want trailing slash trimmed", d.Issuer)
 	}
 }
 
 func TestBuildDiscoveryEndpoints(t *testing.T) {
-	d := BuildDiscovery("https://id.example.com")
+	d := BuildDiscovery("https://id.example.com", "")
 	cases := map[string]string{
 		d.AuthorizationEndpoint: "https://id.example.com/oauth2/authorize",
 		d.TokenEndpoint:         "https://id.example.com/oauth2/token",
@@ -28,8 +29,22 @@ func TestBuildDiscoveryEndpoints(t *testing.T) {
 	}
 }
 
+// Behind a TLS-terminating gateway the issuer may stay on its old address
+// while every endpoint moves to the public HTTPS one.
+func TestBuildDiscoverySeparatePublicURL(t *testing.T) {
+	d := BuildDiscovery("http://192.0.2.10:8081", "https://identity.example.dev/")
+	if d.Issuer != "http://192.0.2.10:8081" {
+		t.Errorf("issuer = %q", d.Issuer)
+	}
+	for _, got := range []string{d.AuthorizationEndpoint, d.TokenEndpoint, d.JWKSURI, d.DeviceAuthorizationEndpoint, d.EndSessionEndpoint} {
+		if !strings.HasPrefix(got, "https://identity.example.dev/") {
+			t.Errorf("endpoint %q not on the public URL", got)
+		}
+	}
+}
+
 func TestBuildDiscoveryCapabilities(t *testing.T) {
-	d := BuildDiscovery("https://id.example.com")
+	d := BuildDiscovery("https://id.example.com", "")
 
 	if !slices.Contains(d.ResponseTypesSupported, "code") {
 		t.Error("must support response_type=code")

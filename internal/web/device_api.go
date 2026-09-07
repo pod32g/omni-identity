@@ -300,9 +300,12 @@ func (s *Server) handleDeviceRotateKey(w http.ResponseWriter, r *http.Request, d
 	newFP, _ := newKey.Thumbprint()
 	newAlg, _ := newKey.Algorithm()
 	newPub, _ := newKey.PublicKey()
-	a, err := pop.VerifyAssertion(body.Proof, pop.AssertionOptions{
-		Key: newPub, Alg: newAlg, Audience: s.publicURLFor(r),
-	})
+	var a *pop.Assertion
+	for _, aud := range s.serverURLsFor(r) {
+		if a, err = pop.VerifyAssertion(body.Proof, pop.AssertionOptions{Key: newPub, Alg: newAlg, Audience: aud}); err == nil {
+			break
+		}
+	}
 	if err != nil {
 		apiError(w, http.StatusBadRequest, "invalid_grant", "new-key proof rejected: "+err.Error())
 		return

@@ -7,7 +7,8 @@ import (
 )
 
 func (s *Server) handleDiscovery(w http.ResponseWriter, r *http.Request) {
-	doc := oidc.BuildDiscovery(s.settings.Current().Issuer)
+	cur := s.settings.Current()
+	doc := oidc.BuildDiscovery(cur.Issuer, cur.PublicURL)
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	writeJSON(w, http.StatusOK, doc)
 }

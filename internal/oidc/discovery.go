@@ -45,13 +45,21 @@ const (
 	GrantTypeTokenExchange = "urn:ietf:params:oauth:grant-type:token-exchange"
 )
 
-// BuildDiscovery returns the discovery document for the given issuer base URL.
-// All endpoint URLs are derived from the issuer, so the issuer must be the
-// public base URL clients use to reach this server.
-func BuildDiscovery(issuer string) DiscoveryDocument {
-	base := strings.TrimRight(issuer, "/")
+// BuildDiscovery returns the discovery document. The issuer is the value
+// tokens carry and clients are configured with; the endpoints are built on
+// publicURL, the address browsers and clients should reach this server at.
+// They are usually the same. They differ while the server is put behind a
+// TLS-terminating gateway without changing the issuer every relying party
+// and enrolled device knows: the issuer stays, the endpoints move to HTTPS.
+// An empty publicURL means "same as the issuer".
+func BuildDiscovery(issuer, publicURL string) DiscoveryDocument {
+	iss := strings.TrimRight(issuer, "/")
+	base := strings.TrimRight(publicURL, "/")
+	if base == "" {
+		base = iss
+	}
 	return DiscoveryDocument{
-		Issuer:                            base,
+		Issuer:                            iss,
 		AuthorizationEndpoint:             base + "/oauth2/authorize",
 		TokenEndpoint:                     base + "/oauth2/token",
 		UserinfoEndpoint:                  base + "/userinfo",

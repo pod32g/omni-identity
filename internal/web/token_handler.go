@@ -121,11 +121,14 @@ func dpopJKT(r *http.Request) string {
 // path, optional access-token hash) and consumes its jti so it cannot be
 // replayed. Returns the proof on success.
 func (s *Server) verifyDPoP(r *http.Request, raw, accessToken string) (*pop.Proof, error) {
-	proof, err := pop.VerifyProof(raw, pop.ProofOptions{
-		HTM:         r.Method,
-		HTU:         s.publicURLFor(r),
-		AccessToken: accessToken,
-	})
+	var proof *pop.Proof
+	var err error
+	for _, htu := range s.serverURLsFor(r) {
+		proof, err = pop.VerifyProof(raw, pop.ProofOptions{HTM: r.Method, HTU: htu, AccessToken: accessToken})
+		if err == nil || !strings.Contains(err.Error(), "htu mismatch") {
+			break
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -144,6 +147,21 @@ func (s *Server) verifyDPoP(r *http.Request, raw, accessToken string) (*pop.Proo
 // public URL + path), the value a DPoP htu must match.
 func (s *Server) publicURLFor(r *http.Request) string {
 	return strings.TrimRight(s.settings.Current().PublicURL, "/") + r.URL.Path
+}
+
+// serverURLsFor lists every absolute URL this request may legitimately have
+// been sent to: the public URL, and the issuer when it differs (a server put
+// behind a TLS-terminating gateway keeps its issuer on the old address, and
+// enrolled devices still reach the device API there). Proofs bound to
+// either are this server's.
+func (s *Server) serverURLsFor(r *http.Request) []string {
+	cur := s.settings.Current()
+	pub := strings.TrimRight(cur.PublicURL, "/")
+	urls := []string{pub + r.URL.Path}
+	if iss := strings.TrimRight(cur.Issuer, "/"); iss != "" && iss != pub {
+		urls = append(urls, iss+r.URL.Path)
+	}
+	return urls
 }
 
 func (s *Server) grantAuthorizationCode(w http.ResponseWriter, r *http.Request) {
