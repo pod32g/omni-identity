@@ -123,6 +123,15 @@ func (s *Server) grantTokenExchange(w http.ResponseWriter, r *http.Request) {
 		extra["auth_time"] = rt.AuthTime.Unix()
 	}
 	extra = withGroups(extra, user)
+	// The audience is typically a gateway that turns this token into identity
+	// headers for an upstream without calling back (Omni Access bearer mode):
+	// give it the profile claims the scope allows.
+	if oidc.HasScope(scope, oidc.ScopeProfile) {
+		extra["preferred_username"] = user.Username
+	}
+	if oidc.HasScope(scope, oidc.ScopeEmail) && user.Email != "" {
+		extra["email"] = user.Email
+	}
 	access, err := s.issuer.IssueAccessTokenWithClaims(user.ID, target.ClientID, scope, extra)
 	if err != nil {
 		oauthError(w, http.StatusInternalServerError, "server_error", "could not issue token")

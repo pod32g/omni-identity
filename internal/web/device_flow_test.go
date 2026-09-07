@@ -981,6 +981,9 @@ func TestTokenExchangeForLocalBroker(t *testing.T) {
 		t.Errorf("response = %v", resp)
 	}
 	c := jwtClaims(t, resp["access_token"].(string))
+	if c["preferred_username"] != alice.Username {
+		t.Errorf("exchanged token lacks the profile claim a gateway turns into identity headers: %v", c["preferred_username"])
+	}
 	if c["sub"] != alice.ID || c["aud"] != "omni-metrics" || c["device_id"] != id || c["act"].(map[string]any)["sub"] != id {
 		t.Errorf("claims = %v", c)
 	}
