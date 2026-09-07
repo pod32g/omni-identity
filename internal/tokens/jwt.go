@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 // Profile carries the identity claims placed into an ID token.
@@ -67,8 +68,9 @@ func (i *Issuer) IDTTL() time.Duration {
 
 // Token-use markers placed in the token_use claim.
 const (
-	TokenUseAccess = "access"
-	TokenUseDevice = "device"
+	TokenUseAccess     = "access"
+	TokenUseDevice     = "device"
+	TokenUseRevocation = "revocation"
 )
 
 // Extra holds optional additional claims merged into a token. Used for the
@@ -145,6 +147,31 @@ func (i *Issuer) IssueDeviceToken(deviceID, ownerSub, trust, audience, jkt strin
 	}
 	if jkt != "" {
 		claims["cnf"] = map[string]any{"jkt": jkt}
+	}
+	return i.sign(claims)
+}
+
+// IssueRevocationToken mints a short-lived JWT that tells a resource server
+// (an Omni Access gateway) to drop a user's or a device's sessions now.
+// Signed with the same key as every token, so the gateway verifies it
+// against the JWKS it already trusts; no shared secret.
+func (i *Issuer) IssueRevocationToken(subject, deviceID, reason string, ttl time.Duration) (string, error) {
+	now := time.Now()
+	claims := jwt.MapClaims{
+		"iss":       i.issuerName(),
+		"iat":       now.Unix(),
+		"exp":       now.Add(ttl).Unix(),
+		"jti":       randJTI(),
+		"token_use": TokenUseRevocation,
+	}
+	if subject != "" {
+		claims["sub"] = subject
+	}
+	if deviceID != "" {
+		claims["device_id"] = deviceID
+	}
+	if reason != "" {
+		claims["reason"] = reason
 	}
 	return i.sign(claims)
 }
@@ -280,3 +307,5 @@ func signingMethod(alg string) (jwt.SigningMethod, error) {
 		return nil, fmt.Errorf("unsupported signing alg %q", alg)
 	}
 }
+
+func randJTI() string { return uuid.NewString() }

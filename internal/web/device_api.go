@@ -357,6 +357,7 @@ func (s *Server) handleDeviceUnenroll(w http.ResponseWriter, r *http.Request, de
 	}
 	s.audit(r, evtDeviceRevoked, auditEntry{actorUserID: dev.OwnerUserID, success: true,
 		detail: "device=" + dev.ID + " by=device"})
+	s.pushRevocation(dev.OwnerUserID, dev.ID, "device unenrolled")
 	writeJSON(w, http.StatusOK, map[string]string{"status": model.DeviceStatusRevoked})
 }
 

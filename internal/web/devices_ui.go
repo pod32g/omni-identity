@@ -274,6 +274,7 @@ func (s *Server) handleAdminRevokeDevice(w http.ResponseWriter, r *http.Request)
 	}
 	s.audit(r, evtDeviceRevoked, auditEntry{actorUserID: actorID(r), success: true,
 		detail: "device=" + id + " owner=" + dev.OwnerUserID + " by=admin"})
+	s.pushRevocation(dev.OwnerUserID, id, "device revoked")
 	if fromDetail(r) {
 		http.Redirect(w, r, "/admin/devices/"+id, http.StatusSeeOther)
 		return
@@ -318,5 +319,6 @@ func (s *Server) handleAdminDeleteDevice(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	s.audit(r, evtDeviceDeleted, auditEntry{actorUserID: actorID(r), success: true, detail: "device=" + id})
+	s.pushRevocation("", id, "device deleted")
 	http.Redirect(w, r, "/admin/devices", http.StatusSeeOther)
 }

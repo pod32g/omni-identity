@@ -256,6 +256,7 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, event, auditEntry{actorUserID: actorID(r), username: user.Username, success: true, detail: "id=" + id})
+	s.pushRevocation(id, "", "user deleted")
 	// The detail page is gone now; always return to the list.
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }

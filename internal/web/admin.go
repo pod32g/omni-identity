@@ -303,6 +303,9 @@ func (s *Server) handleAdminToggleUser(w http.ResponseWriter, r *http.Request) {
 		_, _ = s.db.DeleteSessionsForUser(r.Context(), id, "")
 	}
 	s.audit(r, evtUserDisabled, auditEntry{actorUserID: actorID(r), success: true, detail: "id=" + id + " disabled=" + boolStr(disabled)})
+	if disabled {
+		s.pushRevocation(id, "", "user disabled")
+	}
 	s.userActionDone(w, r, id)
 }
 

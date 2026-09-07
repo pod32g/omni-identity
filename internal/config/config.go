@@ -26,6 +26,7 @@ type Config struct {
 	Uploads     UploadsConfig
 	Downloads   DownloadsConfig
 	Diagnostics DiagnosticsConfig
+	Revocation  RevocationConfig
 	SMTP        SMTPConfig
 	LDAP        LDAPConfig
 	Logging     LoggingConfig
@@ -192,6 +193,14 @@ type DiagnosticsConfig struct {
 	Dir string
 }
 
+// RevocationConfig lists the Omni Access gateways to notify when a device
+// or user is revoked, disabled or deleted, so they drop sessions at once
+// instead of waiting for the revalidation window. Each is a gateway's
+// /api/v1/revoke URL; empty disables the push.
+type RevocationConfig struct {
+	Webhooks []string
+}
+
 type DownloadsConfig struct {
 	Dir string
 	// ExtraDir holds artifacts built outside the image (the Omni Access
@@ -264,6 +273,9 @@ type fileConfig struct {
 	Diagnostics struct {
 		Dir string `yaml:"dir"`
 	} `yaml:"diagnostics"`
+	Revocation struct {
+		Webhooks []string `yaml:"webhooks"`
+	} `yaml:"revocation"`
 	SMTP struct {
 		Host     string `yaml:"host"`
 		Port     int    `yaml:"port"`
@@ -445,6 +457,11 @@ func Load(path string) (*Config, error) {
 	cfg.Downloads.Dir = strings.TrimSpace(fc.Downloads.Dir)
 	cfg.Downloads.ExtraDir = strings.TrimSpace(fc.Downloads.ExtraDir)
 	cfg.Diagnostics.Dir = strings.TrimSpace(fc.Diagnostics.Dir)
+	for _, u := range fc.Revocation.Webhooks {
+		if u = strings.TrimSpace(u); u != "" {
+			cfg.Revocation.Webhooks = append(cfg.Revocation.Webhooks, u)
+		}
+	}
 
 	cfg.SMTP.Host = fc.SMTP.Host
 	cfg.SMTP.Port = orDefaultInt(fc.SMTP.Port, 587)
@@ -825,6 +842,9 @@ func applyEnvOverrides(fc *fileConfig) {
 	}
 	if v := os.Getenv("OMNI_DIAGNOSTICS_DIR"); v != "" {
 		fc.Diagnostics.Dir = v
+	}
+	if v := os.Getenv("OMNI_REVOCATION_WEBHOOKS"); v != "" {
+		fc.Revocation.Webhooks = strings.Split(v, ",")
 	}
 	if v := os.Getenv("OMNI_UPLOADS_MAX_LOGO_BYTES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {

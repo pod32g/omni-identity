@@ -79,6 +79,9 @@ services:
       OMNI_DOWNLOADS_EXTRA_DIR: /downloads-extra
       # Logs uploaded by enrolled devices (Omni Access clients), per device, on the data volume.
       OMNI_DIAGNOSTICS_DIR: /data/diagnostics
+      # Omni Access gateways to notify the instant a device or user is revoked
+      # (comma-separated /api/v1/revoke URLs), so they drop sessions at once.
+      OMNI_REVOCATION_WEBHOOKS: ${OMNI_REVOCATION_WEBHOOKS:-}
       # Empty disables /metrics. Set a strong value and scrape with Authorization: Bearer.
       OMNI_METRICS_TOKEN: ${OMNI_METRICS_TOKEN:-}
       # Optional LDAP / Active Directory backend. Off unless OMNI_LDAP_ENABLED=true.
