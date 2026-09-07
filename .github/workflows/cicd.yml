@@ -140,13 +140,16 @@ jobs:
             docker run --rm -v "$VOL":/data "$BUSYBOX" chown -R 65532:65532 /data
           }
 
-          # crash-loop guard: a wedged/restarting container on the runner's own
-          # box can starve the deploy, so stop it before doing anything else.
+          # crash-loop guard: only a container stuck in a restart loop is
+          # stopped first. "unhealthy" alone is not enough: a transient blip
+          # (Postgres restarting, a redeploy elsewhere on this box) would turn
+          # this deploy into an outage, and a cancelled run would leave the
+          # container stopped, which happened on 2026-09-07.
           cid="$(docker compose ps -q "$SVC" 2>/dev/null || true)"
           if [ -n "$cid" ]; then
-            state="$(docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' "$cid" 2>/dev/null || echo)"
+            state="$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || echo)"
             case "$state" in
-              *restarting*|*unhealthy*) echo "guard: container is '$state' - stopping"; docker compose stop "$SVC" || true ;;
+              restarting) echo "guard: container is '$state' - stopping"; docker compose stop "$SVC" || true ;;
             esac
           fi
 
