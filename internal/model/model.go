@@ -357,6 +357,30 @@ type DevicePosture struct {
 	KeyBackend    string `json:"key_backend,omitempty"`
 }
 
+// PersonalAccessToken is a long-lived, individually revocable bearer token a
+// signed-in user created from an enrolled client (docs/BEARER.md). Its id is
+// the JWT's jti. It is device-bound: the issued token carries device_id and an
+// act claim naming the device, so service device policy still applies. Only
+// the hash is not stored — the token is a signed JWT verified against the
+// JWKS; the row exists so it can be listed and revoked.
+type PersonalAccessToken struct {
+	ID         string
+	UserID     string
+	DeviceID   string
+	ClientID   string // audience
+	Name       string
+	Scope      string
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	LastUsedAt *time.Time
+	RevokedAt  *time.Time
+}
+
+// Active reports whether the token may still be used.
+func (p *PersonalAccessToken) Active(now time.Time) bool {
+	return p.RevokedAt == nil && now.Before(p.ExpiresAt)
+}
+
 // Device is an enrolled endpoint. Only the public half of its key pair is ever
 // stored; the endpoint proves possession of the private key to authenticate.
 type Device struct {

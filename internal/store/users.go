@@ -153,6 +153,14 @@ func (d *DB) SetUserDisabled(ctx context.Context, id string, disabled bool) erro
 	if err != nil {
 		return err
 	}
+	if disabled {
+		// A disabled user's personal access tokens stop working immediately.
+		if _, err := d.sql.ExecContext(ctx,
+			`UPDATE personal_access_tokens SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`,
+			time.Now().UTC(), id); err != nil {
+			return err
+		}
+	}
 	return requireRow(res)
 }
 
@@ -161,6 +169,9 @@ func (d *DB) SetUserDisabled(ctx context.Context, id string, disabled bool) erro
 // foreign key), so they survive deletion as a historical record. Returns
 // ErrNotFound when no row matched.
 func (d *DB) DeleteUser(ctx context.Context, id string) error {
+	if _, err := d.sql.ExecContext(ctx, `DELETE FROM personal_access_tokens WHERE user_id = ?`, id); err != nil {
+		return err
+	}
 	res, err := d.sql.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
 	if err != nil {
 		return err

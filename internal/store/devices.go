@@ -114,6 +114,11 @@ func (d *DB) RevokeDevice(ctx context.Context, id string, at time.Time) error {
 		`UPDATE refresh_tokens SET revoked = TRUE WHERE device_id = ?`, id); err != nil {
 		return err
 	}
+	// Personal access tokens are bound to the device; they die with it.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE personal_access_tokens SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL`, at.UTC(), id); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 

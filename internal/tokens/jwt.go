@@ -100,6 +100,30 @@ func (i *Issuer) IssueAccessTokenWithClaims(subject, audience, scope string, ext
 	return i.sign(claims)
 }
 
+// IssuePersonalAccessToken mints a long-lived, individually revocable access
+// token (docs/BEARER.md). It carries a caller-supplied jti (so it can be
+// listed and revoked), a pat marker (so a resource server skips the device
+// revalidation freshness check and consults the revoked-token list instead),
+// and an explicit TTL. token_use stays "access" so existing verification and
+// the gateway's bearer path accept it unchanged.
+func (i *Issuer) IssuePersonalAccessToken(subject, audience, scope, jti string, ttl time.Duration, extra Extra) (string, error) {
+	now := time.Now()
+	claims := jwt.MapClaims{}
+	for k, v := range extra {
+		claims[k] = v
+	}
+	claims["iss"] = i.issuerName()
+	claims["sub"] = subject
+	claims["aud"] = audience
+	claims["iat"] = now.Unix()
+	claims["exp"] = now.Add(ttl).Unix()
+	claims["scope"] = scope
+	claims["token_use"] = TokenUseAccess
+	claims["jti"] = jti
+	claims["pat"] = true
+	return i.sign(claims)
+}
+
 // IssueIDToken mints a signed ID-token JWT carrying identity claims.
 func (i *Issuer) IssueIDToken(subject, audience string, p Profile, nonce string, authTime time.Time) (string, error) {
 	return i.IssueIDTokenWithClaims(subject, audience, p, nonce, authTime, nil)

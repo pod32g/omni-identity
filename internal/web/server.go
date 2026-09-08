@@ -200,6 +200,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/devices/me/unenroll", s.requireDevice(s.handleDeviceUnenroll))
 	s.mux.HandleFunc("POST /api/v1/devices/me/diagnostics", s.requireDevice(s.handleDeviceDiagnosticsUpload))
 	s.mux.HandleFunc("POST /api/v1/devices/me/posture", s.requireDevice(s.handleDevicePosture))
+	s.mux.HandleFunc("POST /api/v1/devices/me/tokens", s.requireDevice(s.handleCreatePAT))
+	s.mux.HandleFunc("GET /api/v1/devices/me/tokens", s.requireDevice(s.handleListPATs))
+	s.mux.HandleFunc("DELETE /api/v1/devices/me/tokens/{id}", s.requireDevice(s.handleRevokePAT))
+	s.mux.HandleFunc("GET /api/v1/revoked-tokens", s.handleRevokedTokens)
 
 	s.mux.HandleFunc("GET /login", s.handleLoginForm)
 	s.mux.HandleFunc("POST /login", s.handleLoginSubmit)
