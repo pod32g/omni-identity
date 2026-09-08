@@ -472,7 +472,7 @@ func (s *Server) grantJWTBearer(w http.ResponseWriter, r *http.Request) {
 // --- posture ---
 
 // knownKeyBackends are the values clients may report.
-var knownKeyBackends = map[string]bool{model.KeyBackendFile: true, model.KeyBackendDPAPI: true, model.KeyBackendTPM: true, model.KeyBackendSecureEnclave: true}
+var knownKeyBackends = map[string]bool{model.KeyBackendFile: true, model.KeyBackendDPAPI: true, model.KeyBackendTPM: true, model.KeyBackendSecureEnclave: true, model.KeyBackendStrongBox: true, model.KeyBackendAndroidTEE: true}
 
 func normalizeKeyBackend(v string) string {
 	v = strings.ToLower(strings.TrimSpace(v))

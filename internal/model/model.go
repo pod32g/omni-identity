@@ -331,12 +331,17 @@ const (
 	KeyBackendDPAPI         = "dpapi"
 	KeyBackendTPM           = "tpm"
 	KeyBackendSecureEnclave = "secure-enclave"
+	// Android hardware-backed keys. StrongBox is a discrete secure element
+	// (comparable to a TPM / Secure Enclave); a TEE key is hardware-isolated
+	// and non-exportable. Both earn hardware trust.
+	KeyBackendStrongBox  = "strongbox"
+	KeyBackendAndroidTEE = "tee"
 )
 
 // TrustForKeyBackend maps a reported key backend to the trust level it earns.
 func TrustForKeyBackend(backend string) string {
 	switch backend {
-	case KeyBackendTPM, KeyBackendSecureEnclave:
+	case KeyBackendTPM, KeyBackendSecureEnclave, KeyBackendStrongBox, KeyBackendAndroidTEE:
 		return DeviceTrustHardware
 	}
 	return DeviceTrustEnrolled
