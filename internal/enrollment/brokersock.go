@@ -3,6 +3,7 @@ package enrollment
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -106,6 +107,12 @@ func (a *Agent) handleBrokerConn(ctx context.Context, conn net.Conn, pol BrokerP
 	if err != nil {
 		return
 	}
+	// Personal access tokens are managed with a JSON-framed verb because a
+	// token name may contain spaces: "PAT {json}" → "OK {json}" / "ERR ...".
+	if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "PAT "); ok {
+		a.handleBrokerPAT(ctx, uid, rest, pol, reply, logf)
+		return
+	}
 	fields := strings.Fields(line)
 	if len(fields) < 2 || fields[0] != "TOKEN" {
 		reply("ERR usage: TOKEN <audience> [scope]")
@@ -121,6 +128,125 @@ func (a *Agent) handleBrokerConn(ctx context.Context, conn net.Conn, pol BrokerP
 	}
 	logf("broker: uid=%d audience=%s issued (%ds)", uid, audience, tok.ExpiresIn)
 	reply(fmt.Sprintf("TOKEN %d %s", tok.ExpiresIn, tok.AccessToken))
+}
+
+// brokerPATRequest is the JSON payload after the PAT verb.
+type brokerPATRequest struct {
+	Action    string `json:"action"` // create | list | revoke
+	Audience  string `json:"audience,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Scope     string `json:"scope,omitempty"`
+	ExpiresIn int    `json:"expires_in,omitempty"`
+	ID        string `json:"id,omitempty"`
+}
+
+func (a *Agent) handleBrokerPAT(ctx context.Context, uid int, payload string, pol BrokerPolicy, reply func(string), logf func(string, ...any)) {
+	var req brokerPATRequest
+	if err := json.Unmarshal([]byte(payload), &req); err != nil {
+		reply("ERR malformed PAT request")
+		return
+	}
+	replyJSON := func(v any) {
+		b, err := json.Marshal(v)
+		if err != nil {
+			reply("ERR " + err.Error())
+			return
+		}
+		reply("OK " + string(b))
+	}
+	switch req.Action {
+	case "create":
+		pat, err := a.BrokerCreatePAT(ctx, uid, req.Name, req.Audience, req.Scope, req.ExpiresIn, pol)
+		if err != nil {
+			logf("broker: uid=%d pat.create refused: %v", uid, err)
+			reply("ERR " + err.Error())
+			return
+		}
+		logf("broker: uid=%d pat.create issued %s", uid, pat.ID)
+		replyJSON(pat)
+	case "list":
+		list, err := a.BrokerListPATs(ctx, uid)
+		if err != nil {
+			reply("ERR " + err.Error())
+			return
+		}
+		replyJSON(map[string]any{"tokens": list})
+	case "revoke":
+		if err := a.BrokerRevokePAT(ctx, uid, req.ID); err != nil {
+			reply("ERR " + err.Error())
+			return
+		}
+		replyJSON(map[string]any{"revoked": req.ID})
+	default:
+		reply("ERR unknown PAT action")
+	}
+}
+
+// brokerUserClient resolves the signed-in user owning uid and opens the device
+// client, returning the refresh token and a fresh device token — the shared
+// preamble of every brokered personal-access-token operation.
+func (a *Agent) brokerUserClient(ctx context.Context, uid int) (refreshToken, deviceToken string, client *Client, err error) {
+	if privilegedUID(uid) {
+		return "", "", nil, errors.New("root and system processes cannot use the broker")
+	}
+	users, err := a.ListUserCaches()
+	if err != nil {
+		return "", "", nil, err
+	}
+	var uc *UserCache
+	for _, u := range users {
+		if u.UID == uid {
+			uc = u
+			break
+		}
+	}
+	switch {
+	case uc == nil:
+		return "", "", nil, errors.New("caller is not a signed-in Omni user")
+	case uc.Revoked:
+		return "", "", nil, errors.New("this device's access for the caller was revoked")
+	case uc.RefreshToken == "":
+		return "", "", nil, errors.New("caller has not signed in online on this device")
+	}
+	st, _, client, err := a.Open()
+	if err != nil {
+		return "", "", nil, err
+	}
+	devTok, err := a.cachedDeviceToken(ctx, client, st.DeviceID)
+	if err != nil {
+		return "", "", nil, err
+	}
+	return uc.RefreshToken, devTok, client, nil
+}
+
+// BrokerCreatePAT creates a device-bound personal access token for the user
+// owning uid. The audience must be allowed by the machine's broker policy,
+// the same gate as a brokered exchange token.
+func (a *Agent) BrokerCreatePAT(ctx context.Context, uid int, name, audience, scope string, expiresIn int, pol BrokerPolicy) (*PersonalAccessToken, error) {
+	if !pol.allows(audience) {
+		return nil, errors.New("audience is not allowed by this machine's broker policy")
+	}
+	rt, devTok, client, err := a.brokerUserClient(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	return client.CreatePAT(ctx, devTok, rt, name, audience, scope, expiresIn)
+}
+
+func (a *Agent) BrokerListPATs(ctx context.Context, uid int) ([]PersonalAccessToken, error) {
+	_, devTok, client, err := a.brokerUserClient(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	return client.ListPATs(ctx, devTok)
+}
+
+func (a *Agent) BrokerRevokePAT(ctx context.Context, uid int, id string) error {
+	_, devTok, client, err := a.brokerUserClient(ctx, uid)
+	if err != nil {
+		return err
+	}
+	return client.RevokePAT(ctx, devTok, id)
 }
 
 // BrokerToken performs the exchange for the user owning uid.

@@ -417,6 +417,74 @@ func (c *Client) UploadDiagnostics(ctx context.Context, deviceToken string, cont
 	return out.Stored, nil
 }
 
+// PersonalAccessToken is a device-bound personal access token as the device
+// API lists it (the secret is present only in the create response).
+type PersonalAccessToken struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Audience  string `json:"audience"`
+	Scope     string `json:"scope"`
+	CreatedAt string `json:"created_at"`
+	ExpiresAt string `json:"expires_at"`
+	Token     string `json:"token,omitempty"`
+}
+
+// CreatePAT creates a device-bound personal access token (docs/BEARER.md). The
+// refresh token proves the signed-in user, exactly as the exchange does.
+func (c *Client) CreatePAT(ctx context.Context, deviceToken, refreshToken, name, audience, scope string, expiresIn int) (*PersonalAccessToken, error) {
+	body := map[string]any{"name": name, "audience": audience, "refresh_token": refreshToken}
+	if scope != "" {
+		body["scope"] = scope
+	}
+	if expiresIn > 0 {
+		body["expires_in"] = expiresIn
+	}
+	raw, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Issuer+"/api/v1/devices/me/tokens", bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if err := c.authorize(req, deviceToken); err != nil {
+		return nil, err
+	}
+	var out PersonalAccessToken
+	if err := c.doJSON(req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// ListPATs lists this device's active personal access tokens (no secrets).
+func (c *Client) ListPATs(ctx context.Context, deviceToken string) ([]PersonalAccessToken, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Issuer+"/api/v1/devices/me/tokens", nil)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.authorize(req, deviceToken); err != nil {
+		return nil, err
+	}
+	var out struct {
+		Tokens []PersonalAccessToken `json:"tokens"`
+	}
+	if err := c.doJSON(req, &out); err != nil {
+		return nil, err
+	}
+	return out.Tokens, nil
+}
+
+// RevokePAT revokes one personal access token by id.
+func (c *Client) RevokePAT(ctx context.Context, deviceToken, id string) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, c.Issuer+"/api/v1/devices/me/tokens/"+url.PathEscape(id), nil)
+	if err != nil {
+		return err
+	}
+	if err := c.authorize(req, deviceToken); err != nil {
+		return err
+	}
+	return c.doJSON(req, &struct{}{})
+}
+
 // followIssuerMove switches the client to the issuer the old one advertises,
 // after confirming the new address answers as that issuer.
 func (c *Client) followIssuerMove(ctx context.Context, advertised string) (*discovery, error) {
