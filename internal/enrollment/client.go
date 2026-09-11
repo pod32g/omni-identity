@@ -270,15 +270,28 @@ func (c *Client) WaitForDeviceCode(ctx context.Context, da *DeviceAuthorization,
 // DeviceToken performs the RFC 7523 jwt-bearer grant: it signs an assertion
 // naming deviceID and returns a DPoP-bound device token.
 func (c *Client) DeviceToken(ctx context.Context, deviceID string) (*TokenResponse, error) {
+	return c.DeviceTokenFor(ctx, deviceID, "")
+}
+
+// DeviceTokenFor is DeviceToken for another audience: a device token whose
+// aud is the given client id (a registered Omni application such as Omni
+// Endpoint Management), so that service can require proof of possession of
+// this device's key on every request. Empty audience means the enrollment
+// client itself.
+func (c *Client) DeviceTokenFor(ctx context.Context, deviceID, audience string) (*TokenResponse, error) {
 	assertion, err := pop.NewAssertion(c.Signer, c.Signer.Fingerprint(), deviceID, c.Issuer, c.Now(), 2*time.Minute, nil)
 	if err != nil {
 		return nil, err
 	}
-	return c.tokenRequest(ctx, url.Values{
+	form := url.Values{
 		"grant_type": {grantJWTBearer},
 		"assertion":  {assertion},
 		"client_id":  {c.ClientID},
-	}, "")
+	}
+	if audience != "" {
+		form.Set("audience", audience)
+	}
+	return c.tokenRequest(ctx, form, "")
 }
 
 // RefreshToken redeems a DPoP-bound refresh token.

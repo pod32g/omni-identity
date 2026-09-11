@@ -1049,3 +1049,71 @@ func TestTokenExchangeForLocalBroker(t *testing.T) {
 		t.Errorf("exchange after revocation = %d", rr.Code)
 	}
 }
+
+// A device may ask for a device token audienced at another registered Omni
+// application (audience=<client id>), the way token exchange audiences a
+// user token; the token is otherwise identical and must be DPoP-bound so
+// the service can demand proof of possession. Unknown or disabled
+// audiences are refused with invalid_target.
+func TestDeviceTokenForAnotherAudience(t *testing.T) {
+	srv := testServer(t)
+	alice := createUser(t, srv, "alice", "pw", false)
+	key := newDeviceKey(t)
+	id := enrollDevice(t, srv, alice, key, "laptop")
+	createClient(t, srv, "omni-endpoint", "s3cret", false, nil, []string{"openid"})
+
+	request := func(audience string, withDPoP bool) *httptest.ResponseRecorder {
+		t.Helper()
+		assertion, err := pop.NewAssertion(key.priv, key.jkt, id, testBase, time.Now(), time.Minute, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := formReq("/oauth2/token", url.Values{
+			"grant_type": {oidc.GrantTypeJWTBearer},
+			"assertion":  {assertion},
+			"client_id":  {model.EnrollmentClientID},
+			"audience":   {audience},
+		})
+		if withDPoP {
+			key.dpop(t, req, "")
+		}
+		return do(srv, req)
+	}
+
+	rr := request("omni-endpoint", true)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("audience token = %d: %s", rr.Code, rr.Body.String())
+	}
+	tok := decodeJSON(t, rr)
+	c := jwtClaims(t, tok["access_token"].(string))
+	if c["aud"] != "omni-endpoint" || c["token_use"] != "device" || c["sub"] != id || c["owner_sub"] != alice.ID || c["device_trust"] != "enrolled" {
+		t.Errorf("claims = %v", c)
+	}
+	if cnf, _ := c["cnf"].(map[string]any); cnf["jkt"] != key.jkt {
+		t.Errorf("cnf = %v, want jkt %s", c["cnf"], key.jkt)
+	}
+	// The default audience is unchanged.
+	rr = request("", true)
+	if c := jwtClaims(t, decodeJSON(t, rr)["access_token"].(string)); c["aud"] != model.EnrollmentClientID {
+		t.Errorf("default aud = %v", c["aud"])
+	}
+	// Unknown audience.
+	if rr := request("nope", true); rr.Code != http.StatusBadRequest || decodeJSON(t, rr)["error"] != "invalid_target" {
+		t.Errorf("unknown audience: %d %s", rr.Code, rr.Body.String())
+	}
+	// Disabled audience.
+	cl, _ := srv.db.GetClient(context.Background(), "omni-endpoint")
+	cl.Disabled = true
+	if err := srv.db.UpdateClient(context.Background(), cl); err != nil {
+		t.Fatal(err)
+	}
+	if rr := request("omni-endpoint", true); rr.Code != http.StatusBadRequest || decodeJSON(t, rr)["error"] != "invalid_target" {
+		t.Errorf("disabled audience: %d %s", rr.Code, rr.Body.String())
+	}
+	cl.Disabled = false
+	_ = srv.db.UpdateClient(context.Background(), cl)
+	// A foreign-audience token without DPoP is refused: it must be bound.
+	if rr := request("omni-endpoint", false); rr.Code != http.StatusBadRequest || decodeJSON(t, rr)["error"] != "invalid_dpop_proof" {
+		t.Errorf("unbound audience token: %d %s", rr.Code, rr.Body.String())
+	}
+}

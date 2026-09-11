@@ -67,6 +67,8 @@ func Main(argv []string) int {
 		err = runDaemon(args)
 	case "pam-test":
 		err = runPAMTest(args)
+	case "device-token":
+		err = runDeviceToken(args)
 	case "token":
 		err = runToken(args)
 	case "signin":
@@ -122,6 +124,8 @@ Commands:
   daemon      Run the renewal loop + PAM socket (used by the systemd service)
   pam-test    Run the Linux login conversation for a user on this terminal
   token       Ask the local broker for an access token (--audience <client id>)
+  device-token  Ask the daemon for a device token audienced at another Omni
+              application (--audience <client id>); daemon's own uid only
   signin      Sign the current user in on this device (desktop endpoints without
               the Linux login integration); stores the device-bound refresh token
               the broker uses (--json: one event per line)
@@ -527,6 +531,33 @@ func runToken(args []string) error {
 	}
 	if *asJSON {
 		return json.NewEncoder(os.Stdout).Encode(map[string]any{"access_token": tok, "expires_in": expires, "token_type": "Bearer"})
+	}
+	fmt.Println(tok)
+	return nil
+}
+
+// runDeviceToken asks the daemon (broker socket, DEVICE operation) for a
+// device token audienced at another Omni application. Served only to the
+// daemon's own uid; meant for a local management agent and for debugging.
+func runDeviceToken(args []string) error {
+	fs := flag.NewFlagSet("device-token", flag.ExitOnError)
+	resolve := commonFlags(fs)
+	audience := fs.String("audience", "", "client id of the application the device token is for (required)")
+	asJSON := fs.Bool("json", false, "print {access_token, expires_in, token_type} as JSON")
+	_ = fs.Parse(args)
+	cfg, err := resolve()
+	if err != nil {
+		return err
+	}
+	if *audience == "" {
+		return errors.New("--audience is required")
+	}
+	tok, expires, err := enrollment.RequestDeviceToken(cfg.RuntimeDir, *audience)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{"access_token": tok, "expires_in": expires, "token_type": "DPoP"})
 	}
 	fmt.Println(tok)
 	return nil

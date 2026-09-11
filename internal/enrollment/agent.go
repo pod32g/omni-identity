@@ -33,7 +33,10 @@ type Agent struct {
 	tokMu      sync.Mutex
 	tok        string
 	tokExpires time.Time
-	logf       func(string, ...any)
+	// Device tokens for other audiences (broker DEVICE operation).
+	audMu  sync.Mutex
+	audTok map[string]cachedToken
+	logf   func(string, ...any)
 }
 
 // Config is what the CLI resolves from flags/env/config file.
@@ -438,13 +441,13 @@ func (a *Agent) RunDaemon(ctx context.Context, opt DaemonOptions, logf func(stri
 			}
 		}()
 	}
-	if len(opt.Broker.Audiences) > 0 {
-		go func() {
-			if err := a.ServeBroker(ctx, opt.Broker, opt.PeerUID, logf); err != nil {
-				logf("broker socket: %v", err)
-			}
-		}()
-	}
+	// The broker always listens: user tokens need broker_audiences, the
+	// device operations (for a local management agent) do not.
+	go func() {
+		if err := a.ServeBroker(ctx, opt.Broker, opt.PeerUID, logf); err != nil {
+			logf("broker socket: %v", err)
+		}
+	}()
 	backoff := time.Minute
 	for {
 		st, tok, err := a.Renew(ctx)

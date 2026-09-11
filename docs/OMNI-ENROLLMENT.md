@@ -199,6 +199,14 @@ only users who have signed in online on this machine (and are not revoked)
 get tokens, and only for the allowlisted audiences. The app never sees a
 refresh token or the device key. Details: device architecture §10.
 
+The socket also answers a local *management* agent that must authenticate
+as the device (Omni Endpoint Management): `DEVICE <audience>` returns a
+DPoP-bound device token for a registered application and `PROOF <method>
+<url> [<token>]` signs one DPoP proof with the device key. Both are served
+only to the daemon's own uid and need no `broker_audiences`; the socket
+therefore always listens. `omni-enrollment device-token --audience <client
+id>` is the CLI.
+
 ## Desktop endpoints (macOS)
 
 On a desktop that has no PAM/NSS integration — PAM and NSS are Linux-only —

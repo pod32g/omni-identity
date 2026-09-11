@@ -302,6 +302,17 @@ What a device token is for in V1:
 - Authenticating an RFC 8628 request so the resulting *user* tokens carry
   device claims (§7).
 
+**Device tokens for another audience.** A service that must authenticate the
+*device itself* (no signed-in user — Omni Endpoint Management checks in from
+the login screen too) asks for a device token audienced at that service:
+the same grant with `audience=<client id>`. The audience is validated the
+way token exchange validates it (a registered, enabled client), the token is
+identical except for `aud`, and it **must** be DPoP-bound (the request
+without a proof is refused with `invalid_dpop_proof`), so the service can
+demand a proof of possession on every request. No new grant, endpoint or
+claim; the daemon exposes it locally as the broker's `DEVICE` operation
+(§10) and the CLI as `omni-enrollment device-token --audience <client id>`.
+
 ---
 
 ## 7. User-on-device: device-aware login
@@ -437,6 +448,23 @@ A random local process therefore does not gain access merely because the
 daemon runs: it needs to *be* the signed-in user, and only for audiences the
 operator chose. Per-app user approval on first use is a possible refinement
 and is not implemented.
+
+**Device operations.** The same socket serves two operations for a local
+agent that acts as the *device* (Omni Endpoint Management's agent) without
+ever loading the key:
+
+```
+DEVICE <audience>                 → TOKEN <expires_in> <device token>   (jwt-bearer grant with audience, DPoP-bound, cached)
+PROOF <method> <url> [<token>]    → PROOF <dpop proof>                  (one RFC 9449 proof signed with the device key)
+```
+
+They are answered only to a peer whose uid is the daemon's own (root for
+the system daemon, the desktop user for a per-user daemon; on Windows the
+profile directory's ACL is the guard as for `TOKEN`): a process that could
+read the key file anyway gains nothing new, every other uid is refused. They
+need no `broker_audiences` (the socket always listens); Omni still requires
+the audience to be a registered client. The proof is bound to the method,
+the URL and the token's hash, so the daemon signs nothing reusable.
 
 ## 11. Endpoint and UI inventory (Phase 2)
 
