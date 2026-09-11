@@ -445,7 +445,28 @@ func (s *Server) grantJWTBearer(w http.ResponseWriter, r *http.Request) {
 
 	ttl := s.settings.Current().DeviceTokenTTL
 	jkt := dpopJKT(r)
-	tok, err := s.issuer.IssueDeviceToken(dev.ID, owner.ID, dev.TrustLevel, client.ClientID, jkt, ttl)
+	// audience (optional): a device token for another Omni service, the way
+	// token exchange audiences a user token. The audience must be a
+	// registered, enabled client, and the token must be DPoP-bound so the
+	// service can require proof of possession on every request.
+	audience := client.ClientID
+	if requested := strings.TrimSpace(r.PostFormValue("audience")); requested != "" && requested != client.ClientID {
+		target, err := s.db.GetClient(r.Context(), requested)
+		if err != nil || target.Disabled {
+			s.metrics.recordDeviceAuth("failure")
+			s.audit(r, evtDeviceAuthFailed, auditEntry{clientID: client.ClientID, detail: "device=" + dev.ID + " unknown audience"})
+			oauthError(w, http.StatusBadRequest, "invalid_target", "unknown audience")
+			return
+		}
+		if jkt == "" {
+			s.metrics.recordDeviceAuth("failure")
+			s.audit(r, evtDeviceAuthFailed, auditEntry{clientID: client.ClientID, detail: "device=" + dev.ID + " audience without DPoP"})
+			oauthError(w, http.StatusBadRequest, "invalid_dpop_proof", "a device token for another audience requires a DPoP proof")
+			return
+		}
+		audience = target.ClientID
+	}
+	tok, err := s.issuer.IssueDeviceToken(dev.ID, owner.ID, dev.TrustLevel, audience, jkt, ttl)
 	if err != nil {
 		oauthError(w, http.StatusInternalServerError, "server_error", "could not issue device token")
 		return
