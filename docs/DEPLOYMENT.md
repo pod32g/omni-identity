@@ -54,6 +54,12 @@ Open the configured public URL and complete the first-run setup wizard. If the
 public URL is not loopback, the wizard requires the `OMNI_SETUP_TOKEN` value.
 After the first administrator exists, setup disables itself.
 
+An unattended install can skip the wizard: `omni-identity admin ensure` creates
+the administrator and `omni-identity client ensure` registers clients, both
+idempotently and from the command line inside the container (see "Provisioning
+without the browser" in the README). With no setup token configured and a
+non-loopback public URL the wizard accepts nobody, so that path needs no token.
+
 ## Public URL And HTTPS
 
 `OMNI_SERVER_PUBLIC_URL` is the canonical external origin for the identity

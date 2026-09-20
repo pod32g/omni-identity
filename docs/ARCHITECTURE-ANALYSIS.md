@@ -12,7 +12,8 @@ green on SQLite; Postgres integration test gated by `OMNI_TEST_POSTGRES_URL`.
 
 ```
 cmd/omni-identity/         single server binary: serve | backup | integrity |
-                           migrate-data | healthcheck | version
+                           migrate-data | healthcheck | version |
+                           admin ensure | client ensure
 internal/config/           YAML + OMNI_* env overrides, validation, LDAP presets
 internal/model/            dependency-free domain types (User, Session, Client,
                            RefreshToken, AuditEvent, Settings, …)

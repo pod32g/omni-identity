@@ -325,6 +325,47 @@ omni-identity integrity   --db ./omni-identity.db                       # PRAGMA
 omni-identity healthcheck --url http://localhost:8080/healthz          # 2xx = healthy
 ```
 
+### Provisioning without the browser
+
+Installers and configuration management can create the first administrator and
+register clients with two idempotent commands instead of driving the setup
+wizard and the admin forms. They use the same configuration as `serve` (config
+file and `OMNI_*` environment), can run while the server is running, print one
+JSON object on stdout, and read secrets from a file or stdin — never from the
+command line.
+
+```sh
+# Create the administrator if no user has that username. An existing account is
+# never modified: not its password, not its role.
+omni-identity admin ensure --username admin --email admin@example.com --password-stdin < password
+
+# Create the client, or update the fields whose flags are given. Fields you do
+# not mention keep whatever the admin UI set. Redirect URIs are checked against
+# the redirect policy in Admin Settings, exactly as the form does.
+omni-identity client ensure --id my-app --name "My app" \
+    --redirect-uri https://app.example.com/auth/callback \
+    --post-logout-redirect-uri https://app.example.com/ \
+    --scopes "openid profile email" --skip-consent --secret-file ./client-secret
+```
+
+| `result` | meaning |
+|---|---|
+| `created` | it did not exist |
+| `updated` | (clients) `changed` lists the fields brought in line; `secret` means the secret was replaced |
+| `unchanged` | nothing to do |
+
+With `--secret-file`/`--secret-stdin` that value (at least 32 random
+characters) becomes the client secret; a different value later is a rotation.
+Without either, a new confidential client gets a generated secret, returned once
+as `client_secret`, and an existing client's secret is left alone. The commands
+refuse to promote a non-administrator, re-enable a disabled account or client,
+or change a client's type — those stay decisions for the admin UI. Every change
+is written to the audit log with the user agent `omni-identity-cli`.
+
+In a container: `docker compose exec -T omni-identity /omni-identity admin ensure … --password-stdin < password`.
+Anyone able to run these already has the configuration and the database; they
+are not a network API.
+
 ## Register a client (under 5 minutes)
 
 1. Sign in to the admin UI and open **Applications**.
