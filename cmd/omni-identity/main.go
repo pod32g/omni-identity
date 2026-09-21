@@ -7,6 +7,8 @@
 //	omni-identity integrity    --db P           # PRAGMA integrity_check
 //	omni-identity migrate-data --from-path P --to-url U  # copy SQLite -> Postgres
 //	omni-identity healthcheck  --url U          # HTTP-probe a URL (2xx = healthy)
+//	omni-identity admin ensure  --username U --email E --password-stdin  # idempotent first admin
+//	omni-identity client ensure --id ID --redirect-uri U ...            # idempotent OAuth client
 //	omni-identity version
 package main
 
@@ -65,6 +67,10 @@ func main() {
 		err = runMigrateData(args)
 	case "healthcheck":
 		err = runHealthcheck(args)
+	case "admin":
+		err = runAdmin(args)
+	case "client":
+		err = runClient(args)
 	case "version", "-v", "--version":
 		fmt.Println("omni-identity", version)
 	case "help", "-h", "--help":
@@ -88,6 +94,8 @@ Commands:
   integrity    Run PRAGMA integrity_check; exit non-zero if unsound
   migrate-data Copy every table from a SQLite DB into a Postgres DB
   healthcheck  HTTP-probe a URL; exit non-zero unless it returns 2xx
+  admin ensure   Create the local administrator if it does not exist
+  client ensure  Create an OAuth client, or bring the given fields in line
   version      Print the version
 
 Run "omni-identity <command> -h" for command-specific flags.

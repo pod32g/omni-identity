@@ -72,11 +72,10 @@ type settingsService struct {
 	allowInsecureHTTP bool
 }
 
-// newSettingsService builds the service, seeding the DB row from cfg on first
-// run, then caching the parsed view.
-func newSettingsService(db settingsStore, cfg *config.Config, defaultSessionLifetime time.Duration) *settingsService {
-	s := &settingsService{db: db, allowInsecureHTTP: cfg.Server.AllowInsecureHTTP}
-	s.def = SettingsView{
+// settingsDefaults is the config-derived view: what the settings row is seeded
+// with, and what applies while it has not been seeded yet.
+func settingsDefaults(cfg *config.Config) SettingsView {
+	return withRuntimeSettingDefaults(SettingsView{
 		Issuer:                          cfg.Security.Issuer,
 		PublicURL:                       cfg.Server.PublicURL,
 		TokenTTL:                        cfg.Security.TokenTTL,
@@ -104,8 +103,14 @@ func newSettingsService(db settingsStore, cfg *config.Config, defaultSessionLife
 		LogLevel:                        cfg.Logging.Level,
 		LogHTTPRequests:                 cfg.Logging.HTTPRequests,
 		DeviceTokenTTL:                  defaultDeviceTokenTTL,
-	}
-	s.def = withRuntimeSettingDefaults(s.def)
+	})
+}
+
+// newSettingsService builds the service, seeding the DB row from cfg on first
+// run, then caching the parsed view.
+func newSettingsService(db settingsStore, cfg *config.Config, defaultSessionLifetime time.Duration) *settingsService {
+	s := &settingsService{db: db, allowInsecureHTTP: cfg.Server.AllowInsecureHTTP}
+	s.def = settingsDefaults(cfg)
 	s.v = s.def
 
 	ctx := context.Background()

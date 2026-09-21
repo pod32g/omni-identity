@@ -197,32 +197,38 @@ func parseClientForm(r *http.Request, allowLoopbackHTTP, allowPrivateNetworkHTTP
 		postLogoutURIs: strings.Fields(r.PostFormValue("post_logout_redirect_uris")),
 		skipConsent:    r.PostFormValue("skip_consent") == "on" || r.PostFormValue("skip_consent") == "true",
 	}
+	return f, f.validate(allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateSchemeSetting)
+}
+
+// validate applies the client rules shared by the admin form and the
+// `client ensure` command. It returns a user-facing message, or "" when valid.
+func (f clientForm) validate(allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateSchemeSetting bool) string {
 	if f.name == "" {
-		return f, "Name is required."
+		return "Name is required."
 	}
 	if f.clientType != model.ClientTypePublic && f.clientType != model.ClientTypeConfidential {
-		return f, "Type must be public or confidential."
+		return "Type must be public or confidential."
 	}
 	if len(f.redirectURIs) == 0 {
-		return f, "At least one redirect URI is required."
+		return "At least one redirect URI is required."
 	}
 	if len(f.scopes) == 0 {
-		return f, "At least one scope is required."
+		return "At least one scope is required."
 	}
 	if !oidc.ScopesSubset(f.scopes, oidc.SupportedScopes) {
-		return f, "Unknown scope requested."
+		return "Unknown scope requested."
 	}
 	// Native (public) clients may use a private-use URI scheme redirect so the
 	// app can receive the callback without a hosted https domain — when the
 	// admin setting allows it.
 	allowPrivateScheme := allowPrivateSchemeSetting && f.clientType == model.ClientTypePublic
 	if !httpsOrLocalURLs(f.redirectURIs, allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateScheme) {
-		return f, redirectURIMessage("Redirect", allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateScheme)
+		return redirectURIMessage("Redirect", allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateScheme)
 	}
 	if !httpsOrLocalURLs(f.postLogoutURIs, allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateScheme) {
-		return f, redirectURIMessage("Post-logout redirect", allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateScheme)
+		return redirectURIMessage("Post-logout redirect", allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateScheme)
 	}
-	return f, ""
+	return ""
 }
 
 func redirectURIMessage(kind string, allowLoopbackHTTP, allowPrivateNetworkHTTP, allowPrivateScheme bool) string {
